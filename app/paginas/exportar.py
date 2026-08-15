@@ -57,6 +57,15 @@ def render() -> None:
         help="Rode a simulação na tela de Sensibilidade para habilitar.",
     )
 
+    if "decomposicao_tsr" in st.session_state:
+        st.caption(
+            "A decomposição do TSR entra como aba própria, também com fórmulas vivas."
+        )
+    else:
+        st.caption(
+            "Passe pela tela de **Retorno esperado** para que o TSR entre na planilha."
+        )
+
     comparaveis = estado.comparaveis()
     if comparaveis:
         st.caption(f"{len(comparaveis)} comparável(is) serão incluídos na aba de múltiplos.")
@@ -82,7 +91,7 @@ def render() -> None:
             )
 
     st.divider()
-    _premissas_em_texto()
+    _salvar_projeto()
 
 
 def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> None:
@@ -106,6 +115,8 @@ def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> N
             simulacao=st.session_state.get("simulacao") if simulacao else None,
             comparaveis=comparaveis or None,
             alvo=alvo,
+            retorno=st.session_state.get("decomposicao_tsr"),
+            acionista=st.session_state.get("projecao_acionista"),
         )
     except Exception as erro:  # noqa: BLE001 - queremos mostrar a causa ao usuario
         st.error(f"Não consegui gerar a planilha: {erro}")
@@ -116,40 +127,43 @@ def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> N
     st.rerun()
 
 
-def _premissas_em_texto() -> None:
-    st.subheader("Premissas em YAML")
+def _salvar_projeto() -> None:
+    """Baixa o valuation inteiro como arquivo de texto, para retomar depois."""
+    from valuation.projeto import serializar
+
+    st.subheader("Salvar este valuation")
     st.markdown(
-        "O mesmo modelo como arquivo de texto: dá para versionar em Git, revisar em "
-        "pull request, comparar duas versões de um valuation e reproduzir o número "
-        "meses depois. É também o formato aceito pela linha de comando."
-    )
-
-    empresa = estado.empresa()
-    dados = {
-        "nome": empresa.nome,
-        "data_base": empresa.data_base or "",
-        "moeda": empresa.moeda,
-        "unidade": empresa.unidade,
-        "prejuizo_fiscal_acumulado": empresa.prejuizo_fiscal_acumulado,
-        "macro": asdict(empresa.macro),
-        "custo_capital": asdict(empresa.custo_capital),
-        "operacionais": asdict(empresa.operacionais) if empresa.operacionais else None,
-        "perpetuidade": asdict(empresa.perpetuidade),
-        "ponte": asdict(empresa.ponte),
-    }
-    texto = yaml.safe_dump(dados, allow_unicode=True, sort_keys=False, default_flow_style=False)
-
-    st.code(texto, language="yaml")
-    st.download_button(
-        "Baixar premissas (.yaml)",
-        data=texto.encode("utf-8"),
-        file_name=f"{_slug(empresa.nome)}.yaml",
-        mime="text/yaml",
+        "Baixa **tudo** num arquivo só: premissas, demonstrações importadas, "
+        "comparáveis e as convenções de cálculo. Para retomar, suba o arquivo em "
+        "**Dados → Retomar valuation salvo**."
     )
     st.caption(
-        f"Depois, na linha de comando: `valuation dcf {_slug(empresa.nome)}.yaml "
-        "--excel modelo.xlsx`"
+        "É YAML de propósito: dá para abrir num editor, versionar em Git, revisar "
+        "em pull request e comparar duas versões de um mesmo valuation com um diff."
     )
+
+    try:
+        texto = serializar(estado.projeto_atual())
+    except Exception as erro:  # noqa: BLE001 - o usuario precisa saber a causa
+        st.error(f"Não consegui montar o arquivo: {erro}")
+        return
+
+    nome = f"{_slug(estado.empresa().nome)}.yaml"
+    st.download_button(
+        "Baixar o valuation (.yaml)",
+        data=texto.encode("utf-8"),
+        file_name=nome,
+        mime="text/yaml",
+        type="primary",
+    )
+    tamanho = len(texto.encode("utf-8")) / 1024
+    st.caption(
+        f"{nome} · {tamanho:,.0f} KB · também aceito pela linha de comando: "
+        f"`valuation dcf {nome} --excel modelo.xlsx`".replace(",", ".")
+    )
+
+    with st.expander("Ver o conteúdo do arquivo"):
+        st.code(texto, language="yaml")
 
 
 def _slug(nome: str) -> str:

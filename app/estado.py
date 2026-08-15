@@ -28,6 +28,7 @@ from valuation import (
 from valuation.diagnostico import Diagnostico, diagnosticar
 from valuation.historico import AnaliseHistorica, analisar
 from valuation.importacao import Demonstracoes
+from valuation.projeto import Projeto
 
 CHAVE_EMPRESA = "empresa"
 CHAVE_DFS = "demonstracoes"
@@ -209,4 +210,62 @@ def diagnostico() -> Diagnostico | None:
     resultado_atual = resultado()
     if resultado_atual is None:
         return None
-    return diagnosticar(resultado_atual, analise=analise())
+    return diagnosticar(
+        resultado_atual,
+        analise=analise(),
+        retorno=st.session_state.get("decomposicao_tsr"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Salvar e retomar o trabalho
+# ---------------------------------------------------------------------------
+
+
+def projeto_atual() -> Projeto:
+    """Empacota o estado da sessao inteiro em um objeto salvavel."""
+    return Projeto(
+        empresa=empresa(),
+        demonstracoes=demonstracoes(),
+        comparaveis=comparaveis(),
+        alvo=alvo(),
+        config=dict(config()),
+    )
+
+
+def aplicar_projeto(projeto: Projeto) -> None:
+    """Substitui o estado da sessao pelo conteudo de um projeto carregado.
+
+    Substitui em vez de mesclar: retomar um valuation salvo tem que devolver
+    exatamente aquele valuation, sem restos da analise que estava aberta antes.
+    """
+    definir_empresa(projeto.empresa)
+    definir_demonstracoes(projeto.demonstracoes)
+    definir_comparaveis(list(projeto.comparaveis))
+    definir_alvo(projeto.alvo)
+    st.session_state[CHAVE_CONFIG] = {
+        **{"meio_de_ano": True, "tipo_fluxo": "fcff", "setor": None, "pais": "Brasil"},
+        **projeto.config,
+    }
+    # Analises derivadas pertencem ao modelo anterior e ficariam desatualizadas.
+    for chave in (
+        "tabela_sensibilidade",
+        "tabela_cenarios",
+        "simulacao",
+        "excel_gerado",
+        "decomposicao_tsr",
+    ):
+        st.session_state.pop(chave, None)
+
+
+# ---------------------------------------------------------------------------
+# Retorno esperado (usado pelo diagnostico e pela exportacao)
+# ---------------------------------------------------------------------------
+
+
+def definir_decomposicao_tsr(decomposicao) -> None:
+    st.session_state["decomposicao_tsr"] = decomposicao
+
+
+def decomposicao_tsr():
+    return st.session_state.get("decomposicao_tsr")

@@ -30,6 +30,24 @@ INFORMACAO = "informacao"
 
 _ORDEM_SEVERIDADE = {ERRO: 0, ALERTA: 1, INFORMACAO: 2}
 
+
+def _pct(valor: float, casas: int = 1) -> str:
+    """Percentual no padrao brasileiro, com virgula decimal.
+
+    Os achados sao lidos por quem trabalha em portugues; "9,0%" e o que essa
+    pessoa espera ver, e "9.0%" destoa do resto do app.
+    """
+    if not np.isfinite(valor):
+        return "n/d"
+    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+
+
+def _num(valor: float, casas: int = 1) -> str:
+    """Numero no padrao brasileiro: milhar com ponto, decimal com virgula."""
+    if not np.isfinite(valor):
+        return "n/d"
+    return f"{valor:,.{casas}f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
 # Faixas de referencia. Deliberadamente largas: servem para pegar o absurdo, nao
 # para impor uma visao de mundo.
 BETA_MINIMO, BETA_MAXIMO = 0.3, 2.5
@@ -37,6 +55,9 @@ WACC_MINIMO_BRL, WACC_MAXIMO_BRL = 0.07, 0.30
 PESO_PERPETUIDADE_ALTO = 0.75
 ALAVANCAGEM_ALTA = 3.5
 MARGEM_ROIC_WACC_EXCEPCIONAL = 0.10
+# Acima disto, o retorno passa a depender mais do mercado do que da empresa.
+PESO_RERATING_ALTO = 0.40
+TSR_IMPLAUSIVEL = 0.40
 
 
 @dataclass(frozen=True)
@@ -103,6 +124,7 @@ def diagnosticar(
     resultado: ResultadoValuation,
     analise: AnaliseHistorica | None = None,
     crescimento_nominal_economia: float | None = None,
+    retorno=None,
 ) -> Diagnostico:
     """Roda a bateria de verificacoes sobre um valuation ja calculado.
 
@@ -112,6 +134,10 @@ def diagnosticar(
 
     ``crescimento_nominal_economia`` e o teto natural do crescimento perpetuo.
     Sem ele, e estimado como inflacao de longo prazo mais 2% de PIB real.
+
+    ``retorno`` e uma ``DecomposicaoTSR`` ja calculada. Com ela, a checklist
+    passa a cobrir tambem a tese de retorno -- de onde vem o ganho esperado e se
+    ele compensa o risco -- e nao apenas a consistencia interna do fluxo.
     """
     empresa = resultado.empresa
     wacc = resultado.dcf.taxa_desconto
@@ -126,8 +152,104 @@ def diagnosticar(
     achados += _checar_estrutura_do_valor(resultado)
     if analise is not None:
         achados += _checar_contra_historico(resultado, analise)
+    if retorno is not None:
+        achados += _checar_retorno(resultado, retorno)
 
     return Diagnostico(achados=_ordenar(achados))
+
+
+def _checar_retorno(resultado: ResultadoValuation, retorno) -> list[Achado]:
+    """Verificacoes sobre a tese de retorno, e nao sobre o fluxo de caixa."""
+    achados = []
+    ke = resultado.custo_capital.ke_brl
+    tsr = retorno.tsr
+    if not np.isfinite(tsr):
+        return achados
+
+    if tsr < ke:
+        achados.append(
+            Achado(
+                codigo="retorno_abaixo_do_exigido",
+                severidade=ALERTA,
+                titulo=(
+                    f"Retorno esperado ({_pct(tsr)}) abaixo do exigido ({_pct(ke)})"
+                ),
+                detalhe=(
+                    "A este preço, o investimento entrega menos do que o risco da "
+                    f"empresa pede — uma diferença de {_pct(ke - tsr)} ao ano. Comprar "
+                    "assim é aceitar ser mal remunerado pelo risco assumido."
+                ),
+                acao=(
+                    "Veja em Retorno esperado qual o preço máximo para o retorno que "
+                    "você exige, ou revise as premissas que sustentam o lucro projetado."
+                ),
+                referencia="CFA Institute, Equity Asset Valuation, cap. 1",
+            )
+        )
+
+    peso = abs(retorno.contribuicao_multiplo) / abs(tsr) if tsr else float("nan")
+    if np.isfinite(peso) and peso > PESO_RERATING_ALTO:
+        direcao = "expansão" if retorno.contribuicao_multiplo > 0 else "contração"
+        achados.append(
+            Achado(
+                codigo="retorno_depende_de_rerating",
+                severidade=ALERTA,
+                titulo=f"{_pct(peso, 0)} do retorno vem de {direcao} de múltiplo",
+                detalhe=(
+                    "Essa parcela não depende de a empresa entregar coisa alguma: "
+                    "depende de quanto o próximo comprador estará disposto a pagar. "
+                    "Uma tese apoiada principalmente aí é uma aposta sobre o humor do "
+                    "mercado, não sobre o negócio."
+                ),
+                acao=(
+                    "Explicite por que o mercado reavaliaria a empresa, e calcule o "
+                    "retorno no cenário em que o múltiplo não muda."
+                ),
+                referencia="Damodaran, The Little Book of Valuation, cap. 7",
+            )
+        )
+
+    if tsr > TSR_IMPLAUSIVEL:
+        achados.append(
+            Achado(
+                codigo="retorno_implausivel",
+                severidade=ALERTA,
+                titulo=f"Retorno esperado de {_pct(tsr, 0)} ao ano",
+                detalhe=(
+                    "Retornos dessa ordem raramente sobrevivem a uma revisão. Costumam "
+                    "vir de preço de entrada muito abaixo do valor, de crescimento "
+                    "otimista ou de múltiplo de saída generoso — e o mercado "
+                    "dificilmente deixaria uma oportunidade dessas de pé."
+                ),
+                acao=(
+                    "Confira o preço de entrada e o múltiplo de saída antes de "
+                    "defender o número."
+                ),
+                referencia="",
+            )
+        )
+
+    entrada, saida = retorno.multiplo_entrada, retorno.multiplo_saida
+    if entrada > 0 and saida > entrada * 1.2:
+        achados.append(
+            Achado(
+                codigo="multiplo_de_saida_generoso",
+                severidade=INFORMACAO,
+                titulo=(
+                    f"Múltiplo de saída ({_num(saida, 1)}x) mais de 20% acima do de "
+                    f"entrada ({_num(entrada, 1)}x)"
+                ),
+                detalhe=(
+                    "O modelo assume vender mais caro, por real de lucro, do que "
+                    "comprou. É possível, mas é uma hipótese sobre o mercado que "
+                    "convém estar consciente."
+                ),
+                acao="Rode também com o múltiplo de saída igual ao de entrada.",
+                referencia="",
+            )
+        )
+
+    return achados
 
 
 def _checar_perpetuidade(
@@ -142,16 +264,16 @@ def _checar_perpetuidade(
                 Achado(
                     codigo="g_acima_da_economia",
                     severidade=ALERTA,
-                    titulo=f"Crescimento perpetuo de {g:.1%} supera a economia",
+                    titulo=f"Crescimento perpétuo de {_pct(g, 1)} supera a economia",
                     detalhe=(
-                        f"O modelo faz a empresa crescer {g:.1%} para sempre, acima do "
-                        f"crescimento nominal estimado da economia ({teto_economia:.1%}). "
+                        f"O modelo faz a empresa crescer {_pct(g, 1)} para sempre, acima do "
+                        f"crescimento nominal estimado da economia ({_pct(teto_economia, 1)}). "
                         "Crescer acima da economia para sempre significa que a empresa "
-                        "acabaria por se tornar maior que o proprio PIB."
+                        "acabaria por se tornar maior que o próprio PIB."
                     ),
                     acao=(
-                        f"Reduza o crescimento perpetuo para no maximo {teto_economia:.1%}, "
-                        "ou alongue a projecao explicita se a empresa ainda tem uma fase "
+                        f"Reduza o crescimento perpétuo para no máximo {_pct(teto_economia, 1)}, "
+                        "ou alongue a projeção explícita se a empresa ainda tem uma fase "
                         "de crescimento acelerado a percorrer."
                     ),
                     referencia="Damodaran, Investment Valuation, cap. 12 (stable growth)",
@@ -162,16 +284,16 @@ def _checar_perpetuidade(
                 Achado(
                     codigo="spread_wacc_g_estreito",
                     severidade=ALERTA,
-                    titulo="Diferenca entre WACC e crescimento perpetuo muito estreita",
+                    titulo="Diferença entre WACC e crescimento perpétuo muito estreita",
                     detalhe=(
-                        f"WACC de {wacc:.2%} contra crescimento de {g:.2%}: o denominador "
-                        f"da perpetuidade e apenas {wacc - g:.2%}. Nessa faixa, uma "
+                        f"WACC de {_pct(wacc, 2)} contra crescimento de {_pct(g, 2)}: o denominador "
+                        f"da perpetuidade e apenas {_pct(wacc - g, 2)}. Nessa faixa, uma "
                         "mudanca de 0,5 p.p. em qualquer um dos dois altera o valor da "
                         "empresa em dezenas de por cento."
                     ),
                     acao=(
-                        "Olhe a tabela de sensibilidade antes de defender o numero: "
-                        "provavelmente a faixa de valor e larga demais para um numero unico."
+                        "Olhe a tabela de sensibilidade antes de defender o número: "
+                        "provavelmente a faixa de valor e larga demais para um número único."
                     ),
                     referencia="CFA Institute, Equity Asset Valuation, cap. 4",
                 )
@@ -183,16 +305,16 @@ def _checar_perpetuidade(
                 Achado(
                     codigo="perpetuidade_sem_reinvestimento",
                     severidade=ALERTA,
-                    titulo="Crescimento perpetuo sem reinvestimento explicito",
+                    titulo="Crescimento perpétuo sem reinvestimento explícito",
                     detalhe=(
-                        f"A perpetuidade cresce {g:.1%} ao ano a partir do fluxo do ultimo "
+                        f"A perpetuidade cresce {_pct(g, 1)} ao ano a partir do fluxo do ultimo "
                         "ano projetado, sem exigir reinvestimento para sustentar esse "
                         "crescimento. Isso costuma superestimar o valor terminal, porque "
                         "crescer para sempre exige investir para sempre."
                     ),
                     acao=(
                         "Informe o ROIC de perpetuidade. O modelo passa a descontar do "
-                        "fluxo perpetuo a taxa de reinvestimento g/ROIC, que e a forma "
+                        "fluxo perpétuo a taxa de reinvestimento g/ROIC, que e a forma "
                         "consistente de crescer."
                     ),
                     referencia="Damodaran, Investment Valuation, cap. 12",
@@ -204,15 +326,15 @@ def _checar_perpetuidade(
                     Achado(
                         codigo="roic_perpetuo_abaixo_do_wacc",
                         severidade=ALERTA,
-                        titulo=f"ROIC perpetuo ({roic_perp:.1%}) nao supera o WACC ({wacc:.1%})",
+                        titulo=f"ROIC perpétuo ({_pct(roic_perp, 1)}) não supera o WACC ({_pct(wacc, 1)})",
                         detalhe=(
-                            "Quando o retorno sobre o capital nao supera o custo do capital, "
-                            "cada real reinvestido destroi valor. Nesse regime, crescer "
+                            "Quando o retorno sobre o capital não supera o custo do capital, "
+                            "cada real reinvestido destrói valor. Nesse regime, crescer "
                             "*reduz* o valor da empresa em vez de aumenta-lo."
                         ),
                         acao=(
-                            "Se essa e mesmo a realidade do negocio, considere crescimento "
-                            "perpetuo zero: a empresa vale mais distribuindo caixa do que "
+                            "Se essa é mesmo a realidade do negócio, considere crescimento "
+                            "perpétuo zero: a empresa vale mais distribuindo caixa do que "
                             "reinvestindo."
                         ),
                         referencia="Damodaran, The Little Book of Valuation, cap. 4",
@@ -223,16 +345,16 @@ def _checar_perpetuidade(
                     Achado(
                         codigo="roic_perpetuo_excepcional",
                         severidade=ALERTA,
-                        titulo=f"ROIC perpetuo {roic_perp - wacc:.1%} acima do WACC, para sempre",
+                        titulo=f"ROIC perpétuo {_pct(roic_perp - wacc, 1)} acima do WACC, para sempre",
                         detalhe=(
-                            f"O modelo assume ROIC de {roic_perp:.1%} contra WACC de "
-                            f"{wacc:.1%} em perpetuidade. Manter esse spread para sempre "
+                            f"O modelo assume ROIC de {_pct(roic_perp, 1)} contra WACC de "
+                            f"{_pct(wacc, 1)} em perpetuidade. Manter esse spread para sempre "
                             "equivale a supor uma barreira de entrada que nunca e erodida "
-                            "pela concorrencia."
+                            "pela concorrência."
                         ),
                         acao=(
-                            "Justifique a vantagem competitiva (marca, rede, licenca, "
-                            "escala) ou aproxime o ROIC perpetuo do WACC."
+                            "Justifique a vantagem competitiva (marca, rede, licença, "
+                            "escala) ou aproxime o ROIC perpétuo do WACC."
                         ),
                         referencia="Damodaran, Investment Valuation, cap. 12",
                     )
@@ -256,9 +378,9 @@ def _checar_reinvestimento(
                 severidade=ALERTA,
                 titulo="Empresa entra na perpetuidade investindo menos do que deprecia",
                 detalhe=(
-                    f"No ultimo ano projetado o capex e {capex_final / deprec_final:.2f}x a "
-                    f"depreciacao, mas a empresa cresce {g:.1%} para sempre depois disso. "
-                    "Uma base de ativos que encolhe nao sustenta receita que cresce."
+                    f"No ultimo ano projetado o capex e {_num(capex_final / deprec_final, 2)}x a "
+                    f"depreciacao, mas a empresa cresce {_pct(g, 1)} para sempre depois disso. "
+                    "Uma base de ativos que encolhe não sustenta receita que cresce."
                 ),
                 acao=(
                     "Eleve o capex do ultimo ano para ao menos o nivel da depreciacao, ou "
@@ -284,10 +406,10 @@ def _checar_reinvestimento(
                     Achado(
                         codigo="roic_marginal_implausivel",
                         severidade=ALERTA,
-                        titulo=f"Retorno sobre o capital novo implicito de {mediana:.0%}",
+                        titulo=f"Retorno sobre o capital novo implícito de {_pct(mediana, 0)}",
                         detalhe=(
-                            "A projecao gera NOPAT adicional muito acima do que reinveste: "
-                            f"cada real investido produz {mediana:.2f} de lucro operacional "
+                            "A projeção gera NOPAT adicional muito acima do que reinveste: "
+                            f"cada real investido produz {_num(mediana, 2)} de lucro operacional "
                             "por ano. Isso normalmente indica margem crescendo sem que o "
                             "modelo cobre o investimento correspondente."
                         ),
@@ -303,11 +425,11 @@ def _checar_reinvestimento(
                     Achado(
                         codigo="roic_marginal_negativo",
                         severidade=ALERTA,
-                        titulo="A projecao reinveste e o lucro operacional cai",
+                        titulo="A projeção reinveste e o lucro operacional cai",
                         detalhe=(
                             "O NOPAT projetado diminui apesar do reinvestimento. Se isso e "
-                            "intencional (setor em declinio), tudo bem; se nao, ha "
-                            "inconsistencia entre margens e investimento."
+                            "intencional (setor em declínio), tudo bem; se não, há "
+                            "inconsistência entre margens e investimento."
                         ),
                         acao="Reveja a trajetoria de margens frente ao capex projetado.",
                         referencia="Koller, Goedhart & Wessels, Valuation, cap. 10",
@@ -327,10 +449,10 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             Achado(
                 codigo="beta_fora_da_faixa",
                 severidade=ALERTA,
-                titulo=f"Beta realavancado de {cc.beta_realavancado:.2f} fora da faixa usual",
+                titulo=f"Beta realavancado de {_num(cc.beta_realavancado, 2)} fora da faixa usual",
                 detalhe=(
-                    f"Betas de empresas listadas concentram-se entre {BETA_MINIMO:.1f} e "
-                    f"{BETA_MAXIMO:.1f}. Fora dessa faixa costuma haver erro no beta do "
+                    f"Betas de empresas listadas concentram-se entre {_num(BETA_MINIMO, 1)} e "
+                    f"{_num(BETA_MAXIMO, 1)}. Fora dessa faixa costuma haver erro no beta do "
                     "setor ou na estrutura de capital alvo."
                 ),
                 acao="Confira o beta do setor e o D/E alvo usado para realavancar.",
@@ -343,14 +465,14 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             Achado(
                 codigo="wacc_fora_da_faixa",
                 severidade=ALERTA,
-                titulo=f"WACC de {wacc:.2%} fora da faixa tipica em BRL nominal",
+                titulo=f"WACC de {_pct(wacc, 2)} fora da faixa típica em BRL nominal",
                 detalhe=(
                     f"Para empresas brasileiras, o WACC nominal em reais costuma ficar "
-                    f"entre {WACC_MINIMO_BRL:.0%} e {WACC_MAXIMO_BRL:.0%}. Valores fora "
-                    "disso geralmente vem de taxa livre de risco, risco-pais ou inflacao "
+                    f"entre {_pct(WACC_MINIMO_BRL, 0)} e {_pct(WACC_MAXIMO_BRL, 0)}. Valores fora "
+                    "disso geralmente vem de taxa livre de risco, risco-país ou inflacao "
                     "informados em unidade errada."
                 ),
-                acao="Confira se todas as taxas estao em decimais (0,045 e nao 4,5).",
+                acao="Confira se todas as taxas estão em decimais (0,045 e não 4,5).",
                 referencia="Damodaran, country risk premiums",
             )
         )
@@ -360,13 +482,13 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             Achado(
                 codigo="kd_acima_do_ke",
                 severidade=ALERTA,
-                titulo="Custo da divida acima do custo do capital proprio",
+                titulo="Custo da dívida acima do custo do capital próprio",
                 detalhe=(
-                    f"Kd de {cc.kd_bruto_brl:.2%} contra Ke de {cc.ke_brl:.2%}. O credor "
+                    f"Kd de {_pct(cc.kd_bruto_brl, 2)} contra Ke de {_pct(cc.ke_brl, 2)}. O credor "
                     "tem prioridade sobre o acionista no recebimento, entao normalmente "
                     "exige menos retorno. O inverso sugere erro em uma das duas pontas."
                 ),
-                acao="Reveja o spread de credito ou o premio de risco do equity.",
+                acao="Reveja o spread de crédito ou o premio de risco do equity.",
                 referencia="CFA Institute, Corporate Finance",
             )
         )
@@ -376,12 +498,12 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             Achado(
                 codigo="alavancagem_alvo_alta",
                 severidade=INFORMACAO,
-                titulo=f"Estrutura de capital alvo bastante alavancada (D/E {premissas.divida_pl_alvo:.1f})",
+                titulo=f"Estrutura de capital alvo bastante alavancada (D/E {_num(premissas.divida_pl_alvo, 1)})",
                 detalhe=(
-                    "Com essa alavancagem, o beta realavancado e o custo da divida deveriam "
-                    "refletir risco de credito relevante. O modelo nao ajusta isso sozinho."
+                    "Com essa alavancagem, o beta realavancado e o custo da dívida deveriam "
+                    "refletir risco de crédito relevante. O modelo não ajusta isso sozinho."
                 ),
-                acao="Considere elevar o spread de credito coerentemente com a alavancagem.",
+                acao="Considere elevar o spread de crédito coerentemente com a alavancagem.",
                 referencia="Damodaran, Applied Corporate Finance, cap. 8",
             )
         )
@@ -398,14 +520,14 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
             Achado(
                 codigo="peso_da_perpetuidade",
                 severidade=ALERTA,
-                titulo=f"{peso:.0%} do valor vem da perpetuidade",
+                titulo=f"{_pct(peso, 0)} do valor vem da perpetuidade",
                 detalhe=(
-                    "Quase todo o valor esta depois do horizonte projetado, ou seja, "
-                    "depende de duas premissas (crescimento perpetuo e taxa de desconto) "
-                    "em vez das projecoes que voce construiu linha a linha."
+                    "Quase todo o valor está depois do horizonte projetado, ou seja, "
+                    "depende de duas premissas (crescimento perpétuo e taxa de desconto) "
+                    "em vez das projeções que você construiu linha a linha."
                 ),
                 acao=(
-                    "Alongue a projecao explicita ate a empresa atingir maturidade -- "
+                    "Alongue a projeção explícita até a empresa atingir maturidade -- "
                     "normalmente 7 a 10 anos para empresas ainda em crescimento."
                 ),
                 referencia="Koller, Goedhart & Wessels, Valuation, cap. 12",
@@ -419,14 +541,14 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
                 severidade=ERRO,
                 titulo="Valor do equity negativo ou nulo",
                 detalhe=(
-                    f"O Enterprise Value de {resultado.enterprise_value:,.1f} nao cobre a "
-                    "divida liquida e os demais itens da ponte. Ou a empresa esta "
-                    "efetivamente insolvente, ou ha erro de unidade entre a projecao e o "
-                    "balanco."
+                    f"O Enterprise Value de {_num(resultado.enterprise_value, 1)} não cobre a "
+                    "dívida líquida e os demais itens da ponte. Ou a empresa está "
+                    "efetivamente insolvente, ou há erro de unidade entre a projeção e o "
+                    "balanço."
                 ),
                 acao=(
-                    "Confirme que projecao e ponte estao na mesma unidade (ambas em R$ mil "
-                    "ou ambas em R$ milhoes)."
+                    "Confirme que projeção e ponte estão na mesma unidade (ambas em R$ mil "
+                    "ou ambas em R$ milhões)."
                 ),
                 referencia="",
             )
@@ -438,13 +560,13 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
             Achado(
                 codigo="todos_os_fluxos_negativos",
                 severidade=ERRO,
-                titulo="Todos os fluxos de caixa projetados sao negativos",
+                titulo="Todos os fluxos de caixa projetados são negativos",
                 detalhe=(
-                    "A empresa queima caixa em todo o horizonte explicito e ainda assim "
+                    "A empresa queima caixa em todo o horizonte explícito e ainda assim "
                     "recebe um valor terminal positivo. O valor fica inteiramente apoiado "
-                    "em uma recuperacao que o modelo nao mostra."
+                    "em uma recuperacao que o modelo não mostra."
                 ),
-                acao="Alongue a projecao ate o ano em que a empresa passa a gerar caixa.",
+                acao="Alongue a projeção até o ano em que a empresa passa a gerar caixa.",
                 referencia="Damodaran, Valuing Young and Distressed Companies",
             )
         )
@@ -456,7 +578,7 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
                 titulo=f"{fluxos_negativos} ano(s) com fluxo de caixa negativo",
                 detalhe=(
                     "Normal em fase de investimento pesado, mas exige que a empresa "
-                    "tenha como financiar o periodo."
+                    "tenha como financiar o período."
                 ),
                 acao="Confira se a estrutura de capital projetada suporta a queima.",
                 referencia="",
@@ -483,16 +605,16 @@ def _checar_contra_historico(
                     codigo="margem_acima_do_historico",
                     severidade=ALERTA,
                     titulo=(
-                        f"Margem EBITDA projetada ({margem_projetada:.1%}) acima do melhor "
-                        f"ano historico ({maxima:.1%})"
+                        f"Margem EBITDA projetada ({_pct(margem_projetada, 1)}) acima do melhor "
+                        f"ano histórico ({_pct(maxima, 1)})"
                     ),
                     detalhe=(
                         "O modelo assume que a empresa passa a operar acima do melhor "
                         "desempenho que ja teve, e mantem esse patamar."
                     ),
                     acao=(
-                        "Explicite o que muda: ganho de escala, mix, reestruturacao, "
-                        "repasse de preco. Sem uma razao concreta, use a mediana historica."
+                        "Explicite o que muda: ganho de escala, mix, reestruturação, "
+                        "repasse de preço. Sem uma razão concreta, use a mediana histórica."
                     ),
                     referencia="CFA Institute, Financial Statement Analysis",
                 )
@@ -503,10 +625,10 @@ def _checar_contra_historico(
                     codigo="margem_abaixo_do_historico",
                     severidade=INFORMACAO,
                     titulo=(
-                        f"Margem EBITDA projetada ({margem_projetada:.1%}) abaixo do pior "
-                        f"ano historico ({minima:.1%})"
+                        f"Margem EBITDA projetada ({_pct(margem_projetada, 1)}) abaixo do pior "
+                        f"ano histórico ({_pct(minima, 1)})"
                     ),
-                    detalhe="A projecao e mais conservadora do que qualquer ano ja realizado.",
+                    detalhe="A projeção e mais conservadora do que qualquer ano ja realizado.",
                     acao="Confirme se o conservadorismo e intencional.",
                     referencia="",
                 )
@@ -521,15 +643,15 @@ def _checar_contra_historico(
                     codigo="crescimento_acima_do_historico",
                     severidade=ALERTA,
                     titulo=(
-                        f"Crescimento projetado ({crescimento_projetado:.1%}) bem acima do "
-                        f"historico ({cagr_hist:.1%})"
+                        f"Crescimento projetado ({_pct(crescimento_projetado, 1)}) bem acima do "
+                        f"histórico ({_pct(cagr_hist, 1)})"
                     ),
                     detalhe=(
                         "A aceleracao precisa vir de algum lugar: novo mercado, nova "
-                        "capacidade, aquisicao. Nenhum deles e gratuito."
+                        "capacidade, aquisição. Nenhum deles e gratuito."
                     ),
                     acao=(
-                        "Verifique se o capex projetado comporta a expansao de receita "
+                        "Verifique se o capex projetado comporta a expansão de receita "
                         "assumida."
                     ),
                     referencia="Damodaran, Investment Valuation, cap. 11",
@@ -544,14 +666,14 @@ def _checar_contra_historico(
                 codigo="roic_perpetuo_acima_do_historico",
                 severidade=ALERTA,
                 titulo=(
-                    f"ROIC de perpetuidade ({roic_perp:.1%}) acima do historico "
-                    f"({roic_hist:.1%})"
+                    f"ROIC de perpetuidade ({_pct(roic_perp, 1)}) acima do histórico "
+                    f"({_pct(roic_hist, 1)})"
                 ),
                 detalhe=(
                     "A perpetuidade assume um retorno sobre o capital melhor do que a "
                     "empresa costuma entregar, e para sempre."
                 ),
-                acao="Ancore o ROIC perpetuo no historico, salvo mudanca estrutural clara.",
+                acao="Ancore o ROIC perpétuo no histórico, salvo mudanca estrutural clara.",
                 referencia="Koller, Goedhart & Wessels, Valuation, cap. 10",
             )
         )
@@ -562,12 +684,12 @@ def _checar_contra_historico(
             Achado(
                 codigo="alavancagem_historica_alta",
                 severidade=INFORMACAO,
-                titulo=f"Divida liquida / EBITDA de {alavancagem:.1f}x no ultimo ano",
+                titulo=f"Dívida líquida / EBITDA de {_num(alavancagem, 1)}x no ultimo ano",
                 detalhe=(
                     "Alavancagem nesse patamar costuma vir acompanhada de covenants e de "
-                    "custo de divida mais alto do que o de uma empresa media do setor."
+                    "custo de dívida mais alto do que o de uma empresa media do setor."
                 ),
-                acao="Confira se o spread de credito usado reflete esse nivel de risco.",
+                acao="Confira se o spread de crédito usado reflete esse nivel de risco.",
                 referencia="CFA Institute, Corporate Finance",
             )
         )

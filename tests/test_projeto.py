@@ -1,0 +1,231 @@
+"""Testes de salvar e retomar um valuation.
+
+O que importa aqui e uma coisa so: o que voltou tem que ser identico ao que
+saiu. Um arquivo de projeto que perde uma premissa no caminho e pior do que nao
+ter arquivo nenhum, porque o usuario so descobre a perda quando o numero muda.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from valuation import Alvo, Comparavel, avaliar
+from valuation.importacao import Demonstracoes
+from valuation.projeto import (
+    VERSAO,
+    Projeto,
+    carregar,
+    desserializar,
+    salvar,
+    serializar,
+)
+
+
+@pytest.fixture
+def demonstracoes() -> Demonstracoes:
+    valores = pd.DataFrame(
+        {
+            2023: {"receita_liquida": 1000.0, "ebit": 200.0, "capex": np.nan},
+            2024: {"receita_liquida": 1100.0, "ebit": 220.0, "capex": 60.0},
+        }
+    )
+    return Demonstracoes(
+        empresa="Teste S.A.",
+        valores=valores,
+        unidade="R$ milhões",
+        origem="cvm.xlsx",
+        mapeamento={"receita_liquida": "3.01 Receita (DRE)"},
+        derivadas={"ebit": "EBIT = lucro bruto - despesas"},
+    )
+
+
+@pytest.fixture
+def projeto(empresa_exemplo, demonstracoes, comparaveis, alvo) -> Projeto:
+    return Projeto(
+        empresa=empresa_exemplo,
+        demonstracoes=demonstracoes,
+        comparaveis=comparaveis,
+        alvo=alvo,
+        config={"meio_de_ano": True, "tipo_fluxo": "fcff", "pais": "Brasil"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Ida e volta
+# ---------------------------------------------------------------------------
+
+
+def test_premissas_voltam_identicas(projeto):
+    volta = desserializar(serializar(projeto))
+    assert volta.empresa == projeto.empresa
+
+
+def test_valuation_reproduz_o_mesmo_numero(projeto):
+    """A prova que importa: o modelo restaurado calcula o mesmo valor."""
+    original = avaliar(projeto.empresa, meio_de_ano=True)
+    volta = avaliar(desserializar(serializar(projeto)).empresa, meio_de_ano=True)
+    assert volta.equity_value == pytest.approx(original.equity_value)
+    assert volta.custo_capital.wacc_brl == pytest.approx(original.custo_capital.wacc_brl)
+
+
+def test_demonstracoes_voltam_identicas(projeto):
+    volta = desserializar(serializar(projeto))
+    pd.testing.assert_frame_equal(
+        volta.demonstracoes.valores.astype(float),
+        projeto.demonstracoes.valores.astype(float),
+        check_names=False,
+    )
+    assert volta.demonstracoes.empresa == "Teste S.A."
+    assert volta.demonstracoes.unidade == "R$ milhões"
+
+
+def test_lacuna_no_historico_continua_lacuna(projeto):
+    """NaN precisa voltar NaN, e nao virar zero -- zero e um dado, ausencia nao."""
+    volta = desserializar(serializar(projeto))
+    assert np.isnan(volta.demonstracoes.valores.loc["capex", 2023])
+    assert volta.demonstracoes.valores.loc["capex", 2024] == pytest.approx(60.0)
+
+
+def test_comparaveis_voltam_identicos(projeto):
+    volta = desserializar(serializar(projeto))
+    assert volta.comparaveis == projeto.comparaveis
+    assert volta.alvo == projeto.alvo
+
+
+def test_config_volta(projeto):
+    volta = desserializar(serializar(projeto))
+    assert volta.config["meio_de_ano"] is True
+    assert volta.config["tipo_fluxo"] == "fcff"
+
+
+def test_mapeamento_da_importacao_volta(projeto):
+    """Sem isso o usuario perde a auditoria de onde cada conta veio."""
+    volta = desserializar(serializar(projeto))
+    assert volta.demonstracoes.mapeamento["receita_liquida"] == "3.01 Receita (DRE)"
+    assert "ebit" in volta.demonstracoes.derivadas
+
+
+def test_ida_e_volta_e_estavel(projeto):
+    """Salvar o que foi carregado produz exatamente o mesmo texto."""
+    primeiro = serializar(projeto)
+    segundo = serializar(desserializar(primeiro))
+    assert primeiro == segundo
+
+
+# ---------------------------------------------------------------------------
+# Projeto minimo e blocos opcionais
+# ---------------------------------------------------------------------------
+
+
+def test_projeto_so_com_premissas(empresa_exemplo):
+    texto = serializar(Projeto(empresa=empresa_exemplo))
+    volta = desserializar(texto)
+    assert volta.empresa == empresa_exemplo
+    assert volta.demonstracoes is None
+    assert volta.comparaveis == []
+    assert volta.alvo is None
+
+
+def test_blocos_vazios_nao_sao_gravados(empresa_exemplo):
+    texto = serializar(Projeto(empresa=empresa_exemplo))
+    assert "demonstracoes:" not in texto
+    assert "comparaveis:" not in texto
+
+
+def test_arquivo_e_yaml_legivel(projeto):
+    """O formato existe para ser lido e revisado por gente."""
+    texto = serializar(projeto)
+    assert "versao:" in texto
+    assert "empresa:" in texto
+    assert "!!python" not in texto  # nada de objetos serializados
+
+
+# ---------------------------------------------------------------------------
+# Versionamento e erros
+# ---------------------------------------------------------------------------
+
+
+def test_versao_e_gravada(projeto):
+    import yaml
+
+    assert yaml.safe_load(serializar(projeto))["versao"] == VERSAO
+
+
+def test_versao_futura_e_recusada(projeto):
+    import yaml
+
+    dados = yaml.safe_load(serializar(projeto))
+    dados["versao"] = VERSAO + 5
+    with pytest.raises(ValueError, match="Atualize o app"):
+        desserializar(yaml.safe_dump(dados))
+
+
+def test_arquivo_sem_versao_e_recusado(empresa_exemplo):
+    with pytest.raises(ValueError, match="versao"):
+        desserializar("empresa:\n  nome: X\n")
+
+
+def test_arquivo_sem_empresa_e_recusado():
+    with pytest.raises(ValueError, match="empresa"):
+        desserializar("versao: 1\n")
+
+
+def test_yaml_invalido_da_mensagem_clara():
+    with pytest.raises(ValueError, match="nao e um YAML valido"):
+        desserializar("versao: 1\n  empresa: [ isto: nao fecha\n")
+
+
+def test_texto_que_nao_e_mapeamento():
+    with pytest.raises(ValueError, match="mapeamento"):
+        desserializar("- uma\n- lista\n")
+
+
+def test_premissa_com_nome_errado_e_recusada(projeto):
+    """A validacao do arquivo de premissas vale tambem para o projeto salvo."""
+    import yaml
+
+    dados = yaml.safe_load(serializar(projeto))
+    dados["empresa"]["macro"]["inflacao_bl"] = 0.04
+    with pytest.raises(ValueError, match="inflacao_bl"):
+        desserializar(yaml.safe_dump(dados))
+
+
+def test_demonstracoes_sem_anos_e_recusada(projeto):
+    import yaml
+
+    dados = yaml.safe_load(serializar(projeto))
+    dados["demonstracoes"]["anos"] = []
+    with pytest.raises(ValueError, match="sem anos"):
+        desserializar(yaml.safe_dump(dados))
+
+
+# ---------------------------------------------------------------------------
+# Disco
+# ---------------------------------------------------------------------------
+
+
+def test_salvar_e_carregar_do_disco(projeto, tmp_path):
+    caminho = salvar(projeto, tmp_path / "sub" / "analise.yaml")
+    assert caminho.exists()
+    volta = carregar(caminho)
+    assert volta.empresa == projeto.empresa
+    assert volta.demonstracoes is not None
+
+
+def test_carregar_arquivo_inexistente(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        carregar(tmp_path / "nao_existe.yaml")
+
+
+def test_projeto_salvo_roda_a_analise_historica(projeto):
+    """O historico restaurado precisa alimentar a analise como o original."""
+    from valuation.historico import analisar
+
+    volta = desserializar(serializar(projeto))
+    original = analisar(projeto.demonstracoes)
+    restaurada = analisar(volta.demonstracoes)
+    pd.testing.assert_frame_equal(
+        restaurada.indicadores, original.indicadores, check_names=False
+    )

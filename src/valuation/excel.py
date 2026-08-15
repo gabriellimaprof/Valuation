@@ -188,6 +188,8 @@ def exportar_excel(
     alvo: Alvo | None = None,
     simulacao: ResultadoSimulacao | None = None,
     cenarios: pd.DataFrame | None = None,
+    retorno=None,
+    acionista=None,
 ) -> Path:
     """Gera a planilha completa do valuation e devolve o caminho escrito."""
     caminho = Path(caminho)
@@ -198,6 +200,9 @@ def exportar_excel(
     refs_cc = _aba_custo_capital(wb, resultado, refs_premissas)
     refs_proj = _aba_projecao(wb, resultado, refs_premissas)
     _aba_dcf(wb, resultado, refs_premissas, refs_cc, refs_proj)
+
+    if retorno is not None:
+        _aba_retorno(wb, resultado, retorno, acionista)
 
     if comparaveis:
         _aba_multiplos(wb, comparaveis, alvo)
@@ -638,6 +643,104 @@ def _aba_dcf(
         + (f" | por acao = {dcf.valor_por_acao:,.2f}" if dcf.valor_por_acao else "")
     )
     aba.ajustar(largura_rotulo=40, n=n)
+
+
+def _aba_retorno(wb: Workbook, resultado, retorno, acionista) -> None:
+    """Aba do TSR, com formulas vivas como as demais abas do modelo.
+
+    A TIR sai da funcao IRR do proprio Excel, sobre a mesma linha de fluxos que
+    o leitor ve; as contribuicoes sao formulas sobre as celulas de entrada. Quem
+    receber o arquivo muda o preco de entrada ou o multiplo de saida e ve o
+    retorno se refazer -- que e exatamente o uso desta analise.
+    """
+    n = retorno.anos
+    aba = _Aba(wb.create_sheet("Retorno (TSR)"))
+
+    aba.titulo(f"Retorno esperado do acionista - {resultado.empresa.nome}", largura=n + 3)
+    aba.nota(
+        "TSR = crescimento do lucro + dividendos + variacao de multiplo + termo "
+        "cruzado. As parcelas somam o total exatamente."
+    )
+    aba.pular()
+
+    aba.secao("Entrada e saida")
+    preco = aba.entrada("Preco pago pelo equity", retorno.preco_entrada, MOEDA)
+    lucro_entrada = aba.entrada("Lucro liquido de entrada", retorno.lucro_entrada, MOEDA)
+    multiplo_entrada = aba.formula("P/L de entrada", f"={preco}/{lucro_entrada}", MULTIPLO)
+    lucro_saida = aba.entrada("Lucro liquido de saida", retorno.lucro_saida, MOEDA)
+    multiplo_saida = aba.entrada("P/L de saida", retorno.multiplo_saida, MULTIPLO)
+    preco_saida = aba.formula("Preco de saida", f"={lucro_saida}*{multiplo_saida}", MOEDA)
+    anos = aba.entrada("Anos ate a saida", float(n), "0")
+    aba.pular()
+
+    aba.secao("Fluxos do investidor", largura=n + 3)
+    aba.cabecalho_anos(list(range(1, n + 1)))
+    dividendos = aba.linha_anual(
+        "Dividendos recebidos",
+        [float(v) for v in retorno.dividendos[:n]],
+        MOEDA,
+        base=0.0,
+        fonte=AZUL_ENTRADA,
+    )
+    venda = aba.linha_anual(
+        "Venda da participacao",
+        [0.0 if i < n - 1 else f"={preco_saida}" for i in range(n)],
+        MOEDA,
+        base=0.0,
+    )
+    # A coluna "Base" carrega o desembolso da compra, para que a faixa passada a
+    # IRR comece no ano zero: sem o fluxo negativo dentro da propria faixa, a
+    # funcao do Excel nao tem raiz para encontrar.
+    fluxo = aba.linha_anual(
+        "Fluxo do investidor",
+        [f"={dividendos[str(i)]}+{venda[str(i)]}" for i in range(n)],
+        MOEDA,
+        base=f"=-{preco}",
+        negrito=True,
+    )
+    aba.pular()
+
+    faixa = f"{_celula(fluxo['base'])}:{_celula(fluxo[str(n - 1)])}"
+    aba.secao("Decomposicao do retorno")
+    tsr = aba.total("TSR esperado (TIR)", f"=IRR({faixa})", PCT)
+    crescimento = aba.formula(
+        "Crescimento do lucro", f"=({lucro_saida}/{lucro_entrada})^(1/{anos})-1", PCT
+    )
+    multiplo = aba.formula(
+        "Variacao de multiplo", f"=({multiplo_saida}/{multiplo_entrada})^(1/{anos})-1", PCT
+    )
+    cruzado = aba.formula("Termo cruzado", f"={crescimento}*{multiplo}", PCT)
+    dividendo_residual = aba.formula(
+        "Dividendos", f"={tsr}-(1+{crescimento})*(1+{multiplo})+1", PCT
+    )
+    aba.formula(
+        "Soma das parcelas (confere com o TSR)",
+        f"={crescimento}+{multiplo}+{cruzado}+{dividendo_residual}",
+        PCT,
+    )
+    aba.pular()
+
+    aba.nota(
+        f"Conferencia (Python): TSR = {retorno.tsr:.2%} | crescimento = "
+        f"{retorno.contribuicao_crescimento:.2%} | dividendos = "
+        f"{retorno.contribuicao_dividendos:.2%} | multiplo = "
+        f"{retorno.contribuicao_multiplo:.2%}"
+    )
+    if resultado.dcf.meio_de_ano:
+        aba.nota(
+            "Atencao: o modelo usa convencao de meio de ano, e a funcao IRR do Excel "
+            "posiciona os fluxos no fim de cada ano. Por isso a celula acima fica "
+            "levemente abaixo da conferencia em Python, que honra a convencao."
+        )
+
+    if acionista is not None:
+        aba.pular()
+        aba.secao("Da operacao ao bolso do acionista", largura=n + 3)
+        aba.cabecalho_anos(acionista.anos, coluna_base=False)
+        for rotulo, linha in acionista.tabela().iterrows():
+            aba.linha_anual(str(rotulo), [float(v) for v in linha], MOEDA)
+
+    aba.ajustar(largura_rotulo=36, n=n)
 
 
 def _escrever_dataframe(

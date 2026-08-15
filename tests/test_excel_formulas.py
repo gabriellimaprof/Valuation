@@ -126,3 +126,89 @@ def test_excel_reproduz_multiplo_de_saida(empresa_exemplo, tmp_path):
     linha = _localizar_linha(ws, "Valor terminal (fim do ano n)")
     obtido = _buscar(valores, "DCF", f"B{linha}", caminho)
     assert obtido == pytest.approx(resultado.dcf.valor_terminal, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Aba de retorno (TSR)
+# ---------------------------------------------------------------------------
+
+
+def _montar_retorno(empresa, meio_de_ano: bool):
+    from valuation.retorno import (
+        decompor_tsr,
+        multiplo_de_saida_do_dcf,
+        projetar_acionista,
+    )
+
+    resultado = avaliar(empresa, meio_de_ano=meio_de_ano)
+    acionista = projetar_acionista(
+        resultado.projecao,
+        divida_inicial=empresa.ponte.divida_bruta,
+        custo_divida=resultado.custo_capital.kd_bruto_brl,
+        aliquota_ir=empresa.macro.aliquota_ir,
+        payout=0.4,
+    )
+    multiplo = multiplo_de_saida_do_dcf(
+        resultado,
+        float(acionista.lucro_liquido[-1]),
+        float(acionista.divida_fechamento[-1]),
+    )
+    decomposicao = decompor_tsr(
+        preco_entrada=resultado.equity_value,
+        lucro_entrada=float(acionista.lucro_liquido[0]),
+        lucro_saida=float(acionista.lucro_liquido[-1]),
+        dividendos=acionista.dividendos,
+        multiplo_saida=multiplo,
+        meio_de_ano=meio_de_ano,
+    )
+    return resultado, acionista, decomposicao
+
+
+def test_excel_reproduz_a_decomposicao_do_tsr(empresa_exemplo, tmp_path):
+    """As contribuicoes na planilha tem que bater com as calculadas no Python."""
+    from openpyxl import load_workbook
+
+    resultado, acionista, decomposicao = _montar_retorno(empresa_exemplo, False)
+    caminho = tmp_path / "tsr.xlsx"
+    exportar_excel(resultado, caminho, retorno=decomposicao, acionista=acionista)
+
+    valores = _valores_calculados(caminho)
+    ws = load_workbook(caminho)["Retorno (TSR)"]
+
+    for rotulo, esperado in [
+        ("Crescimento do lucro", decomposicao.contribuicao_crescimento),
+        ("Variacao de multiplo", decomposicao.contribuicao_multiplo),
+        ("Termo cruzado", decomposicao.contribuicao_cruzada),
+        ("Dividendos", decomposicao.contribuicao_dividendos),
+        ("TSR esperado (TIR)", decomposicao.tsr),
+    ]:
+        linha = _localizar_linha(ws, rotulo)
+        obtido = _buscar(valores, "Retorno (TSR)", f"B{linha}", caminho)
+        assert obtido == pytest.approx(esperado, abs=1e-7), rotulo
+
+
+def test_as_parcelas_somam_o_tsr_dentro_da_planilha(empresa_exemplo, tmp_path):
+    """A conferencia tem que fechar no Excel, nao so no Python."""
+    from openpyxl import load_workbook
+
+    resultado, acionista, decomposicao = _montar_retorno(empresa_exemplo, False)
+    caminho = tmp_path / "tsr_soma.xlsx"
+    exportar_excel(resultado, caminho, retorno=decomposicao, acionista=acionista)
+
+    valores = _valores_calculados(caminho)
+    ws = load_workbook(caminho)["Retorno (TSR)"]
+
+    linha_soma = _localizar_linha(ws, "Soma das parcelas (confere com o TSR)")
+    linha_tsr = _localizar_linha(ws, "TSR esperado (TIR)")
+    soma = _buscar(valores, "Retorno (TSR)", f"B{linha_soma}", caminho)
+    tsr = _buscar(valores, "Retorno (TSR)", f"B{linha_tsr}", caminho)
+    assert soma == pytest.approx(tsr, abs=1e-9)
+
+
+def test_aba_de_retorno_so_aparece_quando_pedida(empresa_exemplo, tmp_path):
+    from openpyxl import load_workbook
+
+    resultado = avaliar(empresa_exemplo)
+    caminho = tmp_path / "sem_tsr.xlsx"
+    exportar_excel(resultado, caminho)
+    assert "Retorno (TSR)" not in load_workbook(caminho).sheetnames

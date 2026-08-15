@@ -37,7 +37,7 @@ valuation multiplos exemplos/comparaveis_exemplo.yaml
 
 | Tela | O que faz |
 | --- | --- |
-| **Dados** | Importa DFs de export CVM/B3, de terminal (Economatica, Bloomberg, Capital IQ) ou do template do app. Mostra o que reconheceu e deixa corrigir o que errou. |
+| **Dados** | Retoma um valuation salvo, ou importa DFs de export CVM/B3, de terminal (Economatica, Bloomberg, Capital IQ) ou do template do app. Mostra o que reconheceu e deixa corrigir o que errou. |
 | **Histórico** | Margens, retorno, reinvestimento e ciclo de caixa, com as decomposições de DuPont e de ROIC. |
 | **Premissas** | Projeção ano a ano, com a mediana histórica ao lado de cada campo como âncora. |
 | **Custo de capital** | Beta por setor, risco-país e estrutura-alvo, com a montagem do WACC passo a passo. |
@@ -46,7 +46,7 @@ valuation multiplos exemplos/comparaveis_exemplo.yaml
 | **Sensibilidade** | Mapa de calor bidimensional, cenários coerentes e Monte Carlo. |
 | **Múltiplos** | Peer group, valor implícito por múltiplo e confronto com o DCF. |
 | **Diagnóstico** | O app criticando o modelo antes de você defender o número. |
-| **Exportar** | Planilha com fórmulas vivas e as premissas em YAML versionável. |
+| **Exportar** | Planilha com fórmulas vivas e o valuation inteiro salvo em um arquivo YAML, para retomar depois. |
 
 ## Importação de demonstrações
 
@@ -93,6 +93,11 @@ duas vezes, já que ambos estão na ponte de valor.
 **Imposto sobre o EBIT**, já que o FCFF é desalavancado por construção. Prejuízo
 fiscal acumulado abate lucro futuro respeitando a **trava dos 30%** da
 legislação brasileira.
+
+**Um valuation não se faz em uma sentada.** O arquivo salvo guarda tudo —
+premissas, demonstrações importadas, comparáveis e convenções de cálculo — em
+YAML de propósito: dá para abrir num editor, versionar em Git, revisar em pull
+request e comparar duas versões de um mesmo valuation com um diff.
 
 **A decomposição do TSR é exata, não a regra de bolso.** A identidade usada é
 `(1 + retorno de preço) = (1 + g_lucro) × (1 + g_múltiplo)`, e o TSR fecha como
@@ -160,7 +165,7 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-322 testes cobrindo identidades contábeis, casos de borda econômicos, a
+363 testes cobrindo identidades contábeis, casos de borda econômicos, a
 equivalência Excel/Python, as três origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.
@@ -176,6 +181,7 @@ sem ele esses testes são pulados em vez de dar falso positivo.
 | `projecao.py` | projeção explícita, FCFF, FCFE e prejuízo fiscal |
 | `dcf.py` | desconto, valor terminal, ponte EV → equity |
 | `retorno.py` | TIR, TSR e sua decomposição, ponte de valor com desalavancagem |
+| `projeto.py` | salvar e retomar um valuation inteiro |
 | `multiplos.py` | avaliação relativa por comparáveis |
 | `sensibilidade.py` | tabelas, cenários e Monte Carlo |
 | `diagnostico.py` | verificações de consistência do modelo |

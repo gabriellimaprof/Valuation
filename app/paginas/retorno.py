@@ -56,6 +56,11 @@ def render() -> None:
     if decomposicao is None:
         return
 
+    # Guardar deixa o diagnostico avaliar a tese de retorno e a exportacao levar
+    # a decomposicao para a planilha -- sem isso, o TSR morre nesta tela.
+    estado.definir_decomposicao_tsr(decomposicao)
+    st.session_state["projecao_acionista"] = acionista
+
     st.divider()
     _cartoes(decomposicao, resultado)
 

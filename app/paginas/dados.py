@@ -35,16 +35,77 @@ def render() -> None:
         "Importe as demonstrações financeiras ou preencha o essencial à mão",
     )
 
-    aba_importar, aba_template, aba_manual = st.tabs(
-        ["Importar planilha", "Baixar template", "Preencher à mão"]
+    aba_retomar, aba_importar, aba_template, aba_manual = st.tabs(
+        [
+            "Retomar valuation salvo",
+            "Importar planilha",
+            "Baixar template",
+            "Preencher à mão",
+        ]
     )
 
+    with aba_retomar:
+        _retomar()
     with aba_importar:
         _importar()
     with aba_template:
         _template()
     with aba_manual:
         _manual()
+
+
+def _retomar() -> None:
+    """Carrega um arquivo .yaml salvo pelo app e devolve a analise inteira."""
+    from valuation.projeto import desserializar
+
+    st.markdown(
+        "Suba o arquivo **.yaml** que você baixou na tela de **Exportar**. Ele traz "
+        "de volta tudo: premissas, demonstrações importadas, comparáveis e as "
+        "convenções de cálculo — exatamente como você deixou."
+    )
+
+    arquivo = st.file_uploader(
+        "Arquivo do valuation", type=["yaml", "yml"], key="upload_projeto"
+    )
+    if arquivo is None:
+        st.info(
+            "Ainda não salvou nenhum? Monte um valuation e baixe o arquivo em "
+            "**Exportar → Salvar este valuation**."
+        )
+        return
+
+    try:
+        projeto = desserializar(
+            arquivo.getvalue().decode("utf-8"), origem=arquivo.name
+        )
+    except (ValueError, UnicodeDecodeError) as erro:
+        st.error(f"Não consegui abrir o arquivo: {erro}")
+        return
+
+    st.success(f"Arquivo lido: **{projeto.empresa.nome}**")
+    colunas = st.columns(3)
+    colunas[0].metric(
+        "Histórico",
+        f"{len(projeto.demonstracoes.anos)} anos"
+        if projeto.demonstracoes is not None
+        else "sem histórico",
+    )
+    colunas[1].metric(
+        "Horizonte",
+        f"{projeto.empresa.operacionais.horizonte} anos"
+        if projeto.empresa.operacionais
+        else "—",
+    )
+    colunas[2].metric("Comparáveis", len(projeto.comparaveis))
+
+    st.warning(
+        "Carregar substitui o que está aberto agora. Se houver trabalho não salvo "
+        "na sessão atual, baixe antes em **Exportar**."
+    )
+    if st.button("Carregar este valuation", type="primary"):
+        estado.aplicar_projeto(projeto)
+        st.success("Valuation restaurado.")
+        st.rerun()
 
 
 def _importar() -> None:

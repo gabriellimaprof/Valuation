@@ -1,0 +1,211 @@
+"""Salvar e retomar um valuation inteiro em um unico arquivo de texto.
+
+Um valuation nao se faz em uma sentada. Sem isto, fechar a aba do navegador
+significa refazer a importacao das demonstracoes, reescrever as premissas e
+redigitar os comparaveis -- e o app deixa de servir para trabalho de verdade.
+
+O arquivo guarda **tudo que descreve a analise**: premissas, demonstracoes
+importadas, comparaveis e as convencoes de calculo. Em YAML, de proposito: da
+para abrir num editor, revisar em pull request, comparar duas versoes de um
+mesmo valuation com um diff e reproduzir o numero meses depois. Um formato
+binario seria menor e inutil para tudo isso.
+
+O campo ``versao`` existe para que um arquivo salvo hoje continue legivel quando
+o formato mudar. Arquivo de versao desconhecida e recusado com mensagem clara,
+em vez de ser lido pela metade.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import yaml
+
+from .entrada import construir_empresa
+from .importacao import Demonstracoes
+from .multiplos import Alvo, Comparavel
+from .premissas import Empresa
+
+VERSAO = 1
+CHAVES_CONFIG = ("meio_de_ano", "tipo_fluxo", "setor", "pais")
+
+
+@dataclass(frozen=True)
+class Projeto:
+    """Uma analise completa: premissas, dados, comparaveis e convencoes."""
+
+    empresa: Empresa
+    demonstracoes: Demonstracoes | None = None
+    comparaveis: list[Comparavel] = field(default_factory=list)
+    alvo: Alvo | None = None
+    config: dict[str, Any] = field(default_factory=dict)
+
+
+def _limpar(valor: Any) -> Any:
+    """Converte tipos do numpy/pandas para tipos nativos que o YAML entende.
+
+    Sem isto, um ``numpy.float64`` vindo de uma planilha importada seria
+    serializado como um objeto Python arbitrario, e o arquivo salvo so poderia
+    ser lido de volta com ``yaml.unsafe_load`` -- que nao e algo para se apontar
+    a um arquivo que veio de outra pessoa.
+    """
+    if isinstance(valor, dict):
+        return {_limpar(chave): _limpar(item) for chave, item in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [_limpar(item) for item in valor]
+    if isinstance(valor, (np.integer,)):
+        return int(valor)
+    if isinstance(valor, (np.floating,)):
+        return float(valor)
+    if isinstance(valor, np.ndarray):
+        return [_limpar(item) for item in valor.tolist()]
+    return valor
+
+
+def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
+    return {
+        "empresa": dfs.empresa,
+        "unidade": dfs.unidade,
+        "moeda": dfs.moeda,
+        "origem": dfs.origem,
+        "anos": [int(ano) for ano in dfs.anos],
+        "valores": {
+            str(conta): {
+                int(ano): (None if pd.isna(valor) else float(valor))
+                for ano, valor in linha.items()
+            }
+            for conta, linha in dfs.valores.iterrows()
+        },
+        "mapeamento": dict(dfs.mapeamento),
+        "derivadas": dict(dfs.derivadas),
+    }
+
+
+def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
+    anos = [int(ano) for ano in dados.get("anos", [])]
+    valores = dados.get("valores") or {}
+    if not anos or not valores:
+        raise ValueError(
+            "O bloco 'demonstracoes' esta sem anos ou sem contas. "
+            "Remova-o do arquivo se nao houver historico."
+        )
+
+    tabela = pd.DataFrame(
+        {
+            ano: {
+                conta: (
+                    np.nan
+                    if linha.get(ano) is None
+                    else float(linha.get(ano, np.nan))
+                )
+                for conta, linha in valores.items()
+            }
+            for ano in anos
+        },
+        columns=anos,
+    )
+    return Demonstracoes(
+        empresa=dados.get("empresa", ""),
+        valores=tabela,
+        origem=dados.get("origem", ""),
+        unidade=dados.get("unidade", "unidades monetarias"),
+        moeda=dados.get("moeda", "BRL"),
+        mapeamento=dict(dados.get("mapeamento") or {}),
+        derivadas=dict(dados.get("derivadas") or {}),
+    )
+
+
+def serializar(projeto: Projeto) -> str:
+    """Converte o projeto em texto YAML."""
+    dados: dict[str, Any] = {
+        "versao": VERSAO,
+        "empresa": _limpar(dataclasses.asdict(projeto.empresa)),
+    }
+    if projeto.config:
+        dados["config"] = _limpar(
+            {c: projeto.config[c] for c in CHAVES_CONFIG if c in projeto.config}
+        )
+    if projeto.demonstracoes is not None and projeto.demonstracoes.anos:
+        dados["demonstracoes"] = _limpar(
+            _demonstracoes_para_dados(projeto.demonstracoes)
+        )
+    if projeto.comparaveis:
+        dados["comparaveis"] = [
+            _limpar(dataclasses.asdict(c)) for c in projeto.comparaveis
+        ]
+    if projeto.alvo is not None:
+        dados["alvo"] = _limpar(dataclasses.asdict(projeto.alvo))
+
+    return yaml.safe_dump(
+        dados, allow_unicode=True, sort_keys=False, default_flow_style=False
+    )
+
+
+def desserializar(texto: str, origem: str = "<arquivo>") -> Projeto:
+    """Reconstroi o projeto a partir do texto YAML."""
+    try:
+        dados = yaml.safe_load(texto)
+    except yaml.YAMLError as erro:
+        raise ValueError(f"'{origem}' nao e um YAML valido: {erro}") from erro
+
+    if not isinstance(dados, dict):
+        raise ValueError(f"'{origem}' deveria conter um mapeamento no nivel raiz.")
+
+    versao = dados.get("versao")
+    if versao is None:
+        raise ValueError(
+            f"'{origem}' nao declara 'versao'. Ele foi salvo por este app?"
+        )
+    if int(versao) > VERSAO:
+        raise ValueError(
+            f"'{origem}' foi salvo na versao {versao}, e este app entende ate a "
+            f"versao {VERSAO}. Atualize o app para abrir este arquivo."
+        )
+
+    if "empresa" not in dados:
+        raise ValueError(f"'{origem}' nao tem o bloco 'empresa'.")
+    empresa = construir_empresa(dict(dados["empresa"]), origem=f"{origem}:empresa")
+
+    demonstracoes = None
+    if dados.get("demonstracoes"):
+        demonstracoes = _dados_para_demonstracoes(dados["demonstracoes"])
+
+    comparaveis = [
+        Comparavel(**item) for item in (dados.get("comparaveis") or [])
+    ]
+    alvo = Alvo(**dados["alvo"]) if dados.get("alvo") else None
+
+    config = {
+        chave: valor
+        for chave, valor in (dados.get("config") or {}).items()
+        if chave in CHAVES_CONFIG
+    }
+
+    return Projeto(
+        empresa=empresa,
+        demonstracoes=demonstracoes,
+        comparaveis=comparaveis,
+        alvo=alvo,
+        config=config,
+    )
+
+
+def salvar(projeto: Projeto, caminho: str | Path) -> Path:
+    """Grava o projeto em disco."""
+    caminho = Path(caminho)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(serializar(projeto), encoding="utf-8")
+    return caminho
+
+
+def carregar(caminho: str | Path) -> Projeto:
+    """Le um projeto salvo em disco."""
+    caminho = Path(caminho)
+    if not caminho.exists():
+        raise FileNotFoundError(f"Projeto nao encontrado: {caminho}")
+    return desserializar(caminho.read_text(encoding="utf-8"), origem=str(caminho))

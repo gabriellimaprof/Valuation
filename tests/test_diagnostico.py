@@ -197,3 +197,102 @@ def test_sem_historico_as_comparacoes_sao_puladas(empresa_exemplo):
     empresa = substituir_varios(empresa_exemplo, {"operacionais.margem_ebitda": 0.35})
     diagnostico = diagnosticar(avaliar(empresa))
     assert "margem_acima_do_historico" not in _codigos(diagnostico)
+
+
+# ---------------------------------------------------------------------------
+# Verificacoes sobre a tese de retorno
+# ---------------------------------------------------------------------------
+
+
+def _decomposicao(tsr_alvo: str = "bom", **ajustes):
+    """Monta uma decomposicao de TSR com a caracteristica que o teste precisa."""
+    from valuation.retorno import decompor_tsr
+
+    base = dict(
+        preco_entrada=100.0,
+        lucro_entrada=10.0,
+        lucro_saida=10.0 * 1.10**5,
+        dividendos=[5.0] * 5,
+        multiplo_saida=None,
+    )
+    base.update(ajustes)
+    return decompor_tsr(**base)
+
+
+def test_retorno_abaixo_do_exigido(empresa_exemplo):
+    """Comprar caro faz o retorno esperado ficar abaixo do que o risco pede."""
+    resultado = avaliar(empresa_exemplo)
+    caro = _decomposicao(preco_entrada=400.0, dividendos=[1.0] * 5)
+    diagnostico = diagnosticar(resultado, retorno=caro)
+    assert "retorno_abaixo_do_exigido" in _codigos(diagnostico)
+
+
+def test_retorno_acima_do_exigido_nao_gera_achado(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    barato = _decomposicao(preco_entrada=60.0)
+    diagnostico = diagnosticar(resultado, retorno=barato)
+    assert "retorno_abaixo_do_exigido" not in _codigos(diagnostico)
+
+
+def test_retorno_dependente_de_rerating(empresa_exemplo):
+    """Empresa parada e multiplo dobrando: o ganho e do mercado, nao do negocio."""
+    resultado = avaliar(empresa_exemplo)
+    rerating = _decomposicao(
+        lucro_saida=10.0, dividendos=[0.0] * 5, multiplo_saida=20.0
+    )
+    diagnostico = diagnosticar(resultado, retorno=rerating)
+    assert "retorno_depende_de_rerating" in _codigos(diagnostico)
+    achado = next(
+        a for a in diagnostico.achados if a.codigo == "retorno_depende_de_rerating"
+    )
+    assert "expansão" in achado.titulo
+
+
+def test_contracao_de_multiplo_tambem_e_sinalizada(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    contracao = _decomposicao(
+        preco_entrada=200.0, lucro_saida=10.0, dividendos=[0.0] * 5, multiplo_saida=8.0
+    )
+    diagnostico = diagnosticar(resultado, retorno=contracao)
+    achados = [a for a in diagnostico.achados if a.codigo == "retorno_depende_de_rerating"]
+    assert achados and "contração" in achados[0].titulo
+
+
+def test_retorno_implausivel(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    absurdo = _decomposicao(preco_entrada=20.0, dividendos=[8.0] * 5)
+    diagnostico = diagnosticar(resultado, retorno=absurdo)
+    assert "retorno_implausivel" in _codigos(diagnostico)
+
+
+def test_multiplo_de_saida_generoso(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    generoso = _decomposicao(multiplo_saida=14.0)  # entrada e 10x
+    diagnostico = diagnosticar(resultado, retorno=generoso)
+    assert "multiplo_de_saida_generoso" in _codigos(diagnostico)
+
+
+def test_sem_rerating_nao_ha_achado_de_multiplo(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    neutro = _decomposicao()  # sai pelo mesmo multiplo da entrada
+    codigos = _codigos(diagnosticar(resultado, retorno=neutro))
+    assert "multiplo_de_saida_generoso" not in codigos
+    assert "retorno_depende_de_rerating" not in codigos
+
+
+def test_sem_retorno_informado_as_verificacoes_sao_puladas(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    codigos = _codigos(diagnosticar(resultado))
+    assert not any(c.startswith("retorno_") for c in codigos)
+
+
+def test_achados_de_retorno_tambem_explicam_e_orientam(empresa_exemplo):
+    resultado = avaliar(empresa_exemplo)
+    rerating = _decomposicao(
+        lucro_saida=10.0, dividendos=[0.0] * 5, multiplo_saida=20.0
+    )
+    diagnostico = diagnosticar(resultado, retorno=rerating)
+    for achado in diagnostico.achados:
+        if achado.codigo.startswith("retorno_") or "multiplo_de_saida" in achado.codigo:
+            assert len(achado.detalhe) > 40
+            assert len(achado.acao) > 15
