@@ -29,7 +29,7 @@ METRICAS = {
 
 
 def render() -> None:
-    etapa("Passo 6", "Sensibilidade", "O valuation não é um número, é uma faixa")
+    etapa("Passo 7", "Sensibilidade", "O valuation não é um número, é uma faixa")
 
     resultado = estado.resultado()
     if resultado is None:

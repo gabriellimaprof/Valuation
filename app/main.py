@@ -32,6 +32,7 @@ from app.paginas import (  # noqa: E402
     inicio,
     multiplos,
     premissas,
+    retorno,
     sensibilidade,
     valor,
 )
@@ -114,6 +115,7 @@ def main() -> None:
             url_path="custo-de-capital",
         ),
         st.Page(valor.render, title="Valor", icon="💰", url_path="valor"),
+        st.Page(retorno.render, title="Retorno esperado", icon="📊", url_path="retorno"),
         st.Page(
             sensibilidade.render,
             title="Sensibilidade",

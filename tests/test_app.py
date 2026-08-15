@@ -94,7 +94,12 @@ def test_conceitos_explicam_e_nao_so_definem():
 
 
 def test_passos_cobrem_o_fluxo():
-    assert len(PASSOS) == 9
+    """O roteiro da tela inicial precisa acompanhar as telas que existem."""
+    from app.main import main  # noqa: F401 - garante que o modulo importa
+
+    nomes = [nome for nome, _, _ in PASSOS]
+    assert "Retorno esperado" in nomes
+    assert len(PASSOS) == 10
     for nome, resumo, detalhe in PASSOS:
         assert nome and resumo and detalhe
 

@@ -18,7 +18,7 @@ MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def render() -> None:
-    etapa("Passo 9", "Exportar", "Leve o modelo para o Excel, ou salve as premissas")
+    etapa("Passo 10", "Exportar", "Leve o modelo para o Excel, ou salve as premissas")
 
     resultado = estado.resultado()
     if resultado is None:

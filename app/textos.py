@@ -62,6 +62,23 @@ CONCEITOS: dict[str, str] = {
         "**Erro comum:** crescer para sempre sem reinvestir — crescimento exige capital, "
         "e ignorar isso infla o valor terminal."
     ),
+    "tsr": (
+        "O **TSR (total shareholder return)** é a TIR do investimento: você paga um "
+        "preço hoje, recebe dividendos no caminho e vende no fim. Ele se abre em três "
+        "fontes — **crescimento do lucro**, **dividendos** e **expansão ou contração de "
+        "múltiplo** — mais o termo cruzado entre as duas primeiras. A distinção que "
+        "importa: crescimento e dividendo dependem da empresa entregar; múltiplo depende "
+        "de quanto o próximo comprador vai pagar. **Erro comum:** montar a tese em cima "
+        "de re-rating sem dizer por que o mercado mudaria de opinião — e sem calcular o "
+        "retorno no caso de não mudar."
+    ),
+    "desalavancagem": (
+        "Em empresa endividada, parte do retorno do acionista vem simplesmente de a "
+        "**dívida encolher**: o caixa gerado abate o principal, e o valor que era do "
+        "credor passa a ser do acionista, sem que EBITDA ou múltiplo tenham mudado. É a "
+        "mecânica central de private equity, e some da conta se você olhar só "
+        "crescimento e re-rating."
+    ),
     "roic": (
         "**ROIC** é o retorno que a empresa obtém sobre todo o capital que emprega, "
         "próprio e de terceiros. É a métrica central do valuation porque, comparada ao "
@@ -162,6 +179,11 @@ PASSOS: tuple[tuple[str, str, str], ...] = (
         "Valor",
         "Veja o resultado e de onde ele vem",
         "Fluxos descontados, perpetuidade e a ponte até o acionista.",
+    ),
+    (
+        "Retorno esperado",
+        "Descubra a TIR e de onde ela vem",
+        "TSR aberto em crescimento de lucro, dividendo e re-rating de múltiplo.",
     ),
     (
         "Sensibilidade",

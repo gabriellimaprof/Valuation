@@ -484,3 +484,94 @@ def barras_ciclo(dados: pd.Series, titulo: str = "") -> go.Figure:
     layout["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
     figura.update_layout(**layout)
     return figura
+
+
+def cascata_tsr(
+    contribuicoes: list[tuple[str, float]], total: float, titulo: str = ""
+) -> go.Figure:
+    """Cascata das fontes do retorno esperado, em pontos de retorno anual.
+
+    A cascata e a forma certa porque a pergunta e de composicao: cada fonte
+    soma ou subtrai pontos ao retorno, e o encadeamento termina no TSR. As
+    parcelas somam o total exatamente, entao a barra final nao e um arredondamento.
+    """
+    p = paleta()
+    rotulos = [nome for nome, _ in contribuicoes] + ["TSR esperado"]
+    valores = [valor for _, valor in contribuicoes] + [total]
+    medidas = ["relative"] * len(contribuicoes) + ["total"]
+
+    figura = go.Figure(
+        go.Waterfall(
+            orientation="v",
+            measure=medidas,
+            x=rotulos,
+            y=valores,
+            text=[_formatar_pct(v) for v in valores],
+            textposition="outside",
+            connector={"line": {"color": p.grade, "width": 1}},
+            increasing={"marker": {"color": p.serie(2)}},
+            decreasing={"marker": {"color": p.serie(1)}},
+            totals={"marker": {"color": p.serie(0)}},
+            hovertemplate="<b>%{x}</b>: %{y:.2%}<extra></extra>",
+        )
+    )
+
+    layout = layout_base(400, titulo)
+    layout["hovermode"] = "closest"
+    layout["showlegend"] = False
+    layout["yaxis"]["tickformat"] = ".1%"
+    layout["xaxis"]["tickangle"] = -20
+    figura.update_layout(**layout)
+    return figura
+
+
+def tsr_por_preco(
+    precos: list[float],
+    retornos: list[float],
+    preco_atual: float,
+    retorno_exigido: float | None = None,
+    unidade: str = "",
+) -> go.Figure:
+    """Retorno esperado em funcao do preco pago.
+
+    Deixa visivel a unica variavel que o investidor de fato controla. A linha do
+    retorno exigido cruza a curva exatamente no preco maximo que faz sentido
+    pagar.
+    """
+    p = paleta()
+    figura = go.Figure(
+        go.Scatter(
+            x=precos,
+            y=retornos,
+            mode="lines+markers",
+            line={"color": p.serie(0), "width": LARGURA_LINHA},
+            marker={"size": TAMANHO_MARCADOR, "color": p.serie(0)},
+            name="TSR esperado",
+            hovertemplate=(
+                f"Preço: %{{x:,.1f}} {unidade}<br><b>TSR: %{{y:.2%}}</b><extra></extra>"
+            ),
+        )
+    )
+
+    figura.add_vline(
+        x=preco_atual,
+        line={"color": p.texto_suave, "width": 2, "dash": "dot"},
+        annotation_text="preço atual",
+        annotation_position="top",
+        annotation_font={"size": 10, "color": p.texto_secundario},
+    )
+    if retorno_exigido is not None and np.isfinite(retorno_exigido):
+        figura.add_hline(
+            y=retorno_exigido,
+            line={"color": p.serie(1), "width": 2, "dash": "dash"},
+            annotation_text=f"retorno exigido {_formatar_pct(retorno_exigido)}",
+            annotation_position="right",
+            annotation_font={"size": 10, "color": p.serie(1)},
+        )
+
+    layout = layout_base(340, "Retorno esperado por preço de entrada")
+    layout["hovermode"] = "x"
+    layout["showlegend"] = False
+    layout["yaxis"]["tickformat"] = ".0%"
+    figura.update_layout(**layout)
+    return figura

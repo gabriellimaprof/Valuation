@@ -19,7 +19,7 @@ TITULOS = {
 
 def render() -> None:
     etapa(
-        "Passo 8",
+        "Passo 9",
         "Diagnóstico",
         "Verificações de consistência que um revisor experiente faria",
     )

@@ -42,6 +42,7 @@ valuation multiplos exemplos/comparaveis_exemplo.yaml
 | **Premissas** | Projeção ano a ano, com a mediana histórica ao lado de cada campo como âncora. |
 | **Custo de capital** | Beta por setor, risco-país e estrutura-alvo, com a montagem do WACC passo a passo. |
 | **Valor** | Fluxos descontados, composição do valor e a ponte em cascata até o acionista. |
+| **Retorno esperado** | TSR (TIR do investimento) aberto em crescimento de lucro, dividendo e re-rating de múltiplo, com o preço máximo para um retorno-alvo. |
 | **Sensibilidade** | Mapa de calor bidimensional, cenários coerentes e Monte Carlo. |
 | **Múltiplos** | Peer group, valor implícito por múltiplo e confronto com o DCF. |
 | **Diagnóstico** | O app criticando o modelo antes de você defender o número. |
@@ -92,6 +93,14 @@ duas vezes, já que ambos estão na ponte de valor.
 **Imposto sobre o EBIT**, já que o FCFF é desalavancado por construção. Prejuízo
 fiscal acumulado abate lucro futuro respeitando a **trava dos 30%** da
 legislação brasileira.
+
+**A decomposição do TSR é exata, não a regra de bolso.** A identidade usada é
+`(1 + retorno de preço) = (1 + g_lucro) × (1 + g_múltiplo)`, e o TSR fecha como
+`g_lucro + g_múltiplo + (g_lucro × g_múltiplo) + dividendos`. A versão que
+circula no mercado — "TSR = crescimento + dividend yield + re-rating" — omite o
+termo cruzado, que deixa de ser desprezível justamente no caso em que a conta
+importa: crescimento alto com re-rating relevante. Aqui ele aparece separado, e
+as parcelas somam o total até a última casa.
 
 **Múltiplos de EV e de equity não se misturam.** EV/EBITDA passa pela ponte da
 dívida líquida; P/L não. Denominador não positivo vira `n/a` e sai das
@@ -151,7 +160,7 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-276 testes cobrindo identidades contábeis, casos de borda econômicos, a
+322 testes cobrindo identidades contábeis, casos de borda econômicos, a
 equivalência Excel/Python, as três origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.
@@ -166,6 +175,7 @@ sem ele esses testes são pulados em vez de dar falso positivo.
 | `custo_capital.py` | beta, CAPM com risco-país, Kd, WACC |
 | `projecao.py` | projeção explícita, FCFF, FCFE e prejuízo fiscal |
 | `dcf.py` | desconto, valor terminal, ponte EV → equity |
+| `retorno.py` | TIR, TSR e sua decomposição, ponte de valor com desalavancagem |
 | `multiplos.py` | avaliação relativa por comparáveis |
 | `sensibilidade.py` | tabelas, cenários e Monte Carlo |
 | `diagnostico.py` | verificações de consistência do modelo |

@@ -25,7 +25,7 @@ COLUNAS_PEERS = [
 
 
 def render() -> None:
-    etapa("Passo 7", "Múltiplos", "O que o mercado paga por empresas parecidas")
+    etapa("Passo 8", "Múltiplos", "O que o mercado paga por empresas parecidas")
     conceito("multiplos", "Avaliação relativa")
 
     _editor_peers()
