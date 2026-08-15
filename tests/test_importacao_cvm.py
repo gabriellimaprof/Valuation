@@ -433,10 +433,59 @@ def test_download_interrompido_nao_deixa_arquivo_truncado(monkeypatch, tmp_path)
 
     monkeypatch.setattr("urllib.request.urlopen", falhar)
 
-    with pytest.raises(ErroCVM, match="dados.cvm.gov.br"):
+    with pytest.raises(ErroCVM, match="tentativas"):
         baixar_dfp(2019, cache=tmp_path)
 
     assert list(tmp_path.iterdir()) == []
+
+
+def test_conexao_cortada_no_meio_vira_mensagem_e_nao_crash(monkeypatch, tmp_path):
+    """``IncompleteRead`` nao e ``URLError`` -- e o portal corta zips de 13 MB.
+
+    Sem tratar esta excecao especifica, o corte no meio do download subia como
+    erro nao tratado ate a tela do usuario. Aconteceu de verdade baixando o
+    arquivo de 2024.
+    """
+    import http.client
+
+    def cortar(url, timeout=None):
+        raise http.client.IncompleteRead(b"come" * 10, 2_952_985)
+
+    monkeypatch.setattr("urllib.request.urlopen", cortar)
+
+    with pytest.raises(ErroCVM, match="corta a conexao"):
+        baixar_dfp(2024, cache=tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_download_tenta_de_novo_antes_de_desistir(monkeypatch, tmp_path):
+    """Falha transitoria nao pode custar um clique ao usuario."""
+    import http.client
+
+    chamadas = []
+
+    class Resposta:
+        def read(self):
+            return b"zip-de-verdade"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def instavel(url, timeout=None):
+        chamadas.append(url)
+        if len(chamadas) == 1:
+            raise http.client.IncompleteRead(b"", 100)
+        return Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", instavel)
+
+    caminho = baixar_dfp(2019, cache=tmp_path)
+    assert caminho.read_bytes() == b"zip-de-verdade"
+    assert len(chamadas) == 2, "deveria ter tentado duas vezes"
+    assert not list(tmp_path.glob("*.parcial"))
 
 
 def test_zip_corrompido_sugere_limpar_o_cache(tmp_path):
@@ -474,6 +523,32 @@ def test_valores_saem_em_reais_e_a_escala_e_do_app(weg):
 
 def test_origem_identifica_a_fonte(weg):
     assert "CVM" in weg.origem and "2023" in weg.origem and "2024" in weg.origem
+
+
+def test_fonte_guarda_como_rebuscar(weg):
+    """``origem`` e frase para ler; ``fonte`` e o suficiente para repetir a busca."""
+    assert weg.fonte == {"tipo": "cvm", "codigo_cvm": WEG, "anos": [2023, 2024]}
+
+    # Refazer a busca a partir da fonte tem que devolver os mesmos numeros.
+    de_novo = importar_cvm(
+        weg.fonte["codigo_cvm"], weg.fonte["anos"], cache=DADOS
+    )
+    assert de_novo.valores.equals(weg.valores)
+
+
+def test_fonte_sobrevive_a_troca_de_unidade(weg):
+    """``escalar`` cria outro objeto; perder a fonte ali quebraria o botao de atualizar."""
+    assert weg.escalar(1_000_000, "R$ milhões").fonte == weg.fonte
+
+
+def test_fonte_sobrevive_a_correcao_manual(tmp_path):
+    destino = tmp_path / "weg.xlsx"
+    dfs = importar_cvm(WEG, [2024], cache=DADOS, planilha=destino)
+    alvo = next(
+        l.rotulo for l in dfs.nao_reconhecidas if l.rotulo.startswith("1.02.01")
+    )
+    corrigido = aplicar_mapeamento_manual(dfs, destino, {alvo: "aplicacoes_financeiras"})
+    assert corrigido.fonte == dfs.fonte
 
 
 # ---------------------------------------------------------------------------

@@ -47,6 +47,7 @@ apresentacao fica com o app.
 
 from __future__ import annotations
 
+import http.client
 import io
 import re
 import unicodedata
@@ -75,6 +76,10 @@ URL_CADASTRO = BASE + "/CAD/DADOS/cad_cia_aberta.csv"
 
 ENCODING = "latin-1"
 SEPARADOR = ";"
+
+# Identifica, no campo ``fonte`` de Demonstracoes, que aquela serie veio daqui e
+# pode ser rebuscada.
+FONTE_CVM = "cvm"
 
 # O portal publica de 2010 em diante. O limite superior nao e fixo: o arquivo do
 # ano corrente ja existe, quase vazio, desde janeiro.
@@ -117,6 +122,12 @@ def diretorio_cache() -> Path:
     return Path.home() / ".cache" / "valuation" / "cvm"
 
 
+# Um zip anual tem 13 MB e o portal corta a conexao no meio com alguma
+# frequencia. A segunda tentativa custa poucos segundos e evita mandar o usuario
+# clicar de novo por um erro que costuma passar sozinho.
+TENTATIVAS = 2
+
+
 def _baixar(url: str, destino: Path, forcar: bool = False) -> Path:
     """Baixa ``url`` para ``destino``, reaproveitando o que ja esta em disco.
 
@@ -129,25 +140,41 @@ def _baixar(url: str, destino: Path, forcar: bool = False) -> Path:
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     parcial = destino.with_suffix(destino.suffix + ".parcial")
-    try:
-        with urllib.request.urlopen(url, timeout=TEMPO_LIMITE) as resposta:
-            parcial.write_bytes(resposta.read())
-    except urllib.error.HTTPError as erro:
-        parcial.unlink(missing_ok=True)
-        if erro.code == 404:
-            raise ErroCVM(
-                f"A CVM nao tem esse arquivo ({url}). Confira o ano escolhido."
-            ) from erro
-        raise ErroCVM(f"O portal da CVM respondeu {erro.code} para {url}.") from erro
-    except (urllib.error.URLError, TimeoutError) as erro:
-        parcial.unlink(missing_ok=True)
-        raise ErroCVM(
-            f"Nao consegui falar com dados.cvm.gov.br: {erro}. "
-            "Verifique a conexao ou tente de novo em alguns minutos."
-        ) from erro
+    ultimo_erro: Exception | None = None
 
-    parcial.replace(destino)
-    return destino
+    for tentativa in range(TENTATIVAS):
+        try:
+            with urllib.request.urlopen(url, timeout=TEMPO_LIMITE) as resposta:
+                parcial.write_bytes(resposta.read())
+            parcial.replace(destino)
+            return destino
+        except urllib.error.HTTPError as erro:
+            parcial.unlink(missing_ok=True)
+            if erro.code == 404:
+                raise ErroCVM(
+                    f"A CVM nao tem esse arquivo ({url}). Confira o ano escolhido."
+                ) from erro
+            raise ErroCVM(
+                f"O portal da CVM respondeu {erro.code} para {url}."
+            ) from erro
+        # IncompleteRead nao e URLError -- e HTTPException, e tambem ValueError.
+        # Deixar de trata-la fazia a conexao cortada no meio de um zip de 13 MB
+        # subir como erro nao tratado ate a tela, em vez da mensagem explicando
+        # o que houve.
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            TimeoutError,
+            OSError,
+        ) as erro:
+            parcial.unlink(missing_ok=True)
+            ultimo_erro = erro
+
+    raise ErroCVM(
+        f"Nao consegui baixar {url} depois de {TENTATIVAS} tentativas: "
+        f"{ultimo_erro}. O portal da CVM as vezes corta a conexao em arquivos "
+        "grandes -- tente de novo em alguns minutos."
+    ) from ultimo_erro
 
 
 def baixar_dfp(ano: int, cache: Path | None = None, forcar: bool = False) -> Path:
@@ -505,6 +532,7 @@ def montar_demonstracoes(
     empresa: str,
     origem: str,
     avisos: list[str] | None = None,
+    fonte: dict | None = None,
 ) -> Demonstracoes:
     """Converte o formato longo da CVM em contas canonicas x anos.
 
@@ -600,6 +628,7 @@ def montar_demonstracoes(
             nao_reconhecidas.values(), key=lambda linha: linha.rotulo
         ),
         avisos=avisos,
+        fonte=dict(fonte or {}),
     )
 
 
@@ -726,4 +755,9 @@ def importar_cvm(
         empresa=nome,
         origem=f"CVM Dados Abertos - DFP {anos[0]}-{anos[-1]}",
         avisos=avisos,
+        # Guardar codigo e anos e o que permite refazer esta mesma busca depois
+        # -- quando sair um exercicio novo, ou quando a companhia reapresentar a
+        # DFP. Sem isso, o valuation salvo sabe de onde veio em portugues, mas o
+        # app nao sabe o suficiente para ir buscar de novo.
+        fonte={"tipo": FONTE_CVM, "codigo_cvm": codigo_cvm, "anos": list(anos)},
     )

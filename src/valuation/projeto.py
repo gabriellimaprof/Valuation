@@ -27,7 +27,7 @@ import pandas as pd
 import yaml
 
 from .entrada import construir_empresa
-from .importacao import Demonstracoes
+from .importacao import Demonstracoes, LinhaNaoReconhecida
 from .multiplos import Alvo, Comparavel
 from .premissas import Empresa
 
@@ -68,7 +68,7 @@ def _limpar(valor: Any) -> Any:
 
 
 def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
-    return {
+    dados: dict[str, Any] = {
         "empresa": dfs.empresa,
         "unidade": dfs.unidade,
         "moeda": dfs.moeda,
@@ -84,6 +84,25 @@ def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
         "mapeamento": dict(dfs.mapeamento),
         "derivadas": dict(dfs.derivadas),
     }
+    if dfs.fonte:
+        dados["fonte"] = dict(dfs.fonte)
+    # As linhas nao reconhecidas sao o que a tela de conferencia oferece para o
+    # usuario corrigir a mao. Sem elas no arquivo, retomar um valuation salvo
+    # devolvia os numeros mas nao a possibilidade de mexer neles -- e uma
+    # importacao da CVM chega a ter mais de 250.
+    if dfs.nao_reconhecidas:
+        dados["nao_reconhecidas"] = [
+            {
+                "rotulo": linha.rotulo,
+                "aba": linha.aba,
+                "melhor_palpite": linha.melhor_palpite,
+                "confianca": float(linha.confianca),
+            }
+            for linha in dfs.nao_reconhecidas
+        ]
+    if dfs.avisos:
+        dados["avisos"] = list(dfs.avisos)
+    return dados
 
 
 def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
@@ -117,6 +136,17 @@ def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
         moeda=dados.get("moeda", "BRL"),
         mapeamento=dict(dados.get("mapeamento") or {}),
         derivadas=dict(dados.get("derivadas") or {}),
+        nao_reconhecidas=[
+            LinhaNaoReconhecida(
+                rotulo=str(linha.get("rotulo", "")),
+                aba=str(linha.get("aba", "")),
+                melhor_palpite=linha.get("melhor_palpite"),
+                confianca=float(linha.get("confianca", 0.0)),
+            )
+            for linha in (dados.get("nao_reconhecidas") or [])
+        ],
+        avisos=[str(a) for a in (dados.get("avisos") or [])],
+        fonte=dict(dados.get("fonte") or {}),
     )
 
 

@@ -17,6 +17,7 @@ from valuation.importacao import (
     importar,
 )
 from valuation.importacao.cvm import (
+    FONTE_CVM,
     ErroCVM,
     anos_disponiveis,
     buscar_companhias,
@@ -318,6 +319,8 @@ def _mostrar_importacao_atual() -> None:
     st.subheader(f"{dfs.empresa} — {dfs.anos[0]} a {dfs.anos[-1]}")
     st.caption(f"Valores em {dfs.unidade}. Origem: {dfs.origem or 'entrada manual'}.")
 
+    _atualizar_da_cvm(dfs)
+
     for aviso in dfs.avisos:
         st.warning(aviso)
 
@@ -340,6 +343,95 @@ def _mostrar_importacao_atual() -> None:
     st.divider()
     if st.button("Usar este histórico para sugerir as premissas", type="primary"):
         _aplicar_sugestao(dfs)
+
+
+def _anos_a_acrescentar(
+    salvos: list[int], disponiveis: list[int], ano_corrente: int
+) -> list[int]:
+    """Exercícios que surgiram depois do último já importado.
+
+    Só avança no tempo: a conta ingênua — todos os disponíveis menos os salvos —
+    faria um clique em "Atualizar" descer até 2010 e baixar uma década que o
+    usuário deliberadamente não pediu. O ano corrente fica de fora porque a DFP
+    de um exercício só é entregue no ano seguinte.
+    """
+    if not salvos:
+        return []
+    return sorted(a for a in disponiveis if max(salvos) < a < ano_corrente)
+
+
+def _atualizar_da_cvm(dfs) -> None:
+    """Rebusca na CVM a mesma companhia, incluindo exercícios novos.
+
+    Só aparece quando as demonstrações guardam de onde vieram. É o que separa
+    "sei dizer a origem" de "sei ir buscar de novo": um valuation retomado seis
+    meses depois incorpora o exercício que saiu no meio, sem refazer a busca.
+    """
+    fonte = getattr(dfs, "fonte", None) or {}
+    if fonte.get("tipo") != FONTE_CVM:
+        return
+
+    salvos = [int(a) for a in fonte.get("anos", [])]
+    if not salvos:
+        return
+    try:
+        disponiveis = _anos_cvm()
+    except ErroCVM:
+        return
+
+    from datetime import date
+
+    novos = _anos_a_acrescentar(salvos, disponiveis, date.today().year)
+
+    colunas = st.columns([3, 1])
+    if novos:
+        colunas[0].info(
+            "A CVM já publicou " + ", ".join(str(a) for a in novos)
+            + " para outras companhias. Atualizar refaz a busca incluindo esse(s) "
+            "exercício(s)."
+        )
+    else:
+        colunas[0].caption(
+            "Importado da CVM. Atualizar rebusca os mesmos exercícios — útil se a "
+            "companhia reapresentou a DFP."
+        )
+
+    if colunas[1].button("Atualizar da CVM"):
+        _reimportar_da_cvm(dfs, sorted(set(salvos) | set(novos)))
+
+
+def _reimportar_da_cvm(dfs, anos: list[int]) -> None:
+    fonte = dfs.fonte
+    codigo = int(fonte["codigo_cvm"])
+    destino = Path(tempfile.gettempdir()) / f"cvm_{codigo}.xlsx"
+    antes = set(dfs.anos)
+
+    try:
+        with st.spinner("Rebuscando na CVM…"):
+            novo = importar_cvm(codigo, anos, planilha=destino)
+    except ErroCVM as erro:
+        st.error(f"Não consegui atualizar: {erro}")
+        return
+
+    # A unidade e o nome vieram de escolhas que o usuário já fez; refazer a
+    # importação não pode desfazê-las pelas costas dele.
+    if dfs.unidade != novo.unidade:
+        divisor = next(
+            (d for d, u in UNIDADES_CVM.values() if u == dfs.unidade), None
+        )
+        if divisor:
+            novo = novo.escalar(divisor, dfs.unidade)
+    novo = type(novo)(**{**novo.__dict__, "empresa": dfs.empresa})
+
+    estado.definir_demonstracoes(novo)
+    st.session_state["arquivo_importado"] = str(destino)
+
+    ganhos = sorted(set(novo.anos) - antes)
+    st.success(
+        f"Atualizado: {novo.anos[0]}–{novo.anos[-1]}."
+        + (f" Exercício(s) novo(s): {', '.join(str(a) for a in ganhos)}." if ganhos else "")
+    )
+    st.rerun()
 
 
 LIMITE_CONFERENCIA = 40

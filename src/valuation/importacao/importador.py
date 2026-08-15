@@ -54,6 +54,12 @@ class Demonstracoes:
     derivadas: dict[str, str] = field(default_factory=dict)
     nao_reconhecidas: list[LinhaNaoReconhecida] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
+    # Como buscar estes mesmos dados de novo, quando a origem permite. ``origem``
+    # e uma frase para o usuario ler; esta e a mesma informacao em forma de
+    # dados, para o app poder reexecutar a busca em vez de pedir que ele refaca
+    # tudo a mao quando sair um exercicio novo. Dicionario simples porque ele
+    # atravessa a serializacao em YAML e cada origem descreve o seu jeito.
+    fonte: dict = field(default_factory=dict)
 
     @property
     def anos(self) -> list[int]:
@@ -142,6 +148,7 @@ class Demonstracoes:
             # Milhar com ponto: o texto vai direto para a tela, e "1,000,000"
             # se le como um e pouco em portugues.
             + [f"Valores divididos por {divisor:,.0f}.".replace(",", ".")],
+            fonte=dict(self.fonte),
         )
 
 
@@ -401,4 +408,5 @@ def aplicar_mapeamento_manual(
             if normalizar(linha.rotulo) not in rotulos_mapeados
         ],
         avisos=avisos,
+        fonte=dict(demonstracoes.fonte),
     )

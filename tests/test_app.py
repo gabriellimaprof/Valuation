@@ -91,6 +91,24 @@ def test_conta_sintetica_vem_antes_da_analitica():
     assert posicao < LIMITE_CONFERENCIA, "o capex voltou a ficar fora da tela"
 
 
+def test_atualizar_da_cvm_so_avanca_no_tempo():
+    """Atualizar acrescenta exercicios novos, nunca desce buscar decada antiga.
+
+    A conta ingenua (todos os anos completos menos os salvos) fazia um clique em
+    "Atualizar" baixar de 2010 em diante -- dez arquivos de 13 MB que o usuario
+    nao pediu.
+    """
+    from app.paginas.dados import _anos_a_acrescentar
+
+    disponiveis = list(range(2010, 2027))
+    assert _anos_a_acrescentar([2019, 2020, 2021, 2022, 2023], disponiveis, 2026) == [
+        2024,
+        2025,
+    ]
+    # Ja atualizado: nada a fazer, e o ano corrente nao entra.
+    assert _anos_a_acrescentar([2024, 2025], disponiveis, 2026) == []
+
+
 def test_ordenacao_de_planilha_sem_codigo_continua_alfabetica():
     """Origem sem codigo CVM empata em nivel zero: nada muda para ela."""
     from app.paginas.dados import _relevancia

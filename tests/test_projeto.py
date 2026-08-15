@@ -62,6 +62,53 @@ def test_premissas_voltam_identicas(projeto):
     assert volta.empresa == projeto.empresa
 
 
+def test_conferencia_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
+    """Retomar tem que devolver o que ainda da para corrigir, nao so os numeros.
+
+    Sem as linhas nao reconhecidas no arquivo, a tela de conferencia voltava
+    vazia e o usuario perdia a chance de mapear a mao o que o app nao entendeu.
+    """
+    from valuation.importacao import LinhaNaoReconhecida
+
+    original = type(demonstracoes)(
+        **{
+            **demonstracoes.__dict__,
+            "nao_reconhecidas": [
+                LinhaNaoReconhecida("6.02.02 - Imobilizado", "DFC", None, 0.0),
+                LinhaNaoReconhecida("1.01.06 - Tributos", "Balanço", "estoques", 0.42),
+            ],
+            "avisos": ["Ativo e passivo divergem em 2%."],
+        }
+    )
+    volta = desserializar(serializar(Projeto(empresa=empresa_exemplo, demonstracoes=original)))
+
+    assert [l.rotulo for l in volta.demonstracoes.nao_reconhecidas] == [
+        "6.02.02 - Imobilizado",
+        "1.01.06 - Tributos",
+    ]
+    recuperada = volta.demonstracoes.nao_reconhecidas[1]
+    assert recuperada.aba == "Balanço"
+    assert recuperada.melhor_palpite == "estoques"
+    assert recuperada.confianca == pytest.approx(0.42)
+    assert volta.demonstracoes.avisos == ["Ativo e passivo divergem em 2%."]
+
+
+def test_fonte_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
+    """É o que permite rebuscar na CVM um valuation salvo meses atrás."""
+    fonte = {"tipo": "cvm", "codigo_cvm": 5410, "anos": [2023, 2024]}
+    original = type(demonstracoes)(**{**demonstracoes.__dict__, "fonte": fonte})
+    volta = desserializar(serializar(Projeto(empresa=empresa_exemplo, demonstracoes=original)))
+    assert volta.demonstracoes.fonte == fonte
+
+
+def test_arquivo_antigo_sem_os_campos_novos_continua_abrindo(projeto):
+    """Compatibilidade: quem salvou antes destes campos nao pode ficar preso."""
+    volta = desserializar(serializar(projeto))
+    assert volta.demonstracoes.nao_reconhecidas == []
+    assert volta.demonstracoes.avisos == []
+    assert volta.demonstracoes.fonte == {}
+
+
 def test_valuation_reproduz_o_mesmo_numero(projeto):
     """A prova que importa: o modelo restaurado calcula o mesmo valor."""
     original = avaliar(projeto.empresa, meio_de_ano=True)
