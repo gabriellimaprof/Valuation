@@ -1,0 +1,8 @@
+# Configuracao do app publicado. O tema fica a cargo do navegador do usuario:
+# a paleta dos graficos tem passos proprios para claro e escuro, entao forcar
+# um dos dois anularia metade do trabalho de acessibilidade.
+[server]
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false

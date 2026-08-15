@@ -1,0 +1,10 @@
+# Dependencias do app, no formato que o Streamlit Community Cloud le.
+# O pyproject.toml continua sendo a fonte para instalacao local e para os
+# testes; este arquivo existe porque o Streamlit Cloud nao instala um pacote
+# declarado com setuptools, apenas le uma lista simples.
+streamlit>=1.40
+plotly>=5.20
+numpy>=1.26
+pandas>=2.0
+openpyxl>=3.1
+PyYAML>=6.0
