@@ -1,0 +1,86 @@
+# Modelo de premissas de valuation.
+# Todas as taxas sao decimais: 0.12 = 12% a.a.
+# Valores monetarios em R$ milhoes, coerentes entre si.
+
+nome: Industrias Exemplo S.A.
+data_base: 2025-12-31
+moeda: BRL
+unidade: R$ milhoes
+
+macro:
+  inflacao_brl: 0.04        # IPCA de longo prazo
+  inflacao_usd: 0.023       # inflacao americana de longo prazo
+  aliquota_ir: 0.34         # IRPJ 25% + CSLL 9%
+
+custo_capital:
+  rf_usd: 0.045             # T-Bond 10 anos
+  erp_maduro: 0.045         # premio de risco do mercado americano
+  risco_pais: 0.025         # premio de risco-pais Brasil (EMBI+ / CDS)
+  lambda_pais: 1.0          # exposicao da empresa ao risco-pais
+  premio_tamanho: 0.0       # premio adicional para empresas menores
+  beta_alavancado_setor: 1.05
+  divida_pl_setor: 0.45     # D/E medio dos comparaveis, para desalavancar
+  divida_pl_alvo: 0.50      # D/E alvo da empresa, para realavancar e ponderar
+  spread_credito: 0.025     # usado se custo_divida_brl nao for informado
+  # custo_divida_brl: 0.135 # descomente para informar o Kd direto em BRL
+
+operacionais:
+  receita_base: 1200.0      # receita liquida do ano base (ano 0)
+  horizonte: 5              # permite escrever premissas anuais como numero unico
+  crescimento_receita:   [0.12, 0.10, 0.08, 0.06, 0.05]
+  margem_ebitda:         [0.180, 0.185, 0.190, 0.190, 0.190]
+  depreciacao_pct_receita: 0.045
+  capex_pct_receita:     [0.060, 0.055, 0.050, 0.050, 0.047]
+  capital_giro_pct_receita: 0.12   # saldo, nao variacao
+
+perpetuidade:
+  metodo: gordon            # 'gordon' ou 'multiplo'
+  crescimento_perpetuo: 0.045   # nao deve superar a inflacao + crescimento real do PIB
+  roic_perpetuidade: 0.15   # normaliza o reinvestimento; remova para Gordon simples
+  # multiplo_saida: 7.0     # usado quando metodo = multiplo
+
+ponte:
+  divida_bruta: 900.0
+  caixa: 250.0
+  aplicacoes_financeiras: 0.0
+  minoritarios: 30.0
+  contingencias: 60.0
+  deficit_atuarial: 0.0
+  ativos_nao_operacionais: 0.0
+  acoes_em_circulacao: 150.0     # em milhoes, coerente com a unidade
+
+# --- Analises que acompanham o valuation (todos os blocos sao opcionais) ---
+
+sensibilidade:
+  metrica: equity_value
+  linhas:
+    caminho: wacc           # 'wacc' e especial: forca a taxa de desconto
+    valores: [0.105, 0.110, 0.115, 0.120, 0.125]
+  colunas:
+    caminho: perpetuidade.crescimento_perpetuo
+    valores: [0.035, 0.040, 0.045, 0.050, 0.055]
+
+cenarios:
+  Pessimista:
+    operacionais.margem_ebitda: 0.16
+    perpetuidade.crescimento_perpetuo: 0.035
+  Base: {}
+  Otimista:
+    operacionais.margem_ebitda: 0.21
+    perpetuidade.crescimento_perpetuo: 0.050
+
+simulacao:
+  simulacoes: 5000
+  metrica: equity_value
+  distribuicoes:
+    - caminho: wacc
+      tipo: triangular
+      parametros: {minimo: 0.100, moda: 0.115, maximo: 0.135}
+    - caminho: perpetuidade.crescimento_perpetuo
+      tipo: triangular
+      parametros: {minimo: 0.030, moda: 0.045, maximo: 0.055}
+    - caminho: operacionais.margem_ebitda
+      tipo: normal
+      parametros: {media: 0.185, desvio: 0.015}
+      limite_inferior: 0.10
+      limite_superior: 0.28

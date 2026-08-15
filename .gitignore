@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Planilhas geradas pelo exportador (o modelo versionado e o YAML de premissas)
+*.xlsx
+!exemplos/*.xlsx
+~$*
+
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,62 @@
+# Peer group para avaliacao relativa.
+# Valores em R$ milhoes, dos ultimos 12 meses.
+# valor_mercado = capitalizacao de mercado do equity
+# divida_liquida = divida bruta - caixa (pode ser negativa)
+
+alvo:
+  nome: Industrias Exemplo S.A.
+  receita: 1200.0
+  ebitda: 216.0
+  ebit: 162.0
+  lucro_liquido: 78.0
+  patrimonio_liquido: 620.0
+  divida_liquida: 650.0
+  acoes_em_circulacao: 150.0
+
+comparaveis:
+  - nome: Comparavel Alfa
+    valor_mercado: 2400.0
+    divida_liquida: 900.0
+    receita: 1850.0
+    ebitda: 351.0
+    ebit: 259.0
+    lucro_liquido: 145.0
+    patrimonio_liquido: 1100.0
+
+  - nome: Comparavel Beta
+    valor_mercado: 1750.0
+    divida_liquida: 420.0
+    receita: 1320.0
+    ebitda: 224.0
+    ebit: 158.0
+    lucro_liquido: 96.0
+    patrimonio_liquido: 780.0
+
+  - nome: Comparavel Gama
+    valor_mercado: 3900.0
+    divida_liquida: -150.0
+    receita: 2600.0
+    ebitda: 546.0
+    ebit: 425.0
+    lucro_liquido: 288.0
+    patrimonio_liquido: 1950.0
+
+  - nome: Comparavel Delta
+    valor_mercado: 980.0
+    divida_liquida: 610.0
+    receita: 1100.0
+    ebitda: 154.0
+    ebit: 88.0
+    lucro_liquido: 21.0
+    patrimonio_liquido: 430.0
+
+  # Prejuizo no exercicio: P/L sai como n/a e nao entra nas estatisticas,
+  # mas os multiplos de EV continuam validos.
+  - nome: Comparavel Epsilon
+    valor_mercado: 1400.0
+    divida_liquida: 880.0
+    receita: 1600.0
+    ebitda: 192.0
+    ebit: 96.0
+    lucro_liquido: -35.0
+    patrimonio_liquido: 690.0
