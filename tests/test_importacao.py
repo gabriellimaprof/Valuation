@@ -349,6 +349,12 @@ def test_escalar_converte_unidade(cvm):
     assert dfs.unidade == "R$ milhoes"
 
 
+def test_aviso_de_escala_usa_milhar_com_ponto(cvm):
+    """O aviso vai direto para a tela: "1,000,000" se le errado em portugues."""
+    dfs = importar(cvm).escalar(1_000_000, "R$ milhoes")
+    assert "Valores divididos por 1.000.000." in dfs.avisos
+
+
 def test_mapeamento_manual_corrige_reconhecimento(tmp_path):
     linhas = [
         ["Conta", 2023, 2024],

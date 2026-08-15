@@ -37,7 +37,7 @@ valuation multiplos exemplos/comparaveis_exemplo.yaml
 
 | Tela | O que faz |
 | --- | --- |
-| **Dados** | Retoma um valuation salvo, ou importa DFs de export CVM/B3, de terminal (Economatica, Bloomberg, Capital IQ) ou do template do app. Mostra o que reconheceu e deixa corrigir o que errou. |
+| **Dados** | Busca a empresa direto nos **Dados Abertos da CVM** (por nome ou CNPJ), retoma um valuation salvo, ou importa DFs de export CVM/B3, de terminal (Economatica, Bloomberg, Capital IQ) ou do template do app. Mostra o que reconheceu e deixa corrigir o que errou. |
 | **Histórico** | Margens, retorno, reinvestimento e ciclo de caixa, com as decomposições de DuPont e de ROIC. |
 | **Premissas** | Projeção ano a ano, com a mediana histórica ao lado de cada campo como âncora. |
 | **Custo de capital** | Beta por setor, risco-país e estrutura-alvo, com a montagem do WACC passo a passo. |
@@ -50,9 +50,9 @@ valuation multiplos exemplos/comparaveis_exemplo.yaml
 
 ## Importação de demonstrações
 
-A mesma função atende as três origens. O que muda entre elas — código de conta,
-nomenclatura, sinal dos custos, posição do cabeçalho — é absorvido no
-importador, e o resultado sai sempre no mesmo vocabulário canônico.
+A mesma função atende as origens baseadas em arquivo. O que muda entre elas —
+código de conta, nomenclatura, sinal dos custos, posição do cabeçalho — é
+absorvido no importador, e o resultado sai sempre no mesmo vocabulário canônico.
 
 Detalhes que decidem se a importação funciona na prática:
 
@@ -67,6 +67,44 @@ Detalhes que decidem se a importação funciona na prática:
 
 Nada é descartado em silêncio: linhas não reconhecidas, contas derivadas e
 divergências nas identidades contábeis aparecem na tela para conferência.
+
+### Dados Abertos da CVM
+
+`importacao/cvm.py` dispensa o arquivo: você escolhe a empresa e os anos, e ele
+baixa a DFP de `dados.cvm.gov.br`. O vocabulário é o mesmo de `esquema.py` — o
+que o módulo acrescenta é a camada de download e a conversão do **formato
+longo** da CVM (uma linha por conta, por exercício) para colunas por ano.
+
+```python
+from valuation.importacao import buscar_companhias, carregar_cadastro, importar_cvm
+
+catalogo = carregar_cadastro()                      # cadastro de companhias abertas
+weg = buscar_companhias("WEG", catalogo)[0]         # ou por CNPJ
+dfs = importar_cvm(weg, range(2019, 2025))          # valores em reais
+```
+
+O que o arquivo real exige, e que não se descobre lendo a documentação:
+
+- **O encoding é `latin-1`, não UTF-8**, e o separador é `;`. Ler como UTF-8
+  estoura na primeira palavra acentuada.
+- **`ORDEM_EXERC` traz `ÚLTIMO` e `PENÚLTIMO` no mesmo arquivo.** O zip de 2024
+  já contém 2023; empilhar dois anos sem filtrar duplica o ano do meio. O
+  leitor usa só `ÚLTIMO`, então cada exercício entra uma vez e sempre na versão
+  publicada no próprio ano.
+- **`ESCALA_MOEDA` diz se os valores estão em `MIL` ou em `UNIDADE`**, e varia
+  entre empresas do mesmo arquivo — em 2024, 459 companhias em milhares e 8 em
+  unidades. A receita da WEG aparece como `37.986.941` (R$ 38 bi) e a da Vivara
+  como `2.577.113.417` (R$ 2,6 bi). Ignorar o campo erra por mil vezes, para
+  mais ou para menos conforme a empresa. Tudo sai convertido para reais.
+- **Nem todo exercício social fecha em 31/12** (Raízen e São Martinho fecham em
+  março, Camil em fevereiro): o ano vem de `DT_FIM_EXERC`, não do nome do
+  arquivo.
+- **Nem toda companhia publica consolidado** — 242 das 709 de 2024 só publicam
+  individual. O leitor prefere o consolidado, cai para o individual quando não
+  há, e avisa na tela quando isso acontece.
+
+Os arquivos ficam em cache (`~/.cache/valuation/cvm`): o segundo valuation da
+mesma empresa não baixa nada de novo.
 
 ## Decisões de modelagem
 
@@ -165,10 +203,16 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-363 testes cobrindo identidades contábeis, casos de borda econômicos, a
-equivalência Excel/Python, as três origens de importação e as regras de
+406 testes cobrindo identidades contábeis, casos de borda econômicos, a
+equivalência Excel/Python, as origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.
+
+Os testes da CVM rodam contra **recortes em bytes dos arquivos reais** do portal
+(`tests/dados/cvm`), com o `latin-1`, o `;` e o CRLF originais preservados —
+não contra planilhas inventadas. São quatro companhias escolhidas por
+comportamento: WEG (escala `MIL`), Vivara (escala `UNIDADE`), São Martinho
+(exercício fecha em março) e Elektro Redes (só publica individual).
 
 ## Estrutura
 

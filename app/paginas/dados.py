@@ -16,6 +16,13 @@ from valuation.importacao import (
     gerar_template,
     importar,
 )
+from valuation.importacao.cvm import (
+    ErroCVM,
+    anos_disponiveis,
+    buscar_companhias,
+    carregar_cadastro,
+    importar_cvm,
+)
 
 from .. import estado
 from ..componentes import etapa, tabela_formatada
@@ -35,9 +42,10 @@ def render() -> None:
         "Importe as demonstrações financeiras ou preencha o essencial à mão",
     )
 
-    aba_retomar, aba_importar, aba_template, aba_manual = st.tabs(
+    aba_retomar, aba_cvm, aba_importar, aba_template, aba_manual = st.tabs(
         [
             "Retomar valuation salvo",
+            "Buscar na CVM",
             "Importar planilha",
             "Baixar template",
             "Preencher à mão",
@@ -46,12 +54,21 @@ def render() -> None:
 
     with aba_retomar:
         _retomar()
+    with aba_cvm:
+        _cvm()
     with aba_importar:
         _importar()
     with aba_template:
         _template()
     with aba_manual:
         _manual()
+
+    # A conferencia fica fora das abas, e nao dentro de cada origem, porque o
+    # Streamlit executa o corpo de todas as abas em cada rerun: chamada de dois
+    # lugares, ela registraria os mesmos widgets duas vezes e o app quebraria
+    # com chave duplicada. Fora das abas ela tambem passa a ser o que o nome diz
+    # -- uma tela de conferencia so, comum a qualquer origem de importacao.
+    _mostrar_importacao_atual()
 
 
 def _retomar() -> None:
@@ -108,6 +125,131 @@ def _retomar() -> None:
         st.rerun()
 
 
+# A CVM sempre publica em reais (o leitor ja corrige ESCALA_MOEDA), entao aqui
+# a pergunta e so em que unidade o usuario quer trabalhar -- e nao, como na
+# importacao de planilha, em que unidade o arquivo veio.
+UNIDADES_CVM = {
+    "R$ milhões": (1_000_000, "R$ milhões"),
+    "R$ mil": (1_000, "R$ mil"),
+    "R$ bilhões": (1_000_000_000, "R$ bilhões"),
+    "Reais (R$ 1)": (1, "R$"),
+}
+
+# Historico longo o bastante para o ciclo aparecer: pega a pandemia, a inflacao
+# de 2021-2022 e a normalizacao seguinte, que e o periodo que da contexto a
+# qualquer projecao feita hoje.
+ANO_PADRAO_INICIAL = 2019
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def _catalogo_cvm():
+    """Cadastro de companhias abertas, baixado uma vez por dia."""
+    return carregar_cadastro()
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def _anos_cvm() -> list[int]:
+    return anos_disponiveis()
+
+
+def _cvm() -> None:
+    """Importa direto dos Dados Abertos da CVM: escolher empresa e ano."""
+    st.markdown(
+        "Busque a companhia pelo **nome** ou pelo **CNPJ** e escolha os anos. O app "
+        "baixa a **DFP** de dados.cvm.gov.br, converte para o mesmo vocabulário das "
+        "outras origens e cai na mesma tela de conferência. Os arquivos ficam em "
+        "cache: o segundo valuation da mesma empresa não baixa nada de novo."
+    )
+
+    try:
+        catalogo = _catalogo_cvm()
+    except ErroCVM as erro:
+        st.error(f"Não consegui obter o cadastro de companhias da CVM: {erro}")
+        return
+
+    st.caption(f"{len(catalogo):,} companhias com registro ativo na CVM.".replace(",", "."))
+
+    termo = st.text_input(
+        "Empresa",
+        key="busca_cvm",
+        placeholder="WEG, Petrobras, Vivara… ou 84.429.695/0001-11",
+        help="Nome social, nome comercial ou CNPJ (com ou sem pontuação).",
+    )
+
+    if not termo.strip():
+        st.info("Digite parte do nome ou o CNPJ para começar.")
+        return
+
+    achados = buscar_companhias(termo, catalogo)
+    if not achados:
+        st.warning(
+            f"Nenhuma companhia com registro ativo casou com “{termo}”. Empresas de "
+            "capital fechado e registros cancelados não entram nos Dados Abertos."
+        )
+        return
+
+    rotulos = {f"{c.nome} — {c.cnpj}": c for c in achados}
+    escolhido = st.selectbox(f"{len(achados)} resultado(s)", list(rotulos))
+    companhia = rotulos[escolhido]
+
+    colunas = st.columns(3)
+    colunas[0].metric("Código CVM", companhia.codigo_cvm)
+    colunas[1].metric("Setor", companhia.setor or "—")
+    colunas[2].metric("Mercado", companhia.mercado or "—")
+
+    anos_ok = _anos_cvm()
+    # De 2019 ate o ultimo exercicio com dado. O arquivo do ano corrente existe
+    # desde janeiro, mas quase vazio -- a DFP de um exercicio so e entregue no
+    # ano seguinte --, entao deixa-lo marcado faria toda importacao nascer com
+    # um aviso de ano sem dado. Ele continua na lista para quem fecha o
+    # exercicio social em marco e ja publicou.
+    from datetime import date
+
+    completos = [a for a in anos_ok if a < date.today().year] or anos_ok
+    padrao = [a for a in completos if a >= ANO_PADRAO_INICIAL] or completos[-6:]
+    colunas = st.columns([3, 1])
+    anos = colunas[0].multiselect(
+        "Exercícios",
+        options=sorted(anos_ok, reverse=True),
+        default=padrao,
+        help="Um arquivo por ano, cerca de 13 MB cada. Só o primeiro download demora.",
+    )
+    unidade = colunas[1].selectbox("Unidade", list(UNIDADES_CVM))
+
+    if not anos:
+        st.info("Escolha ao menos um exercício. Para projetar, o ideal são 5 ou 6.")
+        return
+
+    if st.button("Importar da CVM", type="primary"):
+        _processar_cvm(companhia, sorted(anos), unidade)
+
+
+def _processar_cvm(companhia, anos: list[int], unidade: str) -> None:
+    destino = Path(tempfile.gettempdir()) / f"cvm_{companhia.codigo_cvm}.xlsx"
+    faixa = f"{anos[0]}–{anos[-1]}" if len(anos) > 1 else str(anos[0])
+
+    try:
+        with st.spinner(f"Baixando a DFP de {companhia.nome} ({faixa})…"):
+            dfs = importar_cvm(companhia, anos, planilha=destino)
+    except ErroCVM as erro:
+        st.error(f"Não consegui importar da CVM: {erro}")
+        return
+
+    divisor, nova_unidade = UNIDADES_CVM[unidade]
+    if divisor != 1:
+        dfs = dfs.escalar(divisor, nova_unidade)
+
+    estado.definir_demonstracoes(dfs)
+    # A tela de conferencia reprocessa este arquivo quando o usuario corrige um
+    # mapeamento, do mesmo jeito que faz com uma planilha enviada por upload.
+    st.session_state["arquivo_importado"] = str(destino)
+    st.success(
+        f"Importado da CVM: {len(dfs.valores.index)} contas em {len(dfs.anos)} "
+        f"exercício(s) ({dfs.anos[0]}–{dfs.anos[-1]})."
+    )
+    st.rerun()
+
+
 def _importar() -> None:
     st.markdown(
         "Aceita export da **CVM/B3**, de **terminal** (Economatica, Bloomberg, "
@@ -131,13 +273,10 @@ def _importar() -> None:
 
     if arquivo is None:
         st.info("Envie um arquivo para começar, ou use as outras abas.")
-        _mostrar_importacao_atual()
         return
 
     if st.button("Importar", type="primary"):
         _processar(arquivo, nome_empresa, int(anos_maximos), escala_escolhida)
-
-    _mostrar_importacao_atual()
 
 
 def _processar(arquivo, nome_empresa: str, anos_maximos: int, escala: str) -> None:

@@ -1,0 +1,5 @@
+# Os fixtures da CVM sao recortes em bytes dos arquivos publicados no portal:
+# latin-1, separador ';' e quebra CRLF, exatamente como vieram. A conversao
+# automatica de fim de linha do Git reescreveria o CRLF em Linux e o teste
+# deixaria de exercitar o arquivo real -- que e a unica razao de eles existirem.
+tests/dados/** -text

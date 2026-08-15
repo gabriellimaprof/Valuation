@@ -20,11 +20,11 @@ o valor e qual é o erro comum naquele ponto.
 ## Como rodar
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 363 testes
+pytest                        # 406 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -39,6 +39,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
     esquema.py          contas canônicas, sinônimos e códigos CVM
     leitura.py          números, cabeçalhos de ano, coluna de códigos
     importador.py       orquestra e devolve Demonstracoes
+    cvm.py              baixa os Dados Abertos da CVM; formato longo → anos
     template.py         gera o template preenchível
   historico.py          indicadores, DuPont, ROIC, premissas sugeridas
   custo_capital.py      beta, CAPM com risco-país, Kd, WACC
@@ -79,6 +80,13 @@ causa de um typo é pior que nenhuma tabela, porque parece resultado.
 **Nada é descartado em silêncio.** O importador devolve linhas não reconhecidas,
 contas derivadas e divergências contábeis como campos do resultado, e a tela
 mostra tudo.
+
+**Os arquivos da CVM têm duas armadilhas que já custaram caro.** `ORDEM_EXERC`
+traz `ÚLTIMO` e `PENÚLTIMO` no mesmo arquivo — o zip de 2024 já contém 2023, e
+empilhar anos sem filtrar duplica o ano do meio. `ESCALA_MOEDA` diz se os
+valores estão em `MIL` ou em `UNIDADE`, e **varia entre empresas do mesmo
+arquivo**; ignorá-lo erra a empresa por mil vezes. Ambas estão travadas por
+teste em `tests/test_importacao_cvm.py`, contra recorte do arquivo real.
 
 **Textos em português acentuado, números no padrão brasileiro** (milhar com
 ponto, decimal com vírgula). Use os formatadores existentes; não escreva
@@ -128,28 +136,43 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-363 testes passando. Verificado de verdade: contas financeiras, identidades,
-equivalência Excel/Python, as três origens de importação, fluxo completo no
+406 testes passando. Verificado de verdade: contas financeiras, identidades,
+equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
+
+O leitor da CVM foi construído **a partir dos arquivos baixados**, não de
+memória: encoding, separador, colunas e domínios foram conferidos no arquivo
+real antes de existir código. Os testes rodam contra recortes em bytes desses
+mesmos arquivos (`tests/dados/cvm`), e o fluxo foi percorrido no navegador
+importando a WEG de 2019 a 2025 pela tela nova.
 
 **Não verificado, e é honesto dizer:**
 
-1. O importador nunca viu um arquivo real do usuário — só planilhas construídas
-   nos testes.
-2. A planilha nunca foi aberta no Excel de verdade (validada com o pacote
+1. A planilha nunca foi aberta no Excel de verdade (validada com o pacote
    `formulas`, que é independente mas não é o Excel).
-3. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
+2. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
+3. Da CVM, só a **DFP** (anual) é lida. O ITR trimestral tem estrutura parecida
+   e não foi tocado. Bancos e seguradoras são importados sem erro, mas o plano
+   de contas deles usa os mesmos códigos para outra coisa — 3.01 é receita de
+   intermediação financeira — e o FCFF/WACC não se aplica a eles de qualquer
+   forma.
+4. A importação da CVM foi conferida com quatro companhias de perto e uma no
+   navegador; não foi rodada em lote contra as 663 do cadastro.
 
 ## Lacunas conhecidas
 
 Em ordem de valor:
 
-1. **Leitor dos Dados Abertos da CVM** — o que está sendo pedido agora.
-2. **Capitalização de P&D e de leasing sem tela** — existem e são testados em
+1. **Capitalização de P&D e de leasing sem tela** — existem e são testados em
    `casos_especiais.py`, mas só a normalização cíclica chegou à interface.
-3. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
+2. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
    oferece a opção, mas não há onde informar a dívida ano a ano.
+3. **Capex da DFC nem sempre é reconhecido.** A conta 6.02.02 não tem código
+   fixo no plano da CVM e cada empresa a rotula do seu jeito: "Aquisição de
+   imobilizado" casa, "Imobilizado" (o rótulo da WEG) não. A linha aparece
+   como não reconhecida para o usuário mapear à mão, mas resolver isso no
+   `esquema.py` pouparia o passo.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte

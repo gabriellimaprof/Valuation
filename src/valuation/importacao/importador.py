@@ -138,7 +138,10 @@ class Demonstracoes:
             mapeamento=dict(self.mapeamento),
             derivadas=dict(self.derivadas),
             nao_reconhecidas=list(self.nao_reconhecidas),
-            avisos=list(self.avisos) + [f"Valores divididos por {divisor:,.0f}."],
+            avisos=list(self.avisos)
+            # Milhar com ponto: o texto vai direto para a tela, e "1,000,000"
+            # se le como um e pouco em portugues.
+            + [f"Valores divididos por {divisor:,.0f}.".replace(",", ".")],
         )
 
 
