@@ -65,6 +65,45 @@ def test_tabela_formatada_preserva_estrutura():
 
 
 # ---------------------------------------------------------------------------
+# Ordenacao da tela de conferencia
+# ---------------------------------------------------------------------------
+
+
+def test_conta_sintetica_vem_antes_da_analitica():
+    """A DFP traz centenas de subcontas; a tela so mostra as primeiras.
+
+    Ordenada por codigo, a linha de capex da WEG (6.02.02) caia na posicao 212
+    de 237 e ficava fora de alcance, enquanto as 40 visiveis eram subcontas de
+    quarto e quinto nivel que ninguem mapeia.
+    """
+    from app.paginas.dados import LIMITE_CONFERENCIA, _relevancia
+    from valuation.importacao import LinhaNaoReconhecida
+
+    linhas = [
+        LinhaNaoReconhecida(f"1.01.06.01.{i:02d} - Tributo a recuperar", "Balanço", None, 0.0)
+        for i in range(60)
+    ] + [LinhaNaoReconhecida("6.02.02 - Imobilizado", "DFC", None, 0.0)]
+
+    ordenadas = sorted(linhas, key=_relevancia)
+    posicao = next(
+        i for i, l in enumerate(ordenadas) if l.rotulo.startswith("6.02.02")
+    )
+    assert posicao < LIMITE_CONFERENCIA, "o capex voltou a ficar fora da tela"
+
+
+def test_ordenacao_de_planilha_sem_codigo_continua_alfabetica():
+    """Origem sem codigo CVM empata em nivel zero: nada muda para ela."""
+    from app.paginas.dados import _relevancia
+    from valuation.importacao import LinhaNaoReconhecida
+
+    linhas = [
+        LinhaNaoReconhecida("Zebra", "Plan1", None, 0.0),
+        LinhaNaoReconhecida("Alfa", "Plan1", None, 0.0),
+    ]
+    assert [l.rotulo for l in sorted(linhas, key=_relevancia)] == ["Alfa", "Zebra"]
+
+
+# ---------------------------------------------------------------------------
 # Conversao de markdown nos blocos explicativos
 # ---------------------------------------------------------------------------
 

@@ -23,6 +23,7 @@ from valuation.importacao.cvm import (
     carregar_cadastro,
     importar_cvm,
 )
+from valuation.importacao.esquema import extrair_codigo_cvm
 
 from .. import estado
 from ..componentes import etapa, tabela_formatada
@@ -341,6 +342,21 @@ def _mostrar_importacao_atual() -> None:
         _aplicar_sugestao(dfs)
 
 
+LIMITE_CONFERENCIA = 40
+
+
+def _relevancia(linha) -> tuple[int, str]:
+    """Ordena as linhas não reconhecidas da mais sintética para a mais analítica.
+
+    O nível vem do código do plano de contas: ``6.02.02`` (capex, três níveis)
+    interessa muito mais que ``1.01.06.01.01`` (imposto a recuperar, cinco). Em
+    planilha sem código todos empatam em zero e a ordem continua alfabética,
+    como era antes.
+    """
+    codigo = extrair_codigo_cvm(linha.rotulo)
+    return (codigo.count(".") if codigo else 0, linha.rotulo)
+
+
 def _conferencia(dfs) -> None:
     """Tela de auditoria da importacao: o que casou, o que foi derivado, o que sobrou."""
     st.markdown("**Contas reconhecidas**")
@@ -379,15 +395,48 @@ def _conferencia(dfs) -> None:
         "usa, aponte aqui qual é."
     )
 
+    linhas = sorted(dfs.nao_reconhecidas, key=_relevancia)
+
+    # A DFP traz centenas de linhas analíticas por empresa. Sem o filtro, a
+    # lista chegava ordenada por código e as primeiras — as únicas que cabiam na
+    # tela — eram justamente as de quarto e quinto nível, que ninguém mapeia: a
+    # linha de capex da DFC ficava na posição 212 de 237, fora de alcance.
+    origens = sorted({linha.aba for linha in linhas})
+    if len(origens) > 1:
+        quantas = {o: sum(1 for l in linhas if l.aba == o) for o in origens}
+        escolhida = st.radio(
+            "Onde procurar",
+            ["Todas", *origens],
+            format_func=lambda o: o if o == "Todas" else f"{o} ({quantas[o]})",
+            horizontal=True,
+            key="filtro_conferencia",
+        )
+        if escolhida != "Todas":
+            linhas = [l for l in linhas if l.aba == escolhida]
+
+    visiveis = linhas[:LIMITE_CONFERENCIA]
+    if len(linhas) > LIMITE_CONFERENCIA:
+        st.caption(
+            f"Mostrando {LIMITE_CONFERENCIA} de {len(linhas)} linhas, das contas "
+            "mais sintéticas para as mais analíticas. As que ficaram de fora são "
+            "subcontas detalhadas — se precisar de uma delas, filtre pela "
+            "demonstração acima."
+        )
+
     opcoes = ["(ignorar)"] + [c.rotulo for c in CONTAS]
     rotulo_para_chave = {c.rotulo: c.chave for c in CONTAS}
     escolhas: dict[str, str] = {}
 
-    for indice, linha in enumerate(dfs.nao_reconhecidas[:40]):
+    for linha in visiveis:
         colunas = st.columns([3, 2])
         colunas[0].text(linha.rotulo)
         escolha = colunas[1].selectbox(
-            "conta", opcoes, key=f"mapa_{indice}", label_visibility="collapsed"
+            "conta",
+            opcoes,
+            # A chave acompanha a linha, e nao a posicao: com o filtro ligado as
+            # posicoes mudam, e uma escolha ja feita saltaria para outra conta.
+            key=f"mapa_{linha.aba}|{linha.rotulo}",
+            label_visibility="collapsed",
         )
         if escolha != "(ignorar)":
             escolhas[linha.rotulo] = rotulo_para_chave[escolha]

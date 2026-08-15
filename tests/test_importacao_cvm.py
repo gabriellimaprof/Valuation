@@ -38,6 +38,7 @@ from valuation.importacao.cvm import (
     SEPARADOR,
     Companhia,
     ErroCVM,
+    _apenas_da_companhia,
     _fator_escala,
     baixar_dfp,
     buscar_companhias,
@@ -102,6 +103,49 @@ def test_layout_das_colunas_da_dfp():
     assert cabecalho_bp == esperado_bp
     # A DRE e a DFC descrevem um periodo, nao uma data: tem DT_INI_EXERC a mais.
     assert cabecalho_dre == esperado_bp[:9] + ["DT_INI_EXERC"] + esperado_bp[9:]
+
+
+def test_nenhum_campo_contem_o_separador():
+    """O recorte em bytes depende disso: CD_CVM sempre na mesma posicao.
+
+    Se a CVM passar a citar campos com ';' dentro, a contagem de campos varia e
+    o filtro rapido silenciosamente deixaria de achar a empresa. Melhor descobrir
+    aqui do que numa importacao vazia.
+    """
+    with zipfile.ZipFile(DADOS / "dfp_cia_aberta_2024.zip") as arquivo:
+        for nome in arquivo.namelist():
+            linhas = [l for l in arquivo.read(nome).split(b"\r\n") if l]
+            campos = {l.count(b";") for l in linhas}
+            assert len(campos) == 1, f"{nome} tem linhas com contagem de campos diferente"
+
+
+def test_recorte_em_bytes_pega_so_a_companhia():
+    with zipfile.ZipFile(DADOS / "dfp_cia_aberta_2024.zip") as arquivo:
+        bruto = arquivo.read("dfp_cia_aberta_DRE_con_2024.csv")
+
+    recorte = _apenas_da_companhia(bruto, WEG)
+    assert recorte is not None
+    linhas = [l for l in recorte.split(b"\r\n") if l]
+
+    assert linhas[0] == bruto.split(b"\r\n")[0], "o cabecalho tem que sobreviver"
+    assert len(linhas) > 1
+    for linha in linhas[1:]:
+        assert linha.split(b";")[4].lstrip(b"0") == str(WEG).encode()
+    # O fixture tem quatro companhias; o recorte tem que ser menor que o todo.
+    assert len(linhas) < len([l for l in bruto.split(b"\r\n") if l])
+
+
+def test_recorte_em_bytes_de_companhia_ausente():
+    with zipfile.ZipFile(DADOS / "dfp_cia_aberta_2024.zip") as arquivo:
+        bruto = arquivo.read("dfp_cia_aberta_DRE_con_2024.csv")
+    assert _apenas_da_companhia(bruto, 999_999) is None
+
+
+def test_recorte_em_bytes_nao_muda_o_resultado():
+    """A otimizacao e invisivel: os numeros tem que ser os mesmos de antes."""
+    dfs = importar_cvm(WEG, [2024], cache=DADOS)
+    assert dfs.valor("receita_liquida", 2024) == pytest.approx(37_986_941_000.0)
+    assert dfs.valor("ativo_total", 2024) == dfs.valor("passivo_total", 2024)
 
 
 @pytest.mark.parametrize(

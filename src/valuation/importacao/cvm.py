@@ -322,7 +322,42 @@ def _nome_no_zip(grupo: str, escopo: str, ano: int) -> str:
     return f"dfp_cia_aberta_{grupo}_{escopo}_{ano}.csv"
 
 
-def _ler_csv_do_zip(zip_path: Path, nome: str) -> pd.DataFrame | None:
+# Posicao de CD_CVM na linha: CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;...
+# A contagem de campos nao varia em nenhum arquivo do portal -- nenhum ';'
+# dentro de campo --, entao a posicao e confiavel.
+COLUNA_CD_CVM = 4
+
+
+def _codigo_da_linha(linha: bytes) -> bytes:
+    campos = linha.split(SEPARADOR.encode(), COLUNA_CD_CVM + 1)
+    if len(campos) <= COLUNA_CD_CVM:
+        return b""
+    return campos[COLUNA_CD_CVM].strip().strip(b'"').lstrip(b"0") or b"0"
+
+
+def _apenas_da_companhia(bruto: bytes, codigo_cvm: int) -> bytes | None:
+    """Recorta as linhas de uma companhia antes de qualquer parse.
+
+    Um zip anual tem cerca de 129 MB de CSV descompactado e o que interessa sao
+    algumas centenas de linhas. Entregar o arquivo inteiro ao pandas para
+    descartar 99,9% depois custava mais de um segundo por ano; filtrar em bytes
+    troca isso por uma varredura linear e mantem o parse do tamanho do recorte.
+    """
+    quebra = b"\r\n" if b"\r\n" in bruto else b"\n"
+    linhas = bruto.split(quebra)
+    if not linhas:
+        return None
+
+    alvo = str(codigo_cvm).encode()
+    mantidas = [l for l in linhas[1:] if l and _codigo_da_linha(l) == alvo]
+    if not mantidas:
+        return None
+    return quebra.join([linhas[0], *mantidas]) + quebra
+
+
+def _ler_csv_do_zip(
+    zip_path: Path, nome: str, codigo_cvm: int | None = None
+) -> pd.DataFrame | None:
     try:
         with zipfile.ZipFile(zip_path) as arquivo:
             if nome not in arquivo.namelist():
@@ -334,6 +369,11 @@ def _ler_csv_do_zip(zip_path: Path, nome: str) -> pd.DataFrame | None:
             f"O arquivo {zip_path.name} nao abriu como zip ({erro}). "
             "Ele pode ter sido baixado pela metade -- apague-o do cache e tente de novo."
         ) from erro
+
+    if codigo_cvm is not None:
+        bruto = _apenas_da_companhia(bruto, codigo_cvm)
+        if bruto is None:
+            return None
 
     return pd.read_csv(
         io.BytesIO(bruto),
@@ -400,7 +440,9 @@ def _linhas_da_demonstracao(
 
     for escopo in ESCOPOS:
         for grupo in GRUPOS[demonstracao]:
-            dados = _ler_csv_do_zip(zip_path, _nome_no_zip(grupo, escopo, ano))
+            dados = _ler_csv_do_zip(
+                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+            )
             recorte = _filtrar_empresa(dados, codigo_cvm)
             if recorte.empty:
                 continue
