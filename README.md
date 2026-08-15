@@ -1,102 +1,71 @@
 # Valuation
 
-Ferramentas de valuation de empresas com foco no mercado brasileiro: fluxo de
-caixa descontado, avaliação relativa por múltiplos, montagem de WACC/CAPM com
-prêmio de risco-país, análise de sensibilidade, cenários e Monte Carlo — com
-exportação para Excel **com fórmulas vivas**.
+App de valuation de empresas com foco no mercado brasileiro. Importa as
+demonstrações financeiras, analisa o histórico, projeta o futuro, monta o custo
+de capital, desconta os fluxos, testa a sensibilidade das premissas, critica o
+próprio modelo e exporta uma planilha Excel **com fórmulas vivas**.
 
-O modelo de cada empresa é um arquivo YAML versionável. Isso significa que dá
-para revisar premissas em pull request, comparar duas versões de um valuation e
-reproduzir exatamente o mesmo número meses depois.
+Foi construído para servir duas pessoas ao mesmo tempo. Quem já faz valuation
+segue direto pelas telas e usa o diagnóstico como checklist final. Quem está
+aprendendo lê os blocos explicativos: cada tela diz o que está calculando, por
+que aquilo afeta o valor e qual é o erro comum naquele ponto.
 
-## Instalação
+## Rodando
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[app,dev]"
+
+streamlit run app/main.py
 ```
 
-## Começando
+O app não grava nada em disco — todo o estado vive na sessão. Isso mantém os
+dados de cada empresa dentro da própria sessão e deixa o mesmo código pronto
+para rodar em um servidor compartilhado sem retrabalho.
+
+Há também uma linha de comando, para rodar um modelo já versionado em YAML:
 
 ```bash
-valuation exemplo                                    # gera arquivos de exemplo
+valuation exemplo                                             # gera exemplos
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx
-```
-
-Outros comandos:
-
-```bash
-valuation wacc exemplos/empresa_exemplo.yaml         # só a montagem do custo de capital
+valuation wacc exemplos/empresa_exemplo.yaml
 valuation multiplos exemplos/comparaveis_exemplo.yaml
-valuation dcf premissas.yaml --meio-de-ano --sensibilidade
-valuation dcf premissas.yaml --comparaveis peers.yaml --excel modelo.xlsx
 ```
 
-Como biblioteca:
+## O caminho pelo app
 
-```python
-from valuation import carregar_empresa, avaliar, exportar_excel
+| Tela | O que faz |
+| --- | --- |
+| **Dados** | Importa DFs de export CVM/B3, de terminal (Economatica, Bloomberg, Capital IQ) ou do template do app. Mostra o que reconheceu e deixa corrigir o que errou. |
+| **Histórico** | Margens, retorno, reinvestimento e ciclo de caixa, com as decomposições de DuPont e de ROIC. |
+| **Premissas** | Projeção ano a ano, com a mediana histórica ao lado de cada campo como âncora. |
+| **Custo de capital** | Beta por setor, risco-país e estrutura-alvo, com a montagem do WACC passo a passo. |
+| **Valor** | Fluxos descontados, composição do valor e a ponte em cascata até o acionista. |
+| **Sensibilidade** | Mapa de calor bidimensional, cenários coerentes e Monte Carlo. |
+| **Múltiplos** | Peer group, valor implícito por múltiplo e confronto com o DCF. |
+| **Diagnóstico** | O app criticando o modelo antes de você defender o número. |
+| **Exportar** | Planilha com fórmulas vivas e as premissas em YAML versionável. |
 
-empresa = carregar_empresa("premissas.yaml")
-resultado = avaliar(empresa, meio_de_ano=True)
+## Importação de demonstrações
 
-print(resultado.resumo())
-print(resultado.projecao.tabela())
+A mesma função atende as três origens. O que muda entre elas — código de conta,
+nomenclatura, sinal dos custos, posição do cabeçalho — é absorvido no
+importador, e o resultado sai sempre no mesmo vocabulário canônico.
 
-exportar_excel(resultado, "modelo.xlsx")
-```
+Detalhes que decidem se a importação funciona na prática:
 
-## O arquivo de premissas
+- A **coluna de códigos CVM** é detectada separadamente da coluna de rótulos.
+  Sem isso, "Empréstimos e Financiamentos" de curto e de longo prazo — que têm
+  descrição idêntica no export da CVM — colidem e a dívida bruta sai errada.
+- **Custos, impostos e capex são padronizados como magnitude positiva**, porque
+  a CVM publica negativo e terminais publicam positivo. A mesma empresa não
+  pode mudar de valor conforme a origem do arquivo.
+- Números aceitam formato brasileiro e americano, negativo entre parênteses e
+  símbolo de moeda.
 
-Todas as taxas são decimais (`0.12` = 12% a.a.) e os valores monetários ficam na
-mesma unidade dentro de um modelo. `valuation exemplo` gera um arquivo comentado
-com todos os campos aceitos.
-
-```yaml
-nome: Industrias Exemplo S.A.
-data_base: 2025-12-31
-unidade: R$ milhoes
-
-macro:
-  inflacao_brl: 0.04
-  inflacao_usd: 0.023
-  aliquota_ir: 0.34          # IRPJ 25% + CSLL 9%
-
-custo_capital:
-  rf_usd: 0.045
-  erp_maduro: 0.045
-  risco_pais: 0.025
-  beta_alavancado_setor: 1.05
-  divida_pl_setor: 0.45      # D/E dos comparáveis, para desalavancar
-  divida_pl_alvo: 0.50       # D/E alvo, para realavancar e ponderar
-  spread_credito: 0.025
-
-operacionais:
-  receita_base: 1200.0
-  horizonte: 5               # permite escrever premissas anuais como número único
-  crescimento_receita:   [0.12, 0.10, 0.08, 0.06, 0.05]
-  margem_ebitda:         [0.180, 0.185, 0.190, 0.190, 0.190]
-  depreciacao_pct_receita: 0.045
-  capex_pct_receita:     [0.060, 0.055, 0.050, 0.050, 0.047]
-  capital_giro_pct_receita: 0.12    # saldo, não variação
-
-perpetuidade:
-  metodo: gordon
-  crescimento_perpetuo: 0.045
-  roic_perpetuidade: 0.15    # normaliza o reinvestimento
-
-ponte:
-  divida_bruta: 900.0
-  caixa: 250.0
-  minoritarios: 30.0
-  contingencias: 60.0
-  acoes_em_circulacao: 150.0
-```
-
-Blocos opcionais `sensibilidade`, `cenarios` e `simulacao` deixam a análise
-inteira versionada junto com as premissas. Um campo com nome errado gera erro em
-vez de ser ignorado em silêncio.
+Nada é descartado em silêncio: linhas não reconhecidas, contas derivadas e
+divergências nas identidades contábeis aparecem na tela para conferência.
 
 ## Decisões de modelagem
 
@@ -109,18 +78,24 @@ direto a uma NTN-B contaria risco soberano duas vezes.
 
 **Perpetuidade com reinvestimento normalizado.** Com `roic_perpetuidade`
 informado, o fluxo perpétuo vira `NOPAT_n × (1+g) × (1 − g/ROIC)`. Crescer para
-sempre exige reinvestir para sempre; usar o FCFF do último ano projetado
-costuma superestimar o valor terminal quando aquele ano teve capex baixo.
+sempre exige reinvestir para sempre.
 
-**Capital de giro é estoque.** `capital_giro_pct_receita` descreve o *saldo*
-como percentual da receita; a variação que entra no fluxo é derivada dele.
+**Retornos sobre capital médio.** ROIC e ROE usam a média entre saldo de
+abertura e de fechamento, como manda o material do CFA. Usar o saldo final
+subestima o retorno de quem cresceu no período.
 
-**Imposto sobre o EBIT.** O FCFF é desalavancado por construção, então o imposto
-incide sobre o EBIT, não sobre o LAIR. Prejuízo não gera crédito no fluxo.
+**Capital de giro é estoque.** O percentual informado descreve o *saldo*; a
+variação que entra no fluxo é derivada dele. A conta usa apenas recebíveis,
+estoques e fornecedores — incluir caixa e dívida de curto prazo os contaria
+duas vezes, já que ambos estão na ponte de valor.
 
-**Múltiplos de EV e de equity não se misturam.** EV/EBITDA produz Enterprise
-Value e passa pela ponte da dívida líquida; P/L já produz equity e não passa.
-Denominador não positivo vira `n/a` e sai das estatísticas do peer group.
+**Imposto sobre o EBIT**, já que o FCFF é desalavancado por construção. Prejuízo
+fiscal acumulado abate lucro futuro respeitando a **trava dos 30%** da
+legislação brasileira.
+
+**Múltiplos de EV e de equity não se misturam.** EV/EBITDA passa pela ponte da
+dívida líquida; P/L não. Denominador não positivo vira `n/a` e sai das
+estatísticas do peer group.
 
 **Erro de premissa não vira célula vazia.** Uma combinação economicamente
 impossível (g acima do WACC) vira `NaN` na tabela e rodada descartada no Monte
@@ -131,22 +106,44 @@ resultado.
 **Monte Carlo com semente fixa.** Um valuation que muda de número a cada
 execução é indefensável em revisão.
 
+## Parâmetros setoriais
+
+Os betas e prêmios de risco-país embarcados são **valores de referência de ordem
+de grandeza**, com data de revisão, para que o app funcione sem rede e para dar
+um ponto de partida plausível. Eles não são a base oficial do Damodaran e
+envelhecem.
+
+Para trabalho que vai para cliente ou comitê, baixe as planilhas oficiais em
+`pages.stern.nyu.edu/~adamodar/New_Home_Page/data.html` e carregue com
+`carregar_betas_damodaran` / `carregar_risco_pais_damodaran`.
+
 ## A planilha gerada
 
-As abas **Premissas**, **Custo de Capital**, **Projeção** e **DCF** são escritas
-com fórmulas do Excel, não com valores. Quem receber o arquivo altera uma
-premissa e o modelo inteiro recalcula; um revisor rastreia cada número até a
-origem. Convenção de cores: azul é premissa editável, preto é fórmula da própria
-aba, verde é referência a outra aba.
+As abas **Premissas**, **Custo de Capital**, **Projeção** e **DCF** saem com
+fórmulas do Excel, não com valores. Quem receber o arquivo altera uma premissa e
+o modelo inteiro recalcula. Convenção de cores: azul é premissa editável, preto
+é fórmula da própria aba, verde é referência a outra aba.
 
 As abas de **Múltiplos**, **Sensibilidade**, **Cenários** e **Monte Carlo**
-trazem valores calculados no Python e vêm rotuladas como tal — uma tabela de
-sensibilidade viva exigiria replicar o modelo inteiro por célula.
+trazem valores calculados no Python e vêm rotuladas como tal.
 
-Os testes em `tests/test_excel_formulas.py` avaliam o workbook fora do Excel e
-conferem, célula a célula, que as fórmulas reproduzem o motor Python. Uma
-planilha bonita que calcula diferente do motor é pior do que planilha nenhuma,
-porque o erro só aparece na mão de quem recebeu o arquivo.
+`tests/test_excel_formulas.py` avalia o workbook fora do Excel e confere, célula
+a célula, que as fórmulas reproduzem o motor Python. Uma planilha bonita que
+calcula diferente do motor é pior do que planilha nenhuma, porque o erro só
+aparece na mão de quem recebeu o arquivo.
+
+## Gráficos
+
+A paleta não foi escolhida por gosto: é a instância de referência validada do
+guia de dataviz, verificada para banda de luminosidade, piso de croma, separação
+sob daltonismo e contraste — em modo claro e escuro. As cores categóricas são
+atribuídas sempre na mesma ordem, para que uma série mantenha a mesma cor entre
+gráficos e entre telas.
+
+Nenhum gráfico usa eixo secundário: receita e margem viram dois painéis, e a
+decomposição de DuPont vira pequenos múltiplos. Todo gráfico tem a tabela de
+dados disponível ao lado — três tons ficam abaixo de 3:1 de contraste no modo
+claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 
 ## Testes
 
@@ -154,27 +151,31 @@ porque o erro só aparece na mão de quem recebeu o arquivo.
 pytest
 ```
 
-A validação das fórmulas do Excel depende do pacote `formulas`
-(`pip install formulas`); sem ele esses testes são pulados em vez de dar falso
-positivo.
+276 testes cobrindo identidades contábeis, casos de borda econômicos, a
+equivalência Excel/Python, as três origens de importação e as regras de
+visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
+sem ele esses testes são pulados em vez de dar falso positivo.
 
 ## Estrutura
 
 | Módulo | Responsabilidade |
 | --- | --- |
 | `premissas.py` | estruturas de entrada e suas validações |
+| `importacao/` | leitura de DFs de qualquer origem para o vocabulário canônico |
+| `historico.py` | indicadores históricos, DuPont, ROIC e premissas sugeridas |
 | `custo_capital.py` | beta, CAPM com risco-país, Kd, WACC |
-| `projecao.py` | projeção explícita, FCFF e FCFE |
+| `projecao.py` | projeção explícita, FCFF, FCFE e prejuízo fiscal |
 | `dcf.py` | desconto, valor terminal, ponte EV → equity |
 | `multiplos.py` | avaliação relativa por comparáveis |
 | `sensibilidade.py` | tabelas, cenários e Monte Carlo |
-| `modelo.py` | orquestração e substituição de premissas |
-| `entrada.py` | leitura de YAML/JSON |
+| `diagnostico.py` | verificações de consistência do modelo |
+| `casos_especiais.py` | P&D, ciclicidade e leasing |
+| `dados_setoriais.py` | betas e prêmios por setor e país |
 | `excel.py` | exportação com fórmulas vivas |
-| `cli.py` | linha de comando |
+| `app/` | interface Streamlit |
 
 ## Aviso
 
-Os números valem o que valem as premissas. A ferramenta automatiza a aritmética
-e a documentação do modelo, não o julgamento — revise as premissas antes de usar
-qualquer resultado em decisão de investimento.
+Os números valem o que valem as premissas. O app automatiza a aritmética, a
+documentação e a checagem de consistência do modelo — não o julgamento. Revise
+as premissas antes de usar qualquer resultado em decisão de investimento.

@@ -108,7 +108,9 @@ def _rotular(caminho: str, valor: float) -> str:
         chave in caminho
         for chave in ("crescimento", "margem", "taxa", "inflacao", "roic", "pct", "rf_")
     )
-    return f"{valor:.2%}" if e_taxa else f"{valor:,.2f}"
+    if e_taxa:
+        return f"{valor * 100:.2f}%".replace(".", ",")
+    return f"{valor:,.2f}".replace(".", ",")
 
 
 def cenarios(

@@ -17,3 +17,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Arquivos temporarios do app
+.streamlit/secrets.toml
