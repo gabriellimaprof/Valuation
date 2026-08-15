@@ -17,10 +17,25 @@ from .custo_capital import (
     desalavancar_beta,
     realavancar_beta,
 )
+from .casos_especiais import (
+    capitalizar_leasing_operacional,
+    capitalizar_pesquisa_desenvolvimento,
+    normalizar_margem_ciclica,
+)
+from .dados_setoriais import (
+    SETORES,
+    buscar_setor,
+    listar_setores,
+    macro_do_pais,
+    premissas_do_setor,
+)
 from .dcf import ResultadoDCF, avaliar_dcf, fatores_desconto, ponte_ev_equity
+from .diagnostico import Achado, Diagnostico, diagnosticar
 from .entrada import ArquivoModelo, carregar_comparaveis, carregar_empresa, carregar_modelo
 from .erros import CombinacaoInviavel
 from .excel import exportar_excel
+from .historico import AnaliseHistorica, analisar, sugerir_premissas
+from .importacao import Demonstracoes, gerar_template, importar
 from .modelo import ResultadoValuation, avaliar, substituir, substituir_varios
 from .multiplos import (
     Alvo,
@@ -39,7 +54,7 @@ from .premissas import (
     PremissasOperacionais,
     PremissasPerpetuidade,
 )
-from .projecao import Projecao, projetar
+from .projecao import Projecao, calcular_impostos, projetar
 from .sensibilidade import (
     Distribuicao,
     ResultadoSimulacao,
@@ -52,10 +67,14 @@ __version__ = "0.1.0"
 
 __all__ = [
     "ALIQUOTA_IR_BRASIL",
+    "Achado",
     "Alvo",
+    "AnaliseHistorica",
     "ArquivoModelo",
     "CombinacaoInviavel",
     "Comparavel",
+    "Demonstracoes",
+    "Diagnostico",
     "Distribuicao",
     "Empresa",
     "PonteValor",
@@ -68,26 +87,40 @@ __all__ = [
     "ResultadoDCF",
     "ResultadoSimulacao",
     "ResultadoValuation",
+    "SETORES",
+    "analisar",
     "avaliar",
     "avaliar_dcf",
     "avaliar_por_multiplos",
+    "buscar_setor",
     "calcular_custo_capital",
+    "calcular_impostos",
+    "capitalizar_leasing_operacional",
+    "capitalizar_pesquisa_desenvolvimento",
     "carregar_comparaveis",
     "carregar_empresa",
     "carregar_modelo",
     "cenarios",
     "converter_taxa",
     "desalavancar_beta",
+    "diagnosticar",
     "estatisticas",
     "exportar_excel",
     "faixa_de_valor",
     "fatores_desconto",
+    "gerar_template",
+    "importar",
+    "listar_setores",
+    "macro_do_pais",
     "monte_carlo",
+    "normalizar_margem_ciclica",
     "ponte_ev_equity",
+    "premissas_do_setor",
     "projetar",
     "realavancar_beta",
     "substituir",
     "substituir_varios",
+    "sugerir_premissas",
     "tabela_comparaveis",
     "tabela_sensibilidade",
 ]

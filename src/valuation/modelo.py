@@ -90,6 +90,7 @@ def avaliar(
         divida_por_ano=divida_por_ano,
         divida_inicial=empresa.ponte.divida_bruta,
         custo_divida=cc.kd_bruto_brl,
+        prejuizo_fiscal_acumulado=empresa.prejuizo_fiscal_acumulado,
     )
 
     if taxa_desconto is None:

@@ -21,6 +21,9 @@ import pandas as pd
 
 from .premissas import PremissasMacro, PremissasOperacionais
 
+# Trava dos 30%: limite anual de compensacao de prejuizo fiscal no Brasil.
+LIMITE_COMPENSACAO_PREJUIZO = 0.30
+
 
 @dataclass(frozen=True)
 class Projecao:
@@ -40,6 +43,7 @@ class Projecao:
     juros: np.ndarray | None = None
     variacao_divida: np.ndarray | None = None
     fcfe: np.ndarray | None = None
+    prejuizo_fiscal_saldo: np.ndarray | None = None
 
     @property
     def horizonte(self) -> int:
@@ -93,18 +97,60 @@ class Projecao:
         ).T
 
 
+def calcular_impostos(
+    ebit: np.ndarray,
+    aliquota: float,
+    prejuizo_acumulado: float = 0.0,
+    limite_compensacao: float = LIMITE_COMPENSACAO_PREJUIZO,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Imposto ano a ano, considerando prejuizo fiscal acumulado.
+
+    Segue a regra brasileira da *trava dos 30%*: o prejuizo fiscal de exercicios
+    anteriores pode ser compensado indefinidamente no tempo, mas em cada ano
+    reduz no maximo 30% do lucro tributavel. Ignorar a trava superestima o caixa
+    dos primeiros anos de uma empresa que vem de prejuizo -- exatamente os anos
+    que mais pesam no valor presente.
+
+    Devolve ``(impostos, saldo de prejuizo ao fim de cada ano)``.
+    """
+    if not 0 <= limite_compensacao <= 1:
+        raise ValueError("limite_compensacao deve estar entre 0 e 1.")
+    if prejuizo_acumulado < 0:
+        raise ValueError("prejuizo_acumulado deve ser informado como valor positivo.")
+
+    impostos = np.zeros(len(ebit))
+    saldos = np.zeros(len(ebit))
+    saldo = float(prejuizo_acumulado)
+
+    for i, resultado in enumerate(ebit):
+        if resultado <= 0:
+            # Prejuizo do exercicio engrossa o saldo a compensar no futuro.
+            saldo += float(-resultado)
+        else:
+            compensavel = min(saldo, limite_compensacao * float(resultado))
+            saldo -= compensavel
+            impostos[i] = (float(resultado) - compensavel) * aliquota
+        saldos[i] = saldo
+
+    return impostos, saldos
+
+
 def projetar(
     operacionais: PremissasOperacionais,
     macro: PremissasMacro | None = None,
     divida_por_ano: list[float] | None = None,
     divida_inicial: float = 0.0,
     custo_divida: float = 0.0,
+    prejuizo_fiscal_acumulado: float = 0.0,
 ) -> Projecao:
     """Constroi a projecao explicita a partir das premissas operacionais.
 
     O FCFE so e calculado quando ``divida_por_ano`` e informado (saldo de divida
     ao fim de cada ano projetado). Os juros de cada ano incidem sobre o saldo de
     abertura, isto e, o saldo do ano anterior.
+
+    ``prejuizo_fiscal_acumulado`` ativa a compensacao de prejuizos anteriores,
+    com a trava de 30% ao ano prevista na legislacao brasileira.
     """
     macro = macro or PremissasMacro()
     t = macro.aliquota_ir
@@ -120,9 +166,9 @@ def projetar(
     depreciacao = receita * np.asarray(operacionais.depreciacao_pct_receita, dtype=float)
     capex = receita * np.asarray(operacionais.capex_pct_receita, dtype=float)
     ebit = ebitda - depreciacao
-    # Prejuizo nao gera credito de imposto no fluxo (tratamento conservador,
-    # sem modelar compensacao de prejuizos acumulados).
-    impostos = np.maximum(ebit, 0.0) * t
+    # Prejuizo nao gera credito de imposto; quando ha prejuizo acumulado, ele
+    # abate o lucro futuro respeitando a trava dos 30%.
+    impostos, prejuizo_saldo = calcular_impostos(ebit, t, prejuizo_fiscal_acumulado)
     nopat = ebit - impostos
 
     pct_giro = np.asarray(operacionais.capital_giro_pct_receita, dtype=float)
@@ -165,4 +211,5 @@ def projetar(
         juros=juros,
         variacao_divida=variacao_divida,
         fcfe=fcfe,
+        prejuizo_fiscal_saldo=prejuizo_saldo,
     )

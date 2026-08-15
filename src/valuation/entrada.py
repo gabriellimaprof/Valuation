@@ -180,15 +180,18 @@ def construir_empresa(dados: dict[str, Any], origem: str = "<dados>") -> Empresa
 
     restantes = {
         chave: dados[chave]
-        for chave in ("nome", "data_base", "moeda", "unidade")
+        for chave in (
+            "nome", "data_base", "moeda", "unidade", "prejuizo_fiscal_acumulado"
+        )
         if chave in dados
     }
     desconhecidos = set(dados) - set(restantes)
     if desconhecidos:
         raise ValueError(
             f"Blocos desconhecidos em '{origem}': {sorted(desconhecidos)}. "
-            "Blocos aceitos: ['nome', 'data_base', 'moeda', 'unidade', 'macro', "
-            "'custo_capital', 'operacionais', 'perpetuidade', 'ponte']"
+            "Blocos aceitos: ['nome', 'data_base', 'moeda', 'unidade', "
+            "'prejuizo_fiscal_acumulado', 'macro', 'custo_capital', "
+            "'operacionais', 'perpetuidade', 'ponte']"
         )
     if "nome" not in restantes:
         raise ValueError(f"'{origem}' precisa declarar 'nome'.")

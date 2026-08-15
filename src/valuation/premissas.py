@@ -185,6 +185,7 @@ class Empresa:
     operacionais: PremissasOperacionais | None = None
     perpetuidade: PremissasPerpetuidade = field(default_factory=PremissasPerpetuidade)
     ponte: PonteValor = field(default_factory=PonteValor)
+    prejuizo_fiscal_acumulado: float = 0.0
     data_base: str = ""
     moeda: str = "BRL"
     unidade: str = "R$ milhoes"
