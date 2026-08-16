@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 530 testes
+pytest                        # 542 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -52,6 +52,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   qualidade.py          o lucro vira caixa? veredito com o porquê
   casos_especiais.py    P&D, ciclicidade, leasing
   dados_setoriais.py    betas e prêmios por setor e país
+  mercado.py            curva de NTN-B e Focus; risco-país implícito
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
   biblioteca.py         pasta local de valuations, desligada por padrão
@@ -168,7 +169,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-530 testes passando. Verificado de verdade: contas financeiras, identidades,
+542 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
