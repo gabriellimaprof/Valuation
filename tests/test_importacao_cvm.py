@@ -1317,3 +1317,120 @@ def test_zero_na_dre_nao_bloqueia_a_derivacao():
     }
     _derivar(tabela, [2023, 2024])
     assert tabela["depreciacao_amortizacao"][2024] == pytest.approx(1000.0)
+
+
+# ---------------------------------------------------------------------------
+# Padronizacao do juro pago: FCO tem que significar a mesma coisa em todas
+# ---------------------------------------------------------------------------
+
+
+def _linha_dfc(codigo, descricao, valor, ano=2024):
+    from valuation.importacao.cvm import LinhaCVM
+
+    return LinhaCVM(
+        codigo=codigo,
+        descricao=descricao,
+        valor=valor,
+        ano=ano,
+        demonstracao="dfc",
+        escala="MIL",
+        escopo="con",
+    )
+
+
+def test_juro_no_financiamento_e_identificado():
+    from valuation.importacao.cvm import juros_pagos_no_financiamento
+
+    total = juros_pagos_no_financiamento(
+        [
+            _linha_dfc("6.03.05", "Juros pagos", -500.0),
+            _linha_dfc("6.03.06", "Amortização de empréstimos", -2000.0),
+            _linha_dfc("6.01.02", "Juros pagos", -300.0),
+        ]
+    )
+    # So o de 6.03 entra, e como magnitude.
+    assert total == {2024: pytest.approx(500.0)}
+
+
+def test_juro_recebido_e_jcp_nao_entram():
+    """JCP e remuneracao ao acionista; juro recebido nao e custo da divida."""
+    from valuation.importacao.cvm import juros_pagos_no_financiamento
+
+    total = juros_pagos_no_financiamento(
+        [
+            _linha_dfc("6.03.05", "Juros recebidos", 200.0),
+            _linha_dfc("6.03.06", "Juros sobre capital próprio pagos", -800.0),
+            _linha_dfc("6.03.07", "Juros a pagar", -100.0),
+        ]
+    )
+    assert total == {}
+
+
+def test_juro_filho_nao_soma_duas_vezes():
+    from valuation.importacao.cvm import juros_pagos_no_financiamento
+
+    total = juros_pagos_no_financiamento(
+        [
+            _linha_dfc("6.03.05", "Juros pagos", -500.0),
+            _linha_dfc("6.03.05.01", "Juros de empréstimos", -300.0),
+            _linha_dfc("6.03.05.02", "Juros de debêntures", -200.0),
+        ]
+    )
+    assert total == {2024: pytest.approx(500.0)}
+
+
+def test_a_reclassificacao_preserva_a_identidade_da_dfc():
+    """O que sai do financiamento entra no operacional: a soma nao muda.
+
+    Medido na Petrobras de 2024, que classifica juro em financiamento: R$ 10,3
+    bi saem do FCO. Sem a padronizacao, a conversao de caixa dela e a de uma
+    companhia identica que classifica no operacional seriam numeros diferentes
+    para a mesma economia -- e todo indicador que divide por FCO herdaria isso.
+    """
+    from valuation.importacao.cvm import _padronizar_juros_no_fco
+
+    tabela = {
+        "fluxo_operacional": {2024: 1000.0},
+        "fluxo_financiamento": {2024: -600.0},
+        "fluxo_investimento": {2024: -300.0},
+    }
+    avisos: list[str] = []
+    soma_antes = sum(v[2024] for v in tabela.values())
+
+    _padronizar_juros_no_fco(
+        [_linha_dfc("6.03.05", "Juros pagos", -150.0)], tabela, {}, avisos
+    )
+
+    assert tabela["fluxo_operacional"][2024] == pytest.approx(850.0)
+    assert tabela["fluxo_financiamento"][2024] == pytest.approx(-450.0)
+    assert sum(v[2024] for v in tabela.values() if isinstance(v, dict) and 2024 in v) - tabela[
+        "juros_pagos_no_financiamento"
+    ][2024] == pytest.approx(soma_antes)
+    assert avisos and "financiamento" in avisos[0]
+
+
+def test_quem_ja_classifica_no_operacional_nao_e_tocado(weg):
+    """A WEG ja poe o juro no operacional; mexer nela seria contar duas vezes."""
+    import numpy as np
+
+    movido = weg.valor("juros_pagos_no_financiamento", 2024)
+    assert movido is None or not np.isfinite(movido)
+
+
+def test_a_reclassificacao_aparece_como_conta_e_como_aviso():
+    """Numero que muda sozinho, sem aparecer, e o pior tipo de correcao."""
+    from valuation.importacao.cvm import _padronizar_juros_no_fco
+
+    tabela = {
+        "fluxo_operacional": {2024: 1000.0},
+        "fluxo_financiamento": {2024: -600.0},
+    }
+    mapeamento: dict[str, str] = {}
+    avisos: list[str] = []
+    _padronizar_juros_no_fco(
+        [_linha_dfc("6.03.05", "Juros pagos", -150.0)], tabela, mapeamento, avisos
+    )
+
+    assert tabela["juros_pagos_no_financiamento"][2024] == pytest.approx(150.0)
+    assert "reclassificados" in mapeamento["fluxo_operacional"]
+    assert "capital de giro" in avisos[0]

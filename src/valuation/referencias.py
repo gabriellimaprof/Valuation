@@ -32,11 +32,16 @@ O que isto **nao** e: uma base viva. Sao numeros de um momento, e a data esta
 declarada em ``MEDIDO_EM``. Refazer e rodar ``python -m valuation.pares`` e
 ``gerar_referencias`` sobre o universo resultante.
 
-**A tabela ja foi refeita uma vez, e por bom motivo.** A primeira medicao saiu
+**A tabela ja foi refeita duas vezes, e por bons motivos.** A primeira medicao saiu
 com a D&A quebrada, e como o EBITDA vinha igual ao EBIT, tudo que o divide saiu
 torto: a conversao de caixa mediana aparecia como 85% quando e **64%**, e a
 margem EBITDA mediana como 14,3% quando e **17,2%**. Numero de referencia
 medido sobre leitura errada e pior do que nenhum, porque parece autoridade.
+
+Na segunda, o juro pago foi padronizado para o operacional (ver
+``cvm._padronizar_juros_no_fco``). A conversao mediana caiu de 64% para **54%**:
+121 companhias classificavam juro no financiamento e o FCO delas era, ate
+entao, um numero que nao se comparava com o das outras.
 """
 
 from __future__ import annotations
@@ -44,14 +49,17 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-MEDIDO_EM = "exercícios 2020 a 2024, DFP consolidada, com a D&A ja corrigida"
+MEDIDO_EM = (
+    "exercícios 2020 a 2024, DFP consolidada, com a D&A corrigida e o juro pago "
+    "padronizado no operacional"
+)
 COMPANHIAS_MEDIDAS = 447
 
 QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (423, (-0.950, -0.398, 0.270, 0.641, 0.933, 1.346, 2.044)),
+    "Conversao de caixa (FCO / EBITDA)": (423, (-1.081, -0.492, 0.143, 0.539, 0.833, 1.151, 1.930)),
     "Margem EBITDA": (445, (-0.270, -0.030, 0.086, 0.172, 0.337, 0.539, 0.718)),
     "Margem liquida": (445, (-0.671, -0.196, -0.001, 0.061, 0.138, 0.288, 0.435)),
     "Crescimento da receita": (435, (-0.101, -0.032, 0.056, 0.151, 0.268, 0.458, 0.718)),

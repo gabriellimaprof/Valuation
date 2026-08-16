@@ -47,7 +47,7 @@ def test_conversao_baixa_sem_crescimento_e_ruim():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.18,
+                "Conversao de caixa (FCO / EBITDA)": 0.08,
                 "Crescimento da receita": 0.02,
             }
         )
@@ -62,7 +62,7 @@ def test_conversao_baixa_com_crescimento_e_so_atencao():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.18,
+                "Conversao de caixa (FCO / EBITDA)": 0.08,
                 "Crescimento da receita": 0.30,
             }
         )
@@ -136,7 +136,7 @@ def test_o_pior_sinal_manda():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.15,
+                "Conversao de caixa (FCO / EBITDA)": 0.05,
                 "Crescimento da receita": 0.01,
                 "Custo da divida efetivo": 0.10,
                 "Custo da divida pelo caixa": 0.10,
@@ -211,3 +211,59 @@ def test_a_conversao_explica_que_parte_da_distancia_e_estrutural():
     conversao = next(s for s in q.sinais if s.codigo == "conversao")
     assert "líquido de imposto" in conversao.detalhe
     assert "estrutural" in conversao.detalhe
+
+
+def test_a_reclassificacao_do_juro_aparece_no_sinal():
+    """Quem comparar com a demonstracao publicada vai ver diferenca."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {
+                "receita_liquida": 1000.0, "ebit": 150.0, "depreciacao_amortizacao": 50.0,
+                "fluxo_operacional": 180.0, "juros_pagos_no_financiamento": 20.0,
+            },
+            2024: {
+                "receita_liquida": 1100.0, "ebit": 165.0, "depreciacao_amortizacao": 55.0,
+                "fluxo_operacional": 200.0, "juros_pagos_no_financiamento": 22.0,
+            },
+        }
+    )
+    sinal = next(
+        s
+        for s in avaliar_qualidade(analisar(Demonstracoes(empresa="X", valores=valores))).sinais
+        if s.codigo == "conversao"
+    )
+    assert "financiamento no período" in sinal.detalhe
+    assert "mudou de classificação" not in sinal.detalhe
+
+
+def test_companhia_que_troca_de_classificacao_e_apontada():
+    """A WEG fez isso entre 2022 e 2023: a serie dela nao era comparavel consigo."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {
+                "receita_liquida": 1000.0, "ebit": 150.0, "depreciacao_amortizacao": 50.0,
+                "fluxo_operacional": 180.0, "juros_pagos_no_financiamento": 20.0,
+            },
+            2024: {
+                "receita_liquida": 1100.0, "ebit": 165.0, "depreciacao_amortizacao": 55.0,
+                "fluxo_operacional": 200.0,
+            },
+        }
+    )
+    sinal = next(
+        s
+        for s in avaliar_qualidade(analisar(Demonstracoes(empresa="X", valores=valores))).sinais
+        if s.codigo == "conversao"
+    )
+    assert "em 2023" in sinal.detalhe
+    assert "nem consigo mesma" in sinal.detalhe

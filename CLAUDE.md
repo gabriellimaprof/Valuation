@@ -155,17 +155,35 @@ acaba, e a aba IFRS 16 mostra as duas avaliações lado a lado.
 adições projetadas, ponte). **O D/E alvo não é convertido** — quem o escolheu
 escolheu com a dívida cheia em mente.
 
-**FCO/EBITDA não é comparável entre companhias, e nem era a barra certa.** O FCO
-é líquido de imposto pago (316 de 321 classificam imposto como operacional) e,
-em **dois terços** delas, também de juros pagos (245 no operacional contra 193
-no financiamento) — o EBITDA é antes dos dois. Com alíquota de 34% e juro
-brasileiro, a cunha é grande sem que nada tenha acontecido com o lucro. E como a
-classificação do juro é escolha de apresentação, duas companhias idênticas com
-classificações diferentes têm conversões diferentes.
+**O juro pago é padronizado para o operacional, abaixo do capital de giro.** O
+IFRS deixa a companhia escolher onde classificar juro pago, e a base se divide:
+**223 companhias no operacional, 121 no financiamento** (13 em ambos). Duas
+empresas idênticas com classificações diferentes têm FCO diferente, e todo
+indicador que divide por FCO passa a comparar apresentação em vez de negócio.
+Pior: a WEG mudou a própria classificação entre 2022 e 2023 — a série dela não
+era comparável nem consigo mesma.
 
-Consequência: o corte de "fraca" era 0,60 e acusava **47,3%** das 423 companhias
-medidas. Virou 0,30, perto do quartil inferior. O de 0,90 sobreviveu por
-coincidência feliz — é praticamente o quartil superior da base.
+`_padronizar_juros_no_fco` traz o juro de 6.03 para o operacional, **abaixo da
+variação do capital de giro e junto dos impostos pagos**, que é onde o analista
+espera vê-lo: o FCO passa a ser caixa depois de servir a dívida, para todo mundo.
+A alternativa — somar de volta o juro de quem já o tem dentro — produziria um
+FCO antes de juros que companhia nenhuma publica. A identidade da DFC sobrevive
+por construção (o que sai do financiamento entra no operacional); verificado em
+175 de 175 companhias mensuráveis, zero quebras. O ajuste vira conta visível
+(`juros_pagos_no_financiamento`) e aviso — número que muda sozinho, sem
+aparecer, é o pior tipo de correção.
+
+Efeito medido: o impacto sobre o FCO das 121 companhias afetadas tem mediana de
+**28%**, e passa de 30% em quase metade delas.
+
+**Os cortes de conversão são os quartis medidos, não convenção.** Com a D&A
+corrigida e o juro padronizado: P25 = 14,3%, mediana = **53,9%**, P75 = 83,3%.
+Os cortes são 0,15 e 0,85. O 90%/60% de convenção não transfere: o FCO
+brasileiro é líquido de imposto (34%) e de juro, e o EBITDA é antes dos dois —
+90% era referência de um mercado de imposto e juro baixos. Histórico das
+calibrações, porque cada uma corrigiu um erro: 0,60 acusava 47,3% da base antes
+da correção da D&A; depois dela, ainda 30%; e a padronização do juro derrubou a
+mediana de 64% para 54%.
 
 **Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
 2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
@@ -270,7 +288,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-715 testes passando. Verificado de verdade: contas financeiras, identidades,
+723 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

@@ -750,6 +750,18 @@ CONTAS_DFC: tuple[Conta, ...] = (
         ordem="6.01.50",  # dentro do operacional, junto dos ajustes
     ),
     Conta(
+        chave="juros_pagos_no_financiamento",
+        rotulo="Juros pagos reclassificados para o FCO",
+        demonstracao="dfc",
+        ordem="6.01.95",
+        sinonimos=(),
+        ajuda=(
+            "Quanto de juro pago a companhia classificou em financiamento e o app "
+            "trouxe para o operacional. Existe para que a reclassificacao seja "
+            "visivel, e nao um numero que muda sozinho."
+        ),
+    ),
+    Conta(
         chave="arrendamento_principal_pago",
         rotulo="Arrendamento pago (principal)",
         demonstracao="dfc",

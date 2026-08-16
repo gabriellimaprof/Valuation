@@ -1163,6 +1163,7 @@ def montar_demonstracoes(
 
     _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
     _somar_arrendamento_no_caixa(linhas, tabela, mapeamento)
+    _padronizar_juros_no_fco(linhas, tabela, mapeamento, avisos)
 
     if not tabela:
         raise ErroCVM(
@@ -1683,4 +1684,109 @@ def importar_ltm(
             "setor": getattr(registro, "setor", "") or "",
         },
         detalhe=atual.detalhe,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Onde o juro pago mora: padronizar para que FCO signifique a mesma coisa
+# ---------------------------------------------------------------------------
+#
+# O IFRS deixa a companhia escolher se juro pago vai no operacional ou no
+# financiamento, e a base se divide: medido em 2024, **223 companhias poem no
+# operacional e 121 no financiamento** (13 em ambos). Duas empresas identicas
+# com classificacoes diferentes tem FCO diferente, e todo indicador que divide
+# por FCO -- conversao de caixa, capex/FCO, cobertura do circulante -- deixa de
+# comparar negocio e passa a comparar apresentacao.
+#
+# A padronizacao adotada e trazer o juro para o operacional, **abaixo da
+# variacao do capital de giro, junto com os impostos pagos**. E onde o analista
+# espera ve-lo: o FCO passa a ser caixa depois de servir a divida, para todo
+# mundo. A alternativa -- somar de volta o juro de quem ja o tem dentro --
+# produziria um FCO antes de juros que nenhuma companhia publica.
+#
+# A identidade da DFC sobrevive por construcao: o que sai do financiamento entra
+# no operacional, e a soma das secoes nao muda.
+_MARCA_JUROS_PAGOS = re.compile(r"juros", re.I)
+_NAO_E_JURO_PAGO = re.compile(
+    r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar|"
+    r"n[aã]o realizad|provis[aã]o",
+    re.I,
+)
+
+
+def juros_pagos_no_financiamento(linhas: list[LinhaCVM]) -> dict[int, float]:
+    """Juro pago que a companhia classificou na secao de financiamento.
+
+    Devolve magnitudes por ano. So conta as linhas **mais externas** de 6.03:
+    companhia que abre "Juros pagos" e, abaixo, "Juros de emprestimos" somaria o
+    mesmo desembolso duas vezes.
+    """
+    candidatas = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "dfc"
+        and linha.codigo.startswith("6.03")
+        and linha.codigo != "6.03"
+        and _MARCA_JUROS_PAGOS.search(linha.descricao)
+        and not _NAO_E_JURO_PAGO.search(linha.descricao)
+        and linha.valor
+    ]
+
+    por_ano: dict[int, list[LinhaCVM]] = {}
+    for linha in candidatas:
+        por_ano.setdefault(linha.ano, []).append(linha)
+
+    total: dict[int, float] = {}
+    for ano, do_ano in por_ano.items():
+        codigos = {linha.codigo for linha in do_ano}
+        for linha in do_ano:
+            tem_pai = any(
+                linha.codigo != outro and linha.codigo.startswith(outro + ".")
+                for outro in codigos
+            )
+            if not tem_pai:
+                total[ano] = total.get(ano, 0.0) + abs(linha.valor)
+    return total
+
+
+def _padronizar_juros_no_fco(
+    linhas: list[LinhaCVM],
+    tabela: dict[str, dict[int, float]],
+    mapeamento: dict[str, str],
+    avisos: list[str],
+) -> None:
+    """Traz para o FCO o juro que a companhia deixou no financiamento."""
+    no_financiamento = juros_pagos_no_financiamento(linhas)
+    if not no_financiamento:
+        return
+
+    operacional = tabela.get("fluxo_operacional")
+    financiamento = tabela.get("fluxo_financiamento")
+    if not operacional or not financiamento:
+        return
+
+    movido: dict[int, float] = {}
+    for ano, valor in no_financiamento.items():
+        if ano not in operacional or ano not in financiamento:
+            continue
+        operacional[ano] -= valor
+        financiamento[ano] += valor
+        movido[ano] = valor
+
+    if not movido:
+        return
+
+    tabela["juros_pagos_no_financiamento"] = movido
+    mapeamento["juros_pagos_no_financiamento"] = "linhas de juros pagos em 6.03"
+    for chave in ("fluxo_operacional", "fluxo_financiamento"):
+        nota = "(juros pagos reclassificados)"
+        if nota not in mapeamento.get(chave, ""):
+            mapeamento[chave] = f"{mapeamento.get(chave, '')} {nota}".strip()
+
+    avisos.append(
+        "Esta companhia classifica juros pagos no fluxo de **financiamento**. "
+        "Trouxe esses juros para o operacional, abaixo da variação do capital de "
+        "giro e junto dos impostos pagos, para que o FCO signifique o mesmo que o "
+        "das companhias que já os classificam ali. A soma das seções não muda; a "
+        "linha reclassificada aparece como 'Juros pagos reclassificados para o FCO'."
     )

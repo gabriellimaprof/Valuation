@@ -276,10 +276,11 @@ def _qualidade(analise) -> None:
         with colunas[0]:
             metrica("Conversão mediana FCO / EBITDA", qualidade.conversao_mediana, "pct")
         colunas[1].caption(
-            "Acima de 90% é uma empresa que entrega em caixa o que reporta em lucro; "
-            "abaixo de 60% pede explicação antes de projetar. Para calibrar: a "
-            "**mediana brasileira converte 64%**, medida em 423 companhias — o corte "
-            "de 90% é aproximadamente o quartil superior da base."
+            "Os cortes são os quartis medidos em 423 companhias brasileiras: a "
+            "**mediana converte 54%**, o quartil inferior 14% e o superior 83%. O "
+            "FCO já é líquido de imposto e de juro pago — e o app padroniza o juro "
+            "para o operacional, senão duas companhias idênticas teriam números "
+            "diferentes só pela apresentação."
         )
 
     for sinal in qualidade.por_severidade:

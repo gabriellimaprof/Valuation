@@ -28,22 +28,20 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
-# Medidos em 423 companhias com a D&A ja corrigida: a mediana brasileira
-# converte **64%** do EBITDA em caixa, o P25 fica em 27% e o P75 em 93%.
+# Medidos em 423 companhias, com a D&A corrigida **e** o juro pago padronizado
+# no operacional: P25 = 14,3%, mediana = 53,9%, P75 = 83,3%.
 #
-# O corte de 90% sobreviveu por coincidencia feliz -- e praticamente o quartil
-# superior da base. O de 60% nao: acusava 47,3% das companhias, e "metade do
-# mercado tem lucro de baixa qualidade" nao e diagnostico, e ruido. Virou 30%,
-# perto do quartil inferior.
+# Os cortes sao os quartis observados, e nao mais os 90%/60% de convencao. A
+# razao e que os absolutos perderam sentido aqui: o FCO brasileiro e liquido de
+# imposto (34%) e de juro, e o EBITDA e antes dos dois -- 90% era referencia
+# importada de um mercado de imposto e juro baixos. O que resta de absoluto e a
+# leitura de cada empresa contra a base, que o sinal reporta em percentil.
 #
-# **Por que 90% nunca foi a barra certa para o Brasil.** O FCO e liquido de
-# imposto pago (316 de 321 companhias classificam imposto como operacional) e,
-# em dois tercos delas, tambem de juros pagos (245 contra 193 no financiamento).
-# O EBITDA e antes dos dois. Com aliquota de 34% e juro brasileiro, a cunha
-# entre os dois numeros e grande **sem que nada tenha acontecido com o lucro**.
-# Esperar 90% era importar uma referencia de mercado de imposto e juro baixos.
-CONVERSAO_BOA = 0.90
-CONVERSAO_FRACA = 0.30
+# Historico das calibracoes, porque cada uma corrigiu um erro: 0,60 acusava
+# 47,3% da base antes da correcao da D&A; depois dela, ainda 30%; e a
+# padronizacao do juro derrubou a mediana de 64% para 54%.
+CONVERSAO_BOA = 0.85
+CONVERSAO_FRACA = 0.15
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 # Diferenca entre juro de competencia e juro pago que sugere capitalizacao.
@@ -135,10 +133,30 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
 
     texto = (
         f"A mediana do período converte {conversao:.0%} do EBITDA em caixa. "
-        "O FCO já é líquido de imposto pago e, em dois terços das companhias "
-        "brasileiras, também de juros — o EBITDA é antes dos dois, então parte "
-        "da distância é estrutural e não fala de qualidade do lucro."
+        "O FCO é líquido de imposto e de juros pagos, e o EBITDA é antes dos "
+        "dois — parte da distância é estrutural e não fala de qualidade do lucro."
     )
+
+    # A padronizacao precisa aparecer no texto: quem compara este numero com o
+    # da demonstracao publicada da companhia vai achar diferenca, e tem que
+    # saber de onde ela vem.
+    reclassificado = analise.demonstracoes.serie("juros_pagos_no_financiamento")
+    anos_movidos = [str(a) for a in reclassificado.dropna().index]
+    if anos_movidos:
+        todos = len(anos_movidos) == len(analise.anos)
+        quando = "no período" if todos else f"em {', '.join(anos_movidos)}"
+        texto += (
+            f" Esta companhia classificou juros pagos no financiamento {quando}, e o "
+            "app os trouxe para o operacional."
+        )
+        if not todos:
+            # Companhia que troca a propria classificacao no meio da serie fica
+            # incomparavel consigo mesma: a WEG fez isso entre 2022 e 2023, e o
+            # FCO dos dois primeiros anos apareceria inflado ao lado dos outros.
+            texto += (
+                " Ela mudou de classificação no meio do período — sem a "
+                "padronização, a série dela não seria comparável nem consigo mesma."
+            )
     onde = referencias.descrever("Conversao de caixa (FCO / EBITDA)", conversao)
     if onde:
         # O corte absoluto diz o que a conta significa; o percentil diz se o
