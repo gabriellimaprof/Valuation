@@ -111,6 +111,98 @@ def _biblioteca() -> None:
             biblioteca.excluir(entrada.caminho)
             st.rerun()
 
+    _comparar_versoes(entradas)
+
+
+def _comparar_versoes(entradas) -> None:
+    """Compara um valuation guardado com o que está aberto, e diz o que moveu o valor."""
+    from valuation.comparacao import comparar
+
+    legiveis = [e for e in entradas if e.legivel]
+    if not legiveis:
+        return
+
+    st.divider()
+    st.markdown("**Comparar com o valuation aberto**")
+    st.caption(
+        "Um diff do arquivo diz o que mudou. Isto diz **quanto cada mudança "
+        "valeu** — as premissas interagem, então somar efeitos isolados não "
+        "reproduz o total. A ponte é construída uma premissa por vez, e fecha."
+    )
+
+    rotulos = {f"{e.empresa} · {e.nome_do_arquivo}": e for e in legiveis}
+    escolhido = st.selectbox("Versão guardada", list(rotulos), key="comparar_com")
+    if not st.button("Comparar"):
+        return
+
+    try:
+        antiga = biblioteca.abrir(rotulos[escolhido].caminho)
+    except (ValueError, FileNotFoundError) as erro:
+        st.error(f"Não consegui abrir: {erro}")
+        return
+
+    resultado = comparar(antiga.empresa, estado.empresa(), **estado.convencoes())
+    _mostrar_comparacao(resultado, rotulos[escolhido].empresa)
+
+
+def _mostrar_comparacao(resultado, nome_antigo: str) -> None:
+    from ..componentes import formatar
+
+    unidade = estado.empresa().unidade
+    colunas = st.columns(3)
+    colunas[0].metric(f"{nome_antigo} (guardado)", formatar(resultado.valor_antes, "moeda", unidade))
+    colunas[1].metric("Aberto agora", formatar(resultado.valor_depois, "moeda", unidade))
+    colunas[2].metric(
+        "Variação",
+        formatar(resultado.variacao, "moeda", unidade),
+        delta=formatar(resultado.variacao_relativa, "pct"),
+    )
+
+    for aviso in resultado.avisos:
+        st.warning(aviso)
+
+    if not resultado.movimentos:
+        st.info("As premissas das duas versões são iguais.")
+        return
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Premissa": m.rotulo,
+                    "Antes": _texto_premissa(m.antes),
+                    "Depois": _texto_premissa(m.depois),
+                    "Moveu o valor": formatar(m.efeito, "moeda", unidade),
+                }
+                for m in resultado.por_efeito
+            ]
+        ).set_index("Premissa"),
+        width="stretch",
+    )
+
+    if abs(resultado.nao_atribuido) > 0:
+        st.caption(
+            "Não atribuído a nenhuma premissa isolada: "
+            + formatar(resultado.nao_atribuido, "moeda", unidade)
+        )
+
+
+def _texto_premissa(valor) -> str:
+    """Premissa em texto curto, com percentuais legíveis e listas resumidas."""
+    from ..componentes import formatar
+
+    if isinstance(valor, (list, tuple)):
+        if not valor:
+            return "—"
+        if all(isinstance(v, float) and abs(v) < 1 for v in valor):
+            return ", ".join(formatar(v, "pct") for v in valor)
+        return ", ".join(str(v) for v in valor)
+    if isinstance(valor, float) and abs(valor) < 1:
+        return formatar(valor, "pct2")
+    if isinstance(valor, float):
+        return formatar(valor, "moeda")
+    return str(valor)
+
 
 def _abrir_da_biblioteca(entrada) -> None:
     try:

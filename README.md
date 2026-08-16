@@ -224,7 +224,7 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-487 testes cobrindo identidades contábeis, casos de borda econômicos, a
+497 testes cobrindo identidades contábeis, casos de borda econômicos, a
 equivalência Excel/Python, as origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.
