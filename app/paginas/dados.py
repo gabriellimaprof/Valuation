@@ -364,8 +364,18 @@ def _cvm() -> None:
         st.info("Escolha ao menos um exercício. Para projetar, o ideal são 5 ou 6.")
         return
 
+    incluir_ltm = st.checkbox(
+        "Acrescentar o ano móvel (últimos 12 meses, do ITR)",
+        value=False,
+        help=(
+            "Soma ao último exercício fechado o acumulado do ano corrente e "
+            "subtrai o mesmo período do ano anterior. É o número atualizado até "
+            "o trimestre mais recente — e não um exercício social."
+        ),
+    )
+
     if st.button("Importar da CVM", type="primary"):
-        _processar_cvm(companhia, sorted(anos), unidade)
+        _processar_cvm(companhia, sorted(anos), unidade, incluir_ltm)
 
     _cache_da_cvm()
 
@@ -394,7 +404,9 @@ def _cache_da_cvm() -> None:
         st.rerun()
 
 
-def _processar_cvm(companhia, anos: list[int], unidade: str) -> None:
+def _processar_cvm(
+    companhia, anos: list[int], unidade: str, incluir_ltm: bool = False
+) -> None:
     destino = estado.pasta_temporaria() / f"cvm_{companhia.codigo_cvm}.xlsx"
     faixa = f"{anos[0]}–{anos[-1]}" if len(anos) > 1 else str(anos[0])
 
@@ -404,6 +416,9 @@ def _processar_cvm(companhia, anos: list[int], unidade: str) -> None:
     except ErroCVM as erro:
         st.error(f"Não consegui importar da CVM: {erro}")
         return
+
+    if incluir_ltm:
+        dfs = _acrescentar_ltm(companhia, dfs)
 
     divisor, nova_unidade = UNIDADES_CVM[unidade]
     if divisor != 1:
@@ -418,6 +433,39 @@ def _processar_cvm(companhia, anos: list[int], unidade: str) -> None:
         f"exercício(s) ({dfs.anos[0]}–{dfs.anos[-1]})."
     )
     st.rerun()
+
+
+def _acrescentar_ltm(companhia, dfs):
+    """Junta o ano móvel como coluna mais recente da série anual.
+
+    A coluna é rotulada pelo ano de encerramento do período móvel, e **substitui**
+    um exercício de mesmo rótulo que ainda esteja incompleto. Sem substituir,
+    apareceriam duas colunas com o mesmo ano e o gráfico mostraria um degrau que
+    não existe.
+    """
+    from valuation.importacao.cvm import importar_ltm
+
+    try:
+        with st.spinner("Montando o ano móvel a partir do ITR…"):
+            ltm = importar_ltm(companhia, catalogo=_catalogo())
+    except ErroCVM as erro:
+        st.warning(f"Importei os exercícios, mas não consegui montar o ano móvel: {erro}")
+        return dfs
+
+    rotulo = ltm.anos[-1]
+    valores = dfs.valores.drop(columns=[rotulo], errors="ignore").join(
+        ltm.valores, how="outer"
+    )
+    valores = valores[sorted(valores.columns)]
+
+    from dataclasses import replace
+
+    return replace(
+        dfs,
+        valores=valores,
+        avisos=list(dfs.avisos) + list(ltm.avisos),
+        fonte={**dfs.fonte, "ltm": ltm.fonte.get("ltm")},
+    )
 
 
 def _importar() -> None:

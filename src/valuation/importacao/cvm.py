@@ -72,6 +72,7 @@ from .importador import (
 
 BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA"
 URL_DFP = BASE + "/DOC/DFP/DADOS/dfp_cia_aberta_{ano}.zip"
+URL_ITR = BASE + "/DOC/ITR/DADOS/itr_cia_aberta_{ano}.zip"
 URL_CADASTRO = BASE + "/CAD/DADOS/cad_cia_aberta.csv"
 
 ENCODING = "latin-1"
@@ -214,6 +215,17 @@ def baixar_dfp(ano: int, cache: Path | None = None, forcar: bool = False) -> Pat
     """Garante o zip da DFP do exercicio ``ano`` em disco e devolve o caminho."""
     cache = Path(cache) if cache else diretorio_cache()
     return _baixar(URL_DFP.format(ano=ano), cache / f"dfp_cia_aberta_{ano}.zip", forcar)
+
+
+def baixar_itr(ano: int, cache: Path | None = None, forcar: bool = False) -> Path:
+    """Garante o zip do ITR do ano em disco e devolve o caminho.
+
+    O ITR de um ano corrente **muda**: cada trimestre entregue acrescenta linhas
+    ao mesmo arquivo. Diferente do DFP, que fecha, este vale rebaixar com
+    ``forcar=True`` quando se quer o trimestre recem-publicado.
+    """
+    cache = Path(cache) if cache else diretorio_cache()
+    return _baixar(URL_ITR.format(ano=ano), cache / f"itr_cia_aberta_{ano}.zip", forcar)
 
 
 def baixar_cadastro(cache: Path | None = None, forcar: bool = False) -> Path:
@@ -402,8 +414,8 @@ class LinhaCVM:
     escopo: str
 
 
-def _nome_no_zip(grupo: str, escopo: str, ano: int) -> str:
-    return f"dfp_cia_aberta_{grupo}_{escopo}_{ano}.csv"
+def _nome_no_zip(grupo: str, escopo: str, ano: int, documento: str = "dfp") -> str:
+    return f"{documento}_cia_aberta_{grupo}_{escopo}_{ano}.csv"
 
 
 # Posicao de CD_CVM na linha: CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;...
@@ -483,11 +495,17 @@ def _fator_escala(escala: str, avisos: list[str]) -> float:
     return 1.0
 
 
-def _filtrar_empresa(dados: pd.DataFrame, codigo_cvm: int) -> pd.DataFrame:
-    """Linhas da companhia, so o exercicio ``ULTIMO`` e so a versao mais recente.
+def _filtrar_empresa(
+    dados: pd.DataFrame, codigo_cvm: int, ordem: str = "ultimo"
+) -> pd.DataFrame:
+    """Linhas da companhia, num exercicio so e na versao mais recente.
 
     O filtro de ``ORDEM_EXERC`` e o que impede o ano do meio de entrar duas
     vezes quando se pede uma serie de varios anos (ver o cabecalho do modulo).
+
+    ``ordem`` existe para o ITR: la o ``PENULTIMO`` **e** o dado que interessa,
+    porque e o mesmo periodo do exercicio anterior -- a metade que falta para
+    montar o ano movel. No DFP ele continua sendo lixo a descartar.
     """
     if dados is None or dados.empty:
         return pd.DataFrame()
@@ -497,8 +515,8 @@ def _filtrar_empresa(dados: pd.DataFrame, codigo_cvm: int) -> pd.DataFrame:
     if recorte.empty:
         return recorte
 
-    ordem = recorte["ORDEM_EXERC"].map(lambda v: normalizar(v))
-    recorte = recorte[ordem == "ultimo"]
+    ordens = recorte["ORDEM_EXERC"].map(lambda v: normalizar(v))
+    recorte = recorte[ordens == normalizar(ordem)]
     if recorte.empty:
         return recorte
 
@@ -1371,4 +1389,298 @@ def importar_cvm(
             "anos": list(anos),
             **({"setor": registro.setor} if registro and registro.setor else {}),
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# ITR: o trimestre, e o ano movel que sai dele
+# ---------------------------------------------------------------------------
+#
+# O ITR tem a mesma estrutura do DFP -- mesmas colunas, mesmo latin-1, mesmo
+# ';' -- e uma armadilha propria, confirmada no arquivo de 2025:
+#
+# Para ``DT_REFER`` de 30/09, ``ORDEM_EXERC = ULTIMO``, a DRE traz **duas**
+# linhas da mesma conta: o acumulado do exercicio (01/01 a 30/09, R$ 30,5 bi de
+# receita na WEG) e o trimestre isolado (01/07 a 30/09, R$ 10,3 bi). Somar as
+# duas infla em um terco; pegar a errada muda o numero pela metade. No primeiro
+# trimestre ha uma linha so, porque acumulado e trimestre coincidem -- entao
+# "pegar a ultima" acerta em marco e erra em setembro.
+#
+# A regra que funciona em qualquer trimestre e em qualquer exercicio social: o
+# acumulado e a linha de **periodo mais longo**. Medidas as duracoes na secao
+# ULTIMO de 2025, so existem tres faixas: 89-91 dias, 180-183 e 272-274.
+# Sao Martinho, que fecha o exercicio em marco, acumula a partir de 01/04 -- a
+# regra do periodo mais longo continua valendo sem saber disso.
+#
+# O balanco nao tem ``DT_INI_EXERC``: e uma data, nao um periodo. E o
+# ``PENULTIMO`` do balanco e o **fim do exercicio anterior**, nao o mesmo
+# trimestre do ano passado -- diferente da DRE. Confundir os dois compararia
+# saldo de setembro com saldo de dezembro.
+
+# Duracao minima, em dias, para uma linha de periodo ser considerada acumulada
+# quando ha uma so. Serve para nao tratar um recorte estranho como exercicio.
+_DIAS_DE_TRIMESTRE = 80
+
+
+def trimestres_disponiveis(
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str = "con"
+) -> list[str]:
+    """Datas de referencia que a companhia publicou no ano, da mais antiga."""
+    dados = _ler_csv_do_zip(
+        zip_path, _nome_no_zip("DRE", escopo, ano, "itr"), codigo_cvm
+    )
+    recorte = _filtrar_empresa(dados, codigo_cvm)
+    if recorte.empty:
+        return []
+    return sorted({_texto(v) for v in recorte["DT_REFER"] if _texto(v)})
+
+
+def _linhas_do_itr(
+    zip_path: Path,
+    ano: int,
+    demonstracao: str,
+    codigo_cvm: int,
+    avisos: list[str],
+    escopo: str,
+    data_refer: str,
+    ordem: str,
+) -> list[LinhaCVM]:
+    """Linhas de uma demonstracao do ITR, ja resolvidas para o acumulado.
+
+    ``ordem`` e ``"ÚLTIMO"`` (exercicio corrente) ou ``"PENÚLTIMO"`` (o mesmo
+    periodo do exercicio anterior, na DRE e na DFC).
+    """
+    coletadas: list[LinhaCVM] = []
+
+    for grupo in GRUPOS[demonstracao]:
+        dados = _ler_csv_do_zip(
+            zip_path, _nome_no_zip(grupo, escopo, ano, "itr"), codigo_cvm
+        )
+        recorte = _filtrar_empresa(dados, codigo_cvm, ordem=ordem)
+        if recorte.empty:
+            continue
+        recorte = recorte[recorte["DT_REFER"].map(_texto) == data_refer]
+        if recorte.empty:
+            continue
+
+        # Periodo: fica o acumulado, que e a linha mais longa de cada conta.
+        if "DT_INI_EXERC" in recorte.columns:
+            inicio = pd.to_datetime(recorte["DT_INI_EXERC"], errors="coerce")
+            fim = pd.to_datetime(recorte["DT_FIM_EXERC"], errors="coerce")
+            recorte = recorte.assign(_dias=(fim - inicio).dt.days)
+            recorte = recorte.sort_values("_dias").drop_duplicates(
+                subset=["CD_CONTA", "DS_CONTA"], keep="last"
+            )
+
+        for _, linha in recorte.iterrows():
+            valor = pd.to_numeric(linha.get("VL_CONTA"), errors="coerce")
+            if not np.isfinite(valor):
+                continue
+            fim_texto = _texto(linha.get("DT_FIM_EXERC"))
+            ano_exercicio = int(fim_texto[:4]) if fim_texto[:4].isdigit() else ano
+            coletadas.append(
+                LinhaCVM(
+                    codigo=_texto(linha.get("CD_CONTA")),
+                    descricao=_texto(linha.get("DS_CONTA")),
+                    valor=float(valor) * _fator_escala(linha.get("ESCALA_MOEDA"), avisos),
+                    ano=ano_exercicio,
+                    demonstracao=demonstracao,
+                    escala=_texto(linha.get("ESCALA_MOEDA")),
+                    escopo=escopo,
+                )
+            )
+    return coletadas
+
+
+def periodo_acumulado(
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str, data_refer: str
+) -> tuple[str, str] | None:
+    """Inicio e fim do periodo acumulado do trimestre, como estao no arquivo.
+
+    O inicio e o primeiro dia do **exercicio social** -- 01/01 para quem fecha
+    em dezembro, 01/04 para Sao Martinho. E dele que sai qual exercicio ja
+    fechou, que e a base do ano movel.
+    """
+    dados = _ler_csv_do_zip(
+        zip_path, _nome_no_zip("DRE", escopo, ano, "itr"), codigo_cvm
+    )
+    recorte = _filtrar_empresa(dados, codigo_cvm, ordem="ultimo")
+    recorte = recorte[recorte["DT_REFER"].map(_texto) == data_refer]
+    if recorte.empty or "DT_INI_EXERC" not in recorte.columns:
+        return None
+    inicio = pd.to_datetime(recorte["DT_INI_EXERC"], errors="coerce")
+    fim = pd.to_datetime(recorte["DT_FIM_EXERC"], errors="coerce")
+    duracao = (fim - inicio).dt.days
+    if duracao.dropna().empty:
+        return None
+    escolhida = duracao.idxmax()
+    return (
+        _texto(recorte.loc[escolhida, "DT_INI_EXERC"]),
+        _texto(recorte.loc[escolhida, "DT_FIM_EXERC"]),
+    )
+
+
+def _demonstracoes_do_itr(
+    zip_path: Path,
+    ano: int,
+    codigo_cvm: int,
+    escopo: str,
+    data_refer: str,
+    ordem: str,
+    empresa: str,
+) -> Demonstracoes:
+    avisos: list[str] = []
+    linhas: list[LinhaCVM] = []
+    for demonstracao in ("dre", "bp", "dfc"):
+        linhas.extend(
+            _linhas_do_itr(
+                zip_path, ano, demonstracao, codigo_cvm, avisos, escopo, data_refer, ordem
+            )
+        )
+    if not linhas:
+        raise ErroCVM(
+            f"O ITR de {ano} nao tem dados da companhia {codigo_cvm} em {data_refer}."
+        )
+    return montar_demonstracoes(
+        linhas, empresa=empresa, origem=f"ITR {data_refer} ({ordem})", avisos=avisos
+    )
+
+
+def importar_ltm(
+    companhia: Companhia | int,
+    cache: Path | None = None,
+    catalogo: list[Companhia] | None = None,
+    ano: int | None = None,
+    forcar_download: bool = False,
+) -> Demonstracoes:
+    """Ano movel: o exercicio fechado, atualizado ate o ultimo trimestre.
+
+    E o que faltava para o app "se atualizar quando sai balanco". A conta e a de
+    sempre, e o ITR ja entrega as duas metades que ela pede::
+
+        LTM = exercicio anterior fechado
+              + acumulado do exercicio corrente (ORDEM_EXERC = ULTIMO)
+              - acumulado do mesmo periodo do exercicio anterior (PENULTIMO)
+
+    Contas de **resultado e de caixa** somam assim, porque descrevem um periodo.
+    Contas de **balanco** nao: sao uma data, e o saldo certo e o do proprio
+    trimestre. Somar o balanco pela mesma formula produziria um patrimonio que
+    nao existe -- e o erro que este modulo separa por construcao, olhando
+    ``demonstracao`` de cada conta canonica.
+
+    O resultado tem uma coluna so, rotulada pelo ano de encerramento do periodo
+    movel, e um aviso dizendo que aquilo nao e exercicio social. Sem o aviso,
+    quem lesse "2025" numa companhia que fecha em dezembro entenderia ano cheio.
+    """
+    registro: Companhia | None = None
+    if isinstance(companhia, Companhia):
+        registro, codigo_cvm, nome = companhia, companhia.codigo_cvm, companhia.nome
+    else:
+        codigo_cvm, nome = int(companhia), str(companhia)
+        for candidato in catalogo or []:
+            if candidato.codigo_cvm == codigo_cvm:
+                registro, nome = candidato, candidato.nome
+                break
+
+    ano = ano or date.today().year
+    zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
+    escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+    trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
+    if not trimestres:
+        # Em janeiro o arquivo do ano existe e esta vazio; o ITR util e o anterior.
+        ano -= 1
+        zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
+        escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+        trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
+    if not trimestres:
+        raise ErroCVM(
+            f"A CVM nao tem ITR da companhia {codigo_cvm} em {ano} nem em {ano + 1}."
+        )
+
+    data_refer = trimestres[-1]
+    atual = _demonstracoes_do_itr(
+        zip_itr, ano, codigo_cvm, escopo, data_refer, "ultimo", nome
+    )
+    anterior = _demonstracoes_do_itr(
+        zip_itr, ano, codigo_cvm, escopo, data_refer, "penultimo", nome
+    )
+
+    # O exercicio-base e o **anterior ao que o ITR esta acumulando**, e nao
+    # simplesmente o ano passado. Pedir "o DFP mais recente" quebra em duas
+    # situacoes reais: quando o exercicio corrente ja fechou e foi publicado --
+    # somar o acumulado por cima contaria os mesmos meses duas vezes, o que
+    # inflava a receita da WEG em R$ 2,8 bi -- e quando o exercicio social nao
+    # fecha em dezembro, caso em que o rotulo do ano nao acompanha o calendario.
+    periodo = periodo_acumulado(zip_itr, ano, codigo_cvm, escopo, data_refer)
+    if periodo is None:
+        raise ErroCVM("Nao consegui identificar o periodo acumulado do trimestre.")
+    inicio_do_exercicio = pd.to_datetime(periodo[0])
+    fim_do_exercicio = inicio_do_exercicio + pd.DateOffset(years=1) - pd.Timedelta(days=1)
+    ano_base = int(fim_do_exercicio.year) - 1
+
+    anual = importar_cvm(
+        registro or codigo_cvm, [ano_base], cache=cache, catalogo=catalogo
+    )
+    if ano_base not in anual.anos:
+        raise ErroCVM(
+            f"Para montar o ano movel preciso do exercicio {ano_base} fechado, e a "
+            "CVM nao o tem para esta companhia."
+        )
+
+    fim = pd.to_datetime(data_refer)
+    rotulo = int(fim.year)
+
+    valores: dict[str, float] = {}
+    origem_da_conta: dict[str, str] = {}
+    for chave in set(anual.valores.index) | set(atual.valores.index):
+        conta = POR_CHAVE.get(chave)
+        if conta is None:
+            continue
+        if conta.demonstracao in ("bp", "capital"):
+            saldo = atual.valor(chave)
+            if saldo is not None and np.isfinite(saldo):
+                valores[chave] = saldo
+                origem_da_conta[chave] = f"saldo em {data_refer}"
+            continue
+
+        base = anual.valor(chave, ano_base)
+        soma = atual.valor(chave)
+        subtrai = anterior.valor(chave)
+        partes = [base, soma, subtrai]
+        if any(p is None or not np.isfinite(p) for p in partes):
+            continue
+        valores[chave] = base + soma - subtrai
+        origem_da_conta[chave] = (
+            f"{ano_base} + acumulado ate {data_refer} - mesmo periodo anterior"
+        )
+
+    if not valores:
+        raise ErroCVM("Nao consegui montar o ano movel: faltam contas em comum.")
+
+    ordem = [c.chave for c in CONTAS if c.chave in valores]
+    tabela = pd.DataFrame({rotulo: {chave: valores[chave] for chave in ordem}})
+
+    avisos = [
+        f"**Este não é um exercício social.** A coluna {rotulo} é o ano móvel "
+        f"encerrado em {data_refer}: o exercício de {ano_base} mais o acumulado até "
+        "o trimestre, menos o mesmo período do ano anterior. Contas de balanço são o "
+        f"saldo em {data_refer}, não uma soma."
+    ]
+    avisos += [a for a in atual.avisos if "ORDEM_EXERC" not in a]
+
+    return Demonstracoes(
+        empresa=anual.empresa,
+        valores=tabela,
+        origem=f"CVM ITR — ano móvel até {data_refer}",
+        unidade="reais",
+        mapeamento=origem_da_conta,
+        avisos=avisos,
+        fonte={
+            "tipo": FONTE_CVM,
+            "codigo_cvm": codigo_cvm,
+            "ltm": data_refer,
+            "ano_base": ano_base,
+            "setor": getattr(registro, "setor", "") or "",
+        },
+        detalhe=atual.detalhe,
     )

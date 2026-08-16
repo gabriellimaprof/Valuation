@@ -176,6 +176,28 @@ dirige atenção, gasta. Os cortes agora são o P75 (16,9 p.p.) e o P90 (34,5 p.
 e acima de `KD_MAXIMO_PLAUSIVEL` o sinal se recusa a medir: com pouca dívida, a
 razão deixa de ser custo de dívida (WEG dá 45%). Ver `referencias.py`.
 
+**O ITR tem uma pegadinha própria, e ela é de período.** Para `DT_REFER` de
+30/09, a DRE traz **duas linhas da mesma conta**: o acumulado do exercício
+(01/01–30/09, R$ 30,5 bi de receita na WEG) e o trimestre isolado
+(01/07–30/09, R$ 10,3 bi). Somar as duas infla um terço; pegar a errada muda o
+número pela metade. E no **primeiro** trimestre há uma linha só — então "pegar a
+última" acerta em março e erra em setembro. A regra que funciona sempre: o
+acumulado é a linha de **período mais longo**. Medidas as durações em 2025, só
+existem três faixas (89–91, 180–183, 272–274 dias).
+
+Duas diferenças em relação ao DFP: o `PENÚLTIMO` do ITR **é dado útil** (o mesmo
+período do exercício anterior, a metade que falta do ano móvel), e no balanço ele
+é o fim do exercício anterior, não o mesmo trimestre — comparar os dois casaria
+saldo de setembro com saldo de dezembro.
+
+`importar_ltm` monta o ano móvel: `exercício fechado + acumulado − mesmo período
+do ano anterior`, para contas de resultado e de caixa; balanço é o **saldo do
+trimestre**, não uma soma. O exercício-base é o anterior ao que o ITR acumula, e
+não "o DFP mais recente" — usar o mais recente contava os mesmos meses duas
+vezes e inflava a receita da WEG em R$ 2,8 bi. Verificado contra o arquivo: WEG
+37.987 + 30.557 − 27.165 = 41.380; São Martinho (exercício fecha em março)
+7.162 + 5.188 − 5.424 = 6.926.
+
 **O arrendamento não fica onde o plano diz que fica.** A CVM reserva
 `2.01.04.03` e `2.02.01.03` para "Financiamento por Arrendamento", dentro da
 subárvore de empréstimos. **190 das 467 companhias de 2024 não usam esse lugar**:
@@ -248,7 +270,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-701 testes passando. Verificado de verdade: contas financeiras, identidades,
+715 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -270,8 +292,8 @@ companhia, ante 26 antes.
    `formulas`, que é independente mas não é o Excel).
 2. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
-3. Da CVM, só a **DFP** (anual) é lida. O ITR trimestral tem estrutura parecida
-   e não foi tocado.
+3. Do ITR, só o **consolidado** é lido, e o ano móvel exige o exercício anterior
+   fechado — companhia que abriu capital há menos de um ano não o tem.
 4. Bancos e seguradoras (19 das 467) são detectados e avisados, mas o
    reconhecimento só por rótulo cobre bem menos contas, e o FCFF/WACC não se
    aplica a eles de qualquer forma.
@@ -396,6 +418,8 @@ A decisão de investir continua humana; o que sai da mão é a transcrição.
 Isso reordena as lacunas. Medido contra esse objetivo:
 
 - **Ler a CVM** — feito, e conferido conta a conta contra a linha publicada.
+  Desde agora inclui o **ITR trimestral**, com o ano móvel plugando na mesma
+  série anual que o motor já consome.
 - **Montar valuation** — o motor já fazia.
 - **Atualizar quando sai resultado** — existe, detecta exercício novo.
 - **Comparar com pares** — feito em `pares.py`. `SETOR_ATIV` é classificação de
