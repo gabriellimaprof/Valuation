@@ -656,6 +656,98 @@ class RegraSomada:
         return self.rotulo_curto_basta and len(texto.split()) <= 3
 
 
+# O plano da CVM reserva 2.01.04.03 e 2.02.01.03 para "Financiamento por
+# Arrendamento", dentro da subarvore de emprestimos. Boa parte das companhias
+# nao usa esse lugar: coloca o passivo de arrendamento do IFRS 16 em "Outras
+# Obrigacoes" (2.01.05, 2.02.02), que fica **fora** da divida.
+#
+# Medido na DFP consolidada de 2024: 190 das 467 companhias fazem isso, num
+# total de R$ 194,9 bilhoes. Em TIM sao 62,6% do que deveria ser a divida bruta;
+# em Claro, 55,8%; na GOL, R$ 13,2 bilhoes. Ler so o codigo fixo devolve divida
+# menor do que a real, e divida menor vira equity value maior -- em silencio,
+# porque a arvore publicada continua fechando.
+_MARCA_ARRENDAMENTO = re.compile(r"arrendament|direito de uso|leasing", re.I)
+_SUBARVORE_DA_DIVIDA = ("2.01.04", "2.02.01")
+
+
+def arrendamento_fora_da_divida(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
+    """Passivo de arrendamento que a companhia reportou fora da divida.
+
+    Devolve ``{"curto": {ano: valor}, "longo": {ano: valor}}``. So entram as
+    linhas **mais externas** que casam: quando a companhia abre "Arrendamentos"
+    e, abaixo, "Arrendamentos a pagar", somar as duas contaria o mesmo passivo
+    duas vezes.
+    """
+    candidatas = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "bp"
+        and linha.codigo.startswith(("2.01", "2.02"))
+        and not linha.codigo.startswith(_SUBARVORE_DA_DIVIDA)
+        and _MARCA_ARRENDAMENTO.search(linha.descricao)
+        and linha.valor
+    ]
+
+    fora: dict[str, dict[int, float]] = {"curto": {}, "longo": {}}
+    por_ano: dict[int, list[LinhaCVM]] = {}
+    for linha in candidatas:
+        por_ano.setdefault(linha.ano, []).append(linha)
+
+    for ano, do_ano in por_ano.items():
+        codigos = {linha.codigo for linha in do_ano}
+        for linha in do_ano:
+            tem_pai = any(
+                linha.codigo != outro and linha.codigo.startswith(outro + ".")
+                for outro in codigos
+            )
+            if tem_pai:
+                continue
+            prazo = "curto" if linha.codigo.startswith("2.01") else "longo"
+            fora[prazo][ano] = fora[prazo].get(ano, 0.0) + linha.valor
+    return fora
+
+
+def _somar_arrendamento_fora_da_divida(
+    linhas: list[LinhaCVM],
+    tabela: dict[str, dict[int, float]],
+    mapeamento: dict[str, str],
+    avisos: list[str],
+) -> None:
+    """Devolve a divida bruta o arrendamento que ficou fora dela.
+
+    Entra na divida **e** na conta de arrendamento, porque as duas leituras
+    precisam do mesmo numero: a ponte EV -> equity subtrai a divida, e o
+    indicador de arrendamento sobre divida diz quanto dela e aluguel.
+    """
+    fora = arrendamento_fora_da_divida(linhas)
+    if not fora["curto"] and not fora["longo"]:
+        return
+
+    destinos = {
+        "curto": ("divida_curto_prazo", "arrendamento_curto_prazo"),
+        "longo": ("divida_longo_prazo", "arrendamento_longo_prazo"),
+    }
+    total = 0.0
+    for prazo, valores in fora.items():
+        if not valores:
+            continue
+        for chave in destinos[prazo]:
+            alvo = tabela.setdefault(chave, {})
+            for ano, valor in valores.items():
+                alvo[ano] = alvo.get(ano, 0.0) + valor
+            nota = "+ arrendamento reportado fora da divida"
+            if nota not in mapeamento.get(chave, ""):
+                mapeamento[chave] = f"{mapeamento.get(chave, '')} {nota}".strip()
+        total += max(valores.values(), key=abs, default=0.0)
+
+    avisos.append(
+        "Esta companhia reporta parte do passivo de arrendamento fora da subárvore "
+        "de empréstimos (2.01.04 / 2.02.01). Somei essas linhas à dívida bruta e ao "
+        "arrendamento — sem isso a dívida sairia menor do que é, e o equity value, "
+        "maior. Confira na árvore publicada."
+    )
+
+
 REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
     RegraSomada(
         chave="capex",
@@ -934,6 +1026,8 @@ def montar_demonstracoes(
     for chave, valores in somadas.items():
         tabela[chave] = valores
         mapeamento[chave] = " + ".join(origens[chave])
+
+    _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
 
     if not tabela:
         raise ErroCVM(

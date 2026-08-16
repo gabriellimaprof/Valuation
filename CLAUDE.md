@@ -110,6 +110,17 @@ companhias e "IR e CSLL" em 17. O plano é detectado uma vez por companhia pelo
 topo da DRE; fora do industrial o reconhecimento passa a ser só pelo rótulo e a
 tela avisa. Confiar no código sem isso põe número errado na conta certa, calado.
 
+**O arrendamento não fica onde o plano diz que fica.** A CVM reserva
+`2.01.04.03` e `2.02.01.03` para "Financiamento por Arrendamento", dentro da
+subárvore de empréstimos. **190 das 467 companhias de 2024 não usam esse lugar**:
+põem o passivo do IFRS 16 em "Outras Obrigações" (`2.01.05`, `2.02.02`), fora da
+dívida. São R$ 194,9 bilhões no total — 62,6% do que deveria ser a dívida bruta
+da TIM, 55,8% da Claro, R$ 13,2 bi da GOL. Ler só o código fixo devolve dívida
+menor que a real, e dívida menor vira equity value maior, **em silêncio**, porque
+a árvore publicada continua fechando. `_somar_arrendamento_fora_da_divida` em
+`cvm.py` devolve essas linhas à dívida bruta e ao arrendamento, contando só as
+mais externas para não somar pai e filha, e avisa que corrigiu.
+
 **Capex, juros pagos e dividendos pagos não existem como linha única.** A CVM
 padroniza só os totais de seção da DFC (`6.01`, `6.02`, `6.03`); abaixo é conta
 livre. Cada um chega partido em várias rubricas e é remontado por soma em
@@ -171,7 +182,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-621 testes passando. Verificado de verdade: contas financeiras, identidades,
+629 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -350,10 +361,14 @@ Em ordem de valor:
    de uso também (`1.02.03.02`), a tela tem de onde partir.
 2. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
    oferece a opção, mas não há onde informar a dívida ano a ano.
-3. **A ponte de valor ainda ignora o arrendamento.** Ele é lido do balanço e
-   entra na dívida bruta (é filho de `2.01.04`), mas não há tela para tratá-lo à
-   parte — e em Petrobras ele é 49% da dívida. `casos_especiais.py` já sabe
-   capitalizar leasing; falta ligar as duas pontas.
+3. **A projeção não faz o arrendamento crescer.** O estoque agora é lido certo
+   e aparece na tela de Valor, e o diagnóstico levanta alerta quando o
+   arrendamento é relevante e acompanha a receita. Mas o **fluxo** continua
+   fora do modelo: contrato novo de aluguel cria passivo sem passar pelo capex,
+   então uma rede que abre lojas mostra EBITDA subindo, capex parado e FCFF
+   generoso, enquanto a dívida real cresce todo ano — e a ponte fica congelada
+   na data-base. Fechar isso exige projetar adições de arrendamento junto com a
+   receita, o que muda `projecao.py`.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte

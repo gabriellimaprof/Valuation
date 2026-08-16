@@ -715,6 +715,8 @@ def _checar_contra_historico(
             )
         )
 
+    achados += _checar_arrendamento_projetado(resultado, analise)
+
     leasing = analise.ultimo("Arrendamento / Divida bruta")
     if np.isfinite(leasing) and leasing > LEASING_RELEVANTE:
         achados.append(
@@ -802,3 +804,58 @@ def _checar_contra_historico(
         )
 
     return achados
+
+
+def _checar_arrendamento_projetado(
+    resultado: ResultadoValuation, analise: AnaliseHistorica
+) -> list[Achado]:
+    """A empresa cresce assinando aluguel, e a projecao nao cobra por isso.
+
+    Nao e o mesmo achado que ``divida_e_muito_arrendamento``, que fala do
+    **estoque**. Este fala do **fluxo**: contrato novo cria passivo sem passar
+    pelo capex, entao a projecao de uma rede que abre lojas mostra EBITDA
+    subindo, capex parado e FCFF generoso, enquanto a divida cresce todo ano.
+    A ponte, congelada na data-base, nunca ve isso -- e o erro cresce com o
+    horizonte, porque cada ano projetado acrescenta passivo que ninguem desconta.
+    """
+    from .casos_especiais import ler_leasing
+
+    leasing = ler_leasing(analise)
+    if not leasing.relevante or not leasing.acompanha_a_receita:
+        return []
+
+    operacionais = resultado.empresa.operacionais
+    if operacionais is None:
+        return []
+    crescimento = float(np.median(operacionais.crescimento_receita))
+    if not np.isfinite(crescimento) or crescimento <= 0:
+        return []
+
+    adicao = leasing.adicao_anual_implicita(crescimento)
+    horizonte = operacionais.horizonte
+    return [
+        Achado(
+            codigo="arrendamento_cresce_e_nao_e_projetado",
+            severidade=ALERTA,
+            titulo=(
+                f"{_pct(leasing.peso, 0)} da dívida é arrendamento, e ele cresce "
+                f"{_pct(leasing.crescimento_anual, 0)} ao ano"
+            ),
+            detalhe=(
+                f"O passivo de arrendamento acompanhou o negócio no histórico "
+                f"({_pct(leasing.crescimento_anual, 0)} ao ano contra "
+                f"{_pct(leasing.crescimento_receita, 0)} da receita), mas a projeção "
+                "não o faz crescer: contrato novo de aluguel não passa pelo capex. "
+                f"Projetando {_pct(crescimento, 0)} de crescimento, o passivo subiria "
+                f"cerca de {_num(adicao, 0)} por ano — e ao longo dos {horizonte} anos "
+                "isso é dívida que o modelo assume, entrega ao acionista e nunca "
+                "subtrai, porque a ponte está congelada na data-base."
+            ),
+            acao=(
+                "Some ao item de dívida bruta da ponte o valor presente dos "
+                "arrendamentos que a projeção implica, ou reduza o crescimento para "
+                "o que a empresa consegue sustentar sem abrir pontos novos."
+            ),
+            referencia="Damodaran, Investment Valuation, cap. 3 (lease adjustments)",
+        )
+    ]

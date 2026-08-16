@@ -162,8 +162,65 @@ def _ponte(resultado, unidade: str) -> None:
         tabela_formatada(resultado.tabela_ponte(), "moeda", unidade),
     )
 
+    _arrendamento(ponte, unidade)
+
     with st.expander("Editar os itens da ponte"):
         _editar_ponte(ponte)
+
+
+def _arrendamento(ponte, unidade: str) -> None:
+    """De que a dívida bruta é feita, e o que a projeção não faz com ela.
+
+    A ponte subtrai um total. Para uma empresa de varejo ou de logística, boa
+    parte desse total é arrendamento — e arrendamento tem uma propriedade que
+    empréstimo não tem: ele **cresce sozinho** quando a empresa cresce, sem
+    passar pelo capex. Quem lê só o total não vê isso chegando.
+    """
+    from valuation.casos_especiais import ler_leasing
+
+    analise = estado.analise()
+    if analise is None:
+        return
+
+    leasing = ler_leasing(analise)
+    if not (leasing.peso == leasing.peso) or leasing.peso <= 0:  # NaN ou zero
+        return
+
+    st.markdown("**De que a dívida bruta é feita**")
+    colunas = st.columns(3)
+    with colunas[0]:
+        metrica("Arrendamento (IFRS 16)", leasing.saldo, "moeda", unidade)
+    with colunas[1]:
+        metrica("Peso na dívida bruta", leasing.peso, "pct")
+    with colunas[2]:
+        metrica("Cresceu ao ano", leasing.crescimento_anual, "pct")
+
+    st.caption(leasing.explicacao)
+
+    if not leasing.relevante:
+        return
+
+    empresa = estado.empresa()
+    crescimento = (
+        float(empresa.operacionais.crescimento_receita[0])
+        if empresa.operacionais
+        else float("nan")
+    )
+    adicao = leasing.adicao_anual_implicita(crescimento)
+
+    aviso = (
+        f"Com {formatar(leasing.peso, 'pct')} da dívida em arrendamento, vale saber o "
+        "que a projeção **não** faz: contrato novo de aluguel cria passivo sem passar "
+        "pelo capex. O EBITDA sobe, o capex não acompanha, o FCFF sai generoso — e a "
+        "ponte fica congelada na data-base."
+    )
+    if adicao == adicao:
+        aviso += (
+            f" Crescendo {formatar(crescimento, 'pct')} no ano 1, o passivo de "
+            f"arrendamento aumentaria cerca de {formatar(adicao, 'moeda', unidade)}, "
+            "que o modelo não desconta de ninguém."
+        )
+    st.warning(aviso)
 
 
 def _editar_ponte(ponte) -> None:

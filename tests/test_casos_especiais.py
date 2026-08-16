@@ -270,3 +270,83 @@ def test_setor_gera_valuation_completo(empresa_exemplo):
     resultado = avaliar(empresa)
     assert np.isfinite(resultado.equity_value)
     assert 0.05 < resultado.custo_capital.wacc_brl < 0.30
+
+
+# ---------------------------------------------------------------------------
+# Arrendamento ja no balanco
+# ---------------------------------------------------------------------------
+
+
+def test_ler_leasing_mede_peso_e_crescimento():
+    """O que a ponte subtrai, e como aquilo se moveu."""
+    import pandas as pd
+
+    from valuation.casos_especiais import ler_leasing
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2022: {
+                "receita_liquida": 1000.0,
+                "ebit": 150.0,
+                "arrendamento_curto_prazo": 40.0,
+                "arrendamento_longo_prazo": 160.0,
+                "divida_curto_prazo": 90.0,
+                "divida_longo_prazo": 310.0,
+            },
+            2024: {
+                "receita_liquida": 1440.0,
+                "ebit": 220.0,
+                "arrendamento_curto_prazo": 60.0,
+                "arrendamento_longo_prazo": 240.0,
+                "divida_curto_prazo": 130.0,
+                "divida_longo_prazo": 470.0,
+            },
+        }
+    )
+    leasing = ler_leasing(analisar(Demonstracoes(empresa="X", valores=valores)))
+
+    assert leasing.saldo == pytest.approx(300.0)
+    assert leasing.peso == pytest.approx(0.50)
+    assert leasing.relevante
+    assert leasing.acompanha_a_receita
+    # 200 -> 300 em uma observacao de intervalo: 50% no periodo.
+    assert leasing.crescimento_anual == pytest.approx(0.50)
+    assert "50,0%" in leasing.explicacao.replace(".", ",") or "50.0%" in leasing.explicacao
+
+
+def test_sem_arrendamento_o_peso_e_ausente_e_nao_zero():
+    """Conta que a companhia nao publica e ausencia de informacao, nao zero."""
+    import numpy as np
+    import pandas as pd
+
+    from valuation.casos_especiais import ler_leasing
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {"receita_liquida": 1000.0, "ebit": 150.0, "divida_curto_prazo": 100.0},
+            2024: {"receita_liquida": 1100.0, "ebit": 160.0, "divida_curto_prazo": 120.0},
+        }
+    )
+    leasing = ler_leasing(analisar(Demonstracoes(empresa="X", valores=valores)))
+
+    assert np.isnan(leasing.peso)
+    assert not leasing.relevante
+    assert "Não há passivo de arrendamento" in leasing.explicacao
+
+
+def test_adicao_implicita_e_ordem_de_grandeza_do_que_a_projecao_ignora():
+    from valuation.casos_especiais import LeasingNoBalanco
+
+    leasing = LeasingNoBalanco(
+        saldo=1000.0,
+        divida_bruta=2000.0,
+        peso=0.5,
+        crescimento_anual=0.15,
+        crescimento_receita=0.12,
+        anos=5,
+    )
+    assert leasing.adicao_anual_implicita(0.10) == pytest.approx(100.0)

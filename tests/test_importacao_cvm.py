@@ -266,7 +266,12 @@ def test_identidade_do_balanco_fecha(weg):
     """Ativo = passivo, exatamente, nos dois anos."""
     for ano in weg.anos:
         assert weg.valor("ativo_total", ano) == weg.valor("passivo_total", ano)
-    assert not weg.avisos, f"a WEG nao deveria gerar aviso: {weg.avisos}"
+
+    # A WEG so gera o aviso de arrendamento: ela reporta o passivo de
+    # arrendamento fora da subarvore de emprestimos, como 190 das 467
+    # companhias de 2024. Qualquer outro aviso seria problema de leitura.
+    outros = [a for a in weg.avisos if "arrendamento" not in a]
+    assert not outros, f"aviso inesperado na WEG: {outros}"
 
 
 def test_custos_viram_magnitude_positiva(weg):
@@ -372,7 +377,17 @@ def test_composicao_responde_de_que_e_feita_a_divida(weg):
     """Emprestimo, debenture ou arrendamento -- o total nao distingue."""
     comp = weg.composicao("2.01.04", 2024)
     assert set(comp.index) >= {"2.01.04.01", "2.01.04.02", "2.01.04.03"}
-    assert comp["Valor"].sum() == pytest.approx(weg.valor("divida_curto_prazo", 2024))
+
+    # A subarvore publicada explica *parte* da divida de curto prazo. O resto e
+    # arrendamento que a companhia reportou fora dela e que o leitor devolve --
+    # ver _somar_arrendamento_fora_da_divida. Antes desta correcao os dois
+    # numeros batiam, e batiam errado.
+    subarvore = comp["Valor"].sum()
+    canonica = weg.valor("divida_curto_prazo", 2024)
+    assert canonica > subarvore
+    assert canonica - subarvore == pytest.approx(
+        weg.valor("arrendamento_curto_prazo", 2024) - comp.loc["2.01.04.03", "Valor"]
+    )
 
 
 def test_composicao_de_conta_sem_filhas(weg):
@@ -1156,3 +1171,76 @@ def test_os_fixtures_continuam_sendo_recortes_e_nao_downloads():
         f"arquivos acima de 1 MB em {DADOS}: {pesados}. Recorte antes de versionar "
         "-- os fixtures existentes tem ~50 KB."
     )
+
+
+# ---------------------------------------------------------------------------
+# Arrendamento reportado fora da subarvore de divida
+# ---------------------------------------------------------------------------
+
+
+def test_arrendamento_fora_da_divida_entra_na_divida(weg):
+    """O defeito que esta funcao existe para corrigir, medido na WEG.
+
+    O plano da CVM reserva 2.01.04.03 para arrendamento, dentro dos
+    emprestimos. A WEG usa **outro** lugar, e la o passivo fica fora da divida:
+    lido so pelo codigo fixo, o arrendamento aparecia como zero e a divida
+    bruta saia menor do que e. Divida menor vira equity value maior, em
+    silencio, porque a arvore publicada continua fechando.
+    """
+    arrendamento = weg.valor("arrendamento_curto_prazo", 2024) + weg.valor(
+        "arrendamento_longo_prazo", 2024
+    )
+    assert arrendamento > 0, "o arrendamento da WEG voltou a sumir"
+    divida = weg.divida_bruta()[2024]
+    assert arrendamento < divida, "arrendamento nao pode exceder a divida de que faz parte"
+    assert 0.10 < arrendamento / divida < 0.30
+
+
+def test_o_leitor_avisa_quando_precisou_corrigir(weg):
+    """Correcao silenciosa e pior que erro visivel: quem le confere na arvore."""
+    assert any("fora da subárvore" in aviso for aviso in weg.avisos)
+
+
+def test_linha_filha_nao_soma_duas_vezes():
+    """Companhia que abre 'Arrendamentos' e, abaixo, 'Arrendamentos a pagar'."""
+    from valuation.importacao.cvm import LinhaCVM, arrendamento_fora_da_divida
+
+    def linha(codigo, descricao, valor):
+        return LinhaCVM(
+            codigo=codigo,
+            descricao=descricao,
+            valor=valor,
+            ano=2024,
+            demonstracao="bp",
+            escala="MIL",
+            escopo="con",
+        )
+
+    fora = arrendamento_fora_da_divida(
+        [
+            linha("2.02.02.02", "Arrendamentos", 100.0),
+            linha("2.02.02.02.01", "Arrendamentos a pagar", 60.0),
+            linha("2.02.02.02.02", "Arrendamento mercantil", 40.0),
+        ]
+    )
+    assert fora["longo"][2024] == pytest.approx(100.0), "somou pai e filhas"
+
+
+def test_o_que_ja_esta_na_divida_nao_e_somado_de_novo():
+    """2.01.04.03 ja entra por 2.01.04; soma-lo aqui contaria duas vezes."""
+    from valuation.importacao.cvm import LinhaCVM, arrendamento_fora_da_divida
+
+    fora = arrendamento_fora_da_divida(
+        [
+            LinhaCVM(
+                codigo="2.01.04.03",
+                descricao="Financiamento por Arrendamento",
+                valor=500.0,
+                ano=2024,
+                demonstracao="bp",
+                escala="MIL",
+                escopo="con",
+            )
+        ]
+    )
+    assert not fora["curto"] and not fora["longo"]

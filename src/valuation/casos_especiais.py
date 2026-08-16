@@ -225,3 +225,120 @@ def capitalizar_leasing_operacional(
         ajuste_no_ebit=divida * custo_divida,
         detalhamento=detalhamento,
     )
+
+
+# ---------------------------------------------------------------------------
+# Arrendamento ja no balanco: o que o modelo faz com ele, e o que nao faz
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LeasingNoBalanco:
+    """O passivo de arrendamento visto pelo modelo, com o buraco declarado.
+
+    Depois do IFRS 16 o arrendamento **ja esta** na divida bruta, e o EBITDA ja
+    e liquido dele -- as duas pontas batem, e a ponte EV -> equity esta certa.
+
+    O que nao bate e a projecao. Aluguel novo nao passa por capex: assinar um
+    contrato cria ativo de direito de uso e passivo de arrendamento sem tocar o
+    fluxo de investimento. Numa rede de lojas que cresce abrindo pontos, o
+    EBITDA sobe, o capex nao acompanha, o FCFF sai generoso -- e o passivo de
+    arrendamento cresce todo ano sem que a ponte, congelada na data-base, saiba.
+    O modelo superestima essa empresa, e o erro cresce com o horizonte.
+    """
+
+    saldo: float
+    divida_bruta: float
+    peso: float
+    crescimento_anual: float
+    crescimento_receita: float
+    anos: int
+
+    @property
+    def relevante(self) -> bool:
+        return np.isfinite(self.peso) and self.peso > 0.20
+
+    @property
+    def acompanha_a_receita(self) -> bool:
+        """O arrendamento cresce junto com o negocio, e nao por evento isolado."""
+        if not np.isfinite(self.crescimento_anual) or not np.isfinite(self.crescimento_receita):
+            return False
+        return self.crescimento_anual > 0 and self.crescimento_receita > 0
+
+    def adicao_anual_implicita(self, crescimento_projetado: float) -> float:
+        """Quanto o passivo cresceria por ano se acompanhasse o crescimento.
+
+        Nao e previsao: e a ordem de grandeza do que a projecao ignora, para
+        quem precisa decidir se ignorar importa.
+        """
+        if not np.isfinite(self.saldo) or not np.isfinite(crescimento_projetado):
+            return float("nan")
+        return self.saldo * crescimento_projetado
+
+    @property
+    def explicacao(self) -> str:
+        if not np.isfinite(self.peso):
+            return "Não há passivo de arrendamento reconhecido nas demonstrações."
+        texto = (
+            f"O arrendamento é {self.peso:.1%} da dívida bruta "
+            f"({self.saldo:,.1f} de {self.divida_bruta:,.1f})."
+        )
+        if np.isfinite(self.crescimento_anual) and self.anos > 1:
+            texto += (
+                f" No período apurado cresceu {self.crescimento_anual:.1%} ao ano, "
+                f"contra {self.crescimento_receita:.1%} da receita."
+            )
+        return texto
+
+
+def ler_leasing(analise: AnaliseHistorica) -> LeasingNoBalanco:
+    """Le o passivo de arrendamento e como ele se moveu no historico.
+
+    Devolve ``NaN`` no peso quando a companhia nao reconhece arrendamento
+    separado -- ausencia de conta e ausencia de informacao, nao zero.
+    """
+    d = analise.demonstracoes
+    curto = d.serie("arrendamento_curto_prazo")
+    longo = d.serie("arrendamento_longo_prazo")
+    arrendamento = curto.add(longo, fill_value=0).dropna()
+
+    divida = d.serie("divida_bruta").dropna()
+    if divida.empty:
+        divida = (
+            d.serie("divida_curto_prazo").add(d.serie("divida_longo_prazo"), fill_value=0).dropna()
+        )
+
+    if arrendamento.empty or divida.empty:
+        return LeasingNoBalanco(
+            saldo=float("nan"),
+            divida_bruta=float(divida.iloc[-1]) if not divida.empty else float("nan"),
+            peso=float("nan"),
+            crescimento_anual=float("nan"),
+            crescimento_receita=float("nan"),
+            anos=0,
+        )
+
+    saldo = float(arrendamento.iloc[-1])
+    divida_bruta = float(divida.iloc[-1])
+    receita = d.serie("receita_liquida").dropna()
+
+    return LeasingNoBalanco(
+        saldo=saldo,
+        divida_bruta=divida_bruta,
+        peso=saldo / divida_bruta if divida_bruta else float("nan"),
+        crescimento_anual=_taxa_anual(arrendamento),
+        crescimento_receita=_taxa_anual(receita),
+        anos=len(arrendamento),
+    )
+
+
+def _taxa_anual(serie: pd.Series) -> float:
+    """Crescimento composto entre a primeira e a ultima observacao."""
+    valores = serie.dropna()
+    if len(valores) < 2:
+        return float("nan")
+    inicio, fim = float(valores.iloc[0]), float(valores.iloc[-1])
+    periodos = len(valores) - 1
+    if inicio <= 0 or fim <= 0:
+        return float("nan")
+    return (fim / inicio) ** (1 / periodos) - 1

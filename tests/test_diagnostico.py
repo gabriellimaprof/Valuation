@@ -296,3 +296,47 @@ def test_achados_de_retorno_tambem_explicam_e_orientam(empresa_exemplo):
         if achado.codigo.startswith("retorno_") or "multiplo_de_saida" in achado.codigo:
             assert len(achado.detalhe) > 40
             assert len(achado.acao) > 15
+
+
+def test_arrendamento_que_cresce_e_nao_e_projetado_vira_alerta(empresa_exemplo):
+    """O achado fala do fluxo, nao do estoque.
+
+    Contrato novo de aluguel cria passivo sem passar pelo capex: a projecao
+    mostra EBITDA subindo, capex parado e FCFF generoso, enquanto a divida real
+    cresce todo ano. A ponte, congelada na data-base, nunca ve isso.
+    """
+    import pandas as pd
+
+    from valuation import avaliar
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    def demonstracoes(arrendamento_final: float) -> Demonstracoes:
+        return Demonstracoes(
+            empresa="Rede de Lojas",
+            valores=pd.DataFrame(
+                {
+                    2022: {
+                        "receita_liquida": 1000.0,
+                        "ebit": 150.0,
+                        "arrendamento_longo_prazo": 200.0,
+                        "divida_longo_prazo": 400.0,
+                    },
+                    2024: {
+                        "receita_liquida": 1440.0,
+                        "ebit": 220.0,
+                        "arrendamento_longo_prazo": arrendamento_final,
+                        "divida_longo_prazo": 600.0,
+                    },
+                }
+            ),
+        )
+
+    resultado = avaliar(empresa_exemplo)
+
+    cresce = diagnosticar(resultado, analise=analisar(demonstracoes(400.0)))
+    assert "arrendamento_cresce_e_nao_e_projetado" in {a.codigo for a in cresce.achados}
+
+    # Arrendamento encolhendo nao levanta o achado: nao ha adicao a projetar.
+    encolhe = diagnosticar(resultado, analise=analisar(demonstracoes(100.0)))
+    assert "arrendamento_cresce_e_nao_e_projetado" not in {a.codigo for a in encolhe.achados}
