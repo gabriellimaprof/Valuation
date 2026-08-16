@@ -285,7 +285,12 @@ def _derivar(
         mudou = False
         for derivacao in DERIVACOES:
             if derivacao.chave in tabela:
-                continue
+                existente = tabela[derivacao.chave].values()
+                so_zeros = all(
+                    (not np.isfinite(v)) or v == 0 for v in existente
+                )
+                if not (derivacao.substitui_zero and so_zeros):
+                    continue
             if not all(req in tabela for req in derivacao.requer):
                 continue
             calculada = {}

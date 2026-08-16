@@ -223,6 +223,49 @@ def _qualidade(qualidade) -> list[str]:
     return linhas
 
 
+def _ifrs16(visao) -> list[str]:
+    """As duas leituras do resultado, quando o aluguel pesa o bastante.
+
+    Sai do relatorio quando o aluguel e pequeno: uma secao inteira para dizer
+    que os dois numeros sao quase iguais gasta a atencao de quem le.
+    """
+    if visao is None or not visao.relevante:
+        return []
+
+    reportada = float(visao.margem_ebitda_reportada.dropna().iloc[-1])
+    ex = float(visao.margem_ebitda.dropna().iloc[-1])
+    linhas = [
+        "## O aluguel, dentro e fora do EBITDA",
+        "",
+        "Até 2018 o aluguel era despesa operacional. Desde o **IFRS 16 / CPC 06 "
+        "(R2)** ele virou depreciação de direito de uso mais juros — então o "
+        "EBITDA subiu sem que nada tenha melhorado no negócio.",
+        "",
+        f"- **Margem EBITDA reportada**: {_pct(reportada)}",
+        f"- **Margem EBITDA ex-IFRS 16**: {_pct(ex)}",
+        f"- **O aluguel consome** {_pct(visao.peso_do_aluguel)} do EBITDA reportado.",
+    ]
+
+    alavancagem = visao.alavancagem_reportada.dropna()
+    alavancagem_ex = visao.alavancagem.dropna()
+    if not alavancagem.empty and not alavancagem_ex.empty:
+        linhas.append(
+            f"- **Dívida líquida / EBITDA**: {_num(float(alavancagem.iloc[-1]), 2)}x "
+            f"reportada, {_num(float(alavancagem_ex.iloc[-1]), 2)}x ex-IFRS 16."
+        )
+
+    linhas += [
+        "",
+        "**As duas leituras não se misturam.** Ou dívida **com** arrendamento sobre "
+        "EBITDA **com** aluguel, ou dívida **sem** sobre EBITDA **sem**. Cruzar as "
+        "duas — dívida cheia sobre EBITDA ex-aluguel — infla a alavancagem; ao "
+        "contrário, esconde.",
+    ]
+    if visao.ressalva:
+        linhas += ["", visao.ressalva]
+    return linhas
+
+
 def _premissas(resultado: ResultadoValuation) -> list[str]:
     empresa = resultado.empresa
     op = empresa.operacionais
@@ -230,15 +273,17 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
     macro = empresa.macro
 
     anos = [str(op.ano_base + i + 1) for i in range(op.horizonte)]
-    quadro = pd.DataFrame(
-        {
-            "Crescimento da receita": [_pct(v) for v in op.crescimento_receita],
-            "Margem EBITDA": [_pct(v) for v in op.margem_ebitda],
-            "Capex / receita": [_pct(v) for v in op.capex_pct_receita],
-            "Capital de giro / receita": [_pct(v) for v in op.capital_giro_pct_receita],
-        },
-        index=anos,
-    )
+    colunas = {
+        "Crescimento da receita": [_pct(v) for v in op.crescimento_receita],
+        "Margem EBITDA": [_pct(v) for v in op.margem_ebitda],
+        "Capex / receita": [_pct(v) for v in op.capex_pct_receita],
+        "Capital de giro / receita": [_pct(v) for v in op.capital_giro_pct_receita],
+    }
+    if op.arrendamento_pct_receita is not None:
+        colunas["Arrendamento / receita"] = [
+            _pct(v) for v in op.arrendamento_pct_receita
+        ]
+    quadro = pd.DataFrame(colunas, index=anos)
     quadro.index.name = "Ano"
 
     linhas = [
@@ -292,6 +337,14 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
         linhas.append(
             f"- **Perpetuidade por múltiplo de saída**: {_num(perp.multiplo_saida, 1)}x "
             "EV/EBITDA sobre o último ano projetado."
+        )
+
+    if op.arrendamento_pct_receita is not None:
+        linhas.append(
+            f"- **Arrendamento**: o passivo cresce com a receita, a "
+            f"{_pct(op.arrendamento_pct_receita[0])} dela, e a adição de cada ano "
+            "sai do fluxo. Contrato novo de aluguel não passa pelo capex — sem "
+            "esta linha, uma rede que abre pontos mostra FCFF que não tem."
         )
 
     cc = resultado.custo_capital
@@ -493,6 +546,7 @@ def montar(
     margem: MargemDeSeguranca | None = None,
     expectativas: pd.DataFrame | None = None,
     evidencias=None,
+    ifrs16=None,
     data: str = "",
 ) -> str:
     """Monta o relatorio completo em markdown.
@@ -509,6 +563,7 @@ def montar(
         _resumo(resultado, margem),
         _historico(analise),
         _qualidade(qualidade),
+        _ifrs16(ifrs16),
         _premissas(resultado),
         _ponte(resultado),
         _expectativas(expectativas, margem),

@@ -40,6 +40,8 @@ class Projecao:
     capital_giro: np.ndarray
     variacao_capital_giro: np.ndarray
     fcff: np.ndarray
+    arrendamento: np.ndarray | None = None
+    variacao_arrendamento: np.ndarray | None = None
     juros: np.ndarray | None = None
     variacao_divida: np.ndarray | None = None
     fcfe: np.ndarray | None = None
@@ -61,8 +63,10 @@ class Projecao:
             "(+) Depreciacao e amortizacao": self.depreciacao,
             "(-) Capex": -self.capex,
             "(-) Variacao do capital de giro": -self.variacao_capital_giro,
-            "FCFF (fluxo para a firma)": self.fcff,
         }
+        if self.variacao_arrendamento is not None:
+            linhas["(-) Adicoes de arrendamento"] = -self.variacao_arrendamento
+        linhas["FCFF (fluxo para a firma)"] = self.fcff
         if self.fcfe is not None:
             linhas["(-) Juros apos IR"] = -self.juros * (1 - self._aliquota_implicita())
             linhas["(+) Variacao da divida"] = self.variacao_divida
@@ -179,7 +183,22 @@ def projetar(
         giro_inicial = operacionais.receita_base * pct_giro[0]
     variacao_capital_giro = np.diff(capital_giro, prepend=giro_inicial)
 
+    # Adicoes de arrendamento sao investimento que nao passa pelo capex: o
+    # contrato cria ativo de direito de uso e passivo na mesma hora. Sem esta
+    # linha, uma rede que cresce abrindo pontos mostra FCFF que ela nao tem.
+    arrendamento = variacao_arrendamento = None
+    if operacionais.arrendamento_pct_receita is not None:
+        pct_arrendamento = np.asarray(operacionais.arrendamento_pct_receita, dtype=float)
+        arrendamento = receita * pct_arrendamento
+        if operacionais.arrendamento_inicial is not None:
+            arrendamento_inicial = operacionais.arrendamento_inicial
+        else:
+            arrendamento_inicial = operacionais.receita_base * pct_arrendamento[0]
+        variacao_arrendamento = np.diff(arrendamento, prepend=arrendamento_inicial)
+
     fcff = nopat + depreciacao - capex - variacao_capital_giro
+    if variacao_arrendamento is not None:
+        fcff = fcff - variacao_arrendamento
 
     anos = [operacionais.ano_base + i + 1 for i in range(n)]
 
@@ -207,6 +226,8 @@ def projetar(
         capex=capex,
         capital_giro=capital_giro,
         variacao_capital_giro=variacao_capital_giro,
+        arrendamento=arrendamento,
+        variacao_arrendamento=variacao_arrendamento,
         fcff=fcff,
         juros=juros,
         variacao_divida=variacao_divida,

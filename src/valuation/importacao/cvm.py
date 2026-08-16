@@ -694,25 +694,36 @@ _MARCA_ARRENDAMENTO = re.compile(r"arrendament|direito de uso|leasing", re.I)
 _SUBARVORE_DA_DIVIDA = ("2.01.04", "2.02.01")
 
 
-def arrendamento_fora_da_divida(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
-    """Passivo de arrendamento que a companhia reportou fora da divida.
+def arrendamento_no_passivo(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
+    """Todo o passivo de arrendamento, separado por prazo e por onde foi parar.
 
-    Devolve ``{"curto": {ano: valor}, "longo": {ano: valor}}``. So entram as
-    linhas **mais externas** que casam: quando a companhia abre "Arrendamentos"
-    e, abaixo, "Arrendamentos a pagar", somar as duas contaria o mesmo passivo
-    duas vezes.
+    Devolve quatro series::
+
+        {"curto": ..., "longo": ..., "curto_fora": ..., "longo_fora": ...}
+
+    As duas primeiras sao o arrendamento **total**; as duas ultimas, a parte que
+    ficou fora da subarvore de emprestimos e que por isso precisa ser devolvida
+    a divida bruta.
+
+    So entram as linhas **mais externas** que casam: quando a companhia abre
+    "Arrendamentos" e, abaixo, "Arrendamentos a pagar", somar as duas contaria o
+    mesmo passivo duas vezes. Esta funcao e a **unica** fonte do arrendamento no
+    balanco, e e assim de proposito: o reconhecimento por rotulo tambem alcanca
+    algumas dessas linhas, e duas fontes somando na mesma conta e a receita para
+    contar o passivo em dobro sem que nada acuse.
     """
     candidatas = [
         linha
         for linha in linhas
         if linha.demonstracao == "bp"
         and linha.codigo.startswith(("2.01", "2.02"))
-        and not linha.codigo.startswith(_SUBARVORE_DA_DIVIDA)
         and _MARCA_ARRENDAMENTO.search(linha.descricao)
         and linha.valor
     ]
 
-    fora: dict[str, dict[int, float]] = {"curto": {}, "longo": {}}
+    series: dict[str, dict[int, float]] = {
+        "curto": {}, "longo": {}, "curto_fora": {}, "longo_fora": {}
+    }
     por_ano: dict[int, list[LinhaCVM]] = {}
     for linha in candidatas:
         por_ano.setdefault(linha.ano, []).append(linha)
@@ -727,8 +738,11 @@ def arrendamento_fora_da_divida(linhas: list[LinhaCVM]) -> dict[str, dict[int, f
             if tem_pai:
                 continue
             prazo = "curto" if linha.codigo.startswith("2.01") else "longo"
-            fora[prazo][ano] = fora[prazo].get(ano, 0.0) + linha.valor
-    return fora
+            series[prazo][ano] = series[prazo].get(ano, 0.0) + linha.valor
+            if not linha.codigo.startswith(_SUBARVORE_DA_DIVIDA):
+                chave = f"{prazo}_fora"
+                series[chave][ano] = series[chave].get(ano, 0.0) + linha.valor
+    return series
 
 
 def _somar_arrendamento_fora_da_divida(
@@ -743,26 +757,31 @@ def _somar_arrendamento_fora_da_divida(
     precisam do mesmo numero: a ponte EV -> equity subtrai a divida, e o
     indicador de arrendamento sobre divida diz quanto dela e aluguel.
     """
-    fora = arrendamento_fora_da_divida(linhas)
+    series = arrendamento_no_passivo(linhas)
+
+    # O arrendamento e **substituido**, nao somado: esta e a fonte unica.
+    for prazo, chave in (("curto", "arrendamento_curto_prazo"), ("longo", "arrendamento_longo_prazo")):
+        if series[prazo]:
+            tabela[chave] = dict(series[prazo])
+            mapeamento[chave] = "linhas de arrendamento do balanço"
+
+    # A divida, ao contrario, **recebe** o que estava fora dela: o que ja estava
+    # dentro entrou por 2.01.04 / 2.02.01 e nao pode entrar de novo.
+    fora = {"curto": series["curto_fora"], "longo": series["longo_fora"]}
     if not fora["curto"] and not fora["longo"]:
         return
 
-    destinos = {
-        "curto": ("divida_curto_prazo", "arrendamento_curto_prazo"),
-        "longo": ("divida_longo_prazo", "arrendamento_longo_prazo"),
-    }
-    total = 0.0
+    destinos = {"curto": "divida_curto_prazo", "longo": "divida_longo_prazo"}
     for prazo, valores in fora.items():
         if not valores:
             continue
-        for chave in destinos[prazo]:
-            alvo = tabela.setdefault(chave, {})
-            for ano, valor in valores.items():
-                alvo[ano] = alvo.get(ano, 0.0) + valor
-            nota = "+ arrendamento reportado fora da divida"
-            if nota not in mapeamento.get(chave, ""):
-                mapeamento[chave] = f"{mapeamento.get(chave, '')} {nota}".strip()
-        total += max(valores.values(), key=abs, default=0.0)
+        chave = destinos[prazo]
+        alvo = tabela.setdefault(chave, {})
+        for ano, valor in valores.items():
+            alvo[ano] = alvo.get(ano, 0.0) + valor
+        nota = "+ arrendamento reportado fora da divida"
+        if nota not in mapeamento.get(chave, ""):
+            mapeamento[chave] = f"{mapeamento.get(chave, '')} {nota}".strip()
 
     avisos.append(
         "Esta companhia reporta parte do passivo de arrendamento fora da subárvore "
@@ -770,6 +789,79 @@ def _somar_arrendamento_fora_da_divida(
         "arrendamento — sem isso a dívida sairia menor do que é, e o equity value, "
         "maior. Confira na árvore publicada."
     )
+
+
+# O que a companhia desembolsou de arrendamento no ano. Depois do IFRS 16 o
+# aluguel sumiu da DRE -- virou depreciacao de direito de uso mais juros --, e o
+# unico lugar onde ele reaparece como caixa e a DFC.
+#
+# Medido na DFP consolidada de 2024, sobre 467 companhias: 258 (55%) publicam o
+# principal, 184 (39%) publicam os juros em linha propria, e so 46 (10%) abrem a
+# depreciacao do direito de uso. A depreciacao e esparsa demais para sustentar
+# conta nenhuma; o desembolso, nao.
+#
+# Estas contas **nao entram** em REGRAS_SOMADAS de proposito. La cada linha
+# alimenta uma regra so, e o juro de arrendamento precisa continuar contando
+# para ``juros_pagos`` -- ele e juro. Aqui ele e lido de novo, para outro fim.
+_MARCA_PRINCIPAL_ARRENDAMENTO = re.compile(
+    r"(pagament|amortiza|liquida|desembols|quita)", re.I
+)
+_MARCA_JUROS_ARRENDAMENTO = re.compile(r"juro", re.I)
+# Linhas que falam de arrendamento sem ser desembolso do arrendatario.
+_NAO_E_DESEMBOLSO_DE_ARRENDAMENTO = re.compile(
+    r"receb|a receber|aliena|venda|baixa|subarrend|sublocac|adi[çc][ãa]o|novo|"
+    r"deprecia|amortiza[çc][ãa]o d[eo] direito|valor residual",
+    re.I,
+)
+
+
+def arrendamento_no_caixa(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
+    """Principal e juros de arrendamento desembolsados, lidos da DFC.
+
+    Juntos, os dois aproximam o **aluguel** que existia antes do IFRS 16 -- e e
+    dele que precisa quem quer olhar EBITDA e margem em base comparavel com o
+    historico anterior a 2019 ou com par que reporta em US GAAP.
+
+    Devolve valores positivos: sao saidas, e o modulo trata saida como
+    magnitude, como faz com custo e imposto.
+    """
+    componentes: dict[str, dict[int, float]] = {"principal": {}, "juros": {}}
+    for linha in linhas:
+        if linha.demonstracao != "dfc":
+            continue
+        texto = linha.descricao
+        if not _MARCA_ARRENDAMENTO.search(texto):
+            continue
+        if _NAO_E_DESEMBOLSO_DE_ARRENDAMENTO.search(texto):
+            continue
+
+        if _MARCA_JUROS_ARRENDAMENTO.search(texto):
+            chave = "juros"
+        elif _MARCA_PRINCIPAL_ARRENDAMENTO.search(texto) and linha.codigo.startswith("6.03"):
+            # So na secao de financiamento: "pagamento" na secao operacional
+            # costuma ser reclassificacao, nao desembolso de contrato.
+            chave = "principal"
+        else:
+            continue
+
+        valores = componentes[chave]
+        valores[linha.ano] = valores.get(linha.ano, 0.0) + abs(linha.valor)
+    return componentes
+
+
+def _somar_arrendamento_no_caixa(
+    linhas: list[LinhaCVM], tabela: dict[str, dict[int, float]], mapeamento: dict[str, str]
+) -> None:
+    componentes = arrendamento_no_caixa(linhas)
+    destinos = {
+        "principal": "arrendamento_principal_pago",
+        "juros": "arrendamento_juros_pagos",
+    }
+    for chave, valores in componentes.items():
+        if not valores:
+            continue
+        tabela[destinos[chave]] = valores
+        mapeamento[destinos[chave]] = "linhas de arrendamento da DFC"
 
 
 REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
@@ -894,7 +986,7 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     reconhecidas em vez de preencher a conta com o numero de outra.
     """
     if plano == PLANO_INDUSTRIAL:
-        resultado = reconhecer(linha.descricao, linha.codigo)
+        resultado = reconhecer(linha.descricao, linha.codigo, linha.demonstracao)
     elif linha.codigo in CODIGOS_PLANO_FINANCEIRO:
         from .esquema import Reconhecimento
 
@@ -904,7 +996,7 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
             f"codigo {linha.codigo} do plano financeiro",
         )
     else:
-        resultado = reconhecer(linha.descricao, None)
+        resultado = reconhecer(linha.descricao, None, linha.demonstracao)
 
     if resultado.chave is None:
         return resultado
@@ -1052,6 +1144,7 @@ def montar_demonstracoes(
         mapeamento[chave] = " + ".join(origens[chave])
 
     _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
+    _somar_arrendamento_no_caixa(linhas, tabela, mapeamento)
 
     if not tabela:
         raise ErroCVM(

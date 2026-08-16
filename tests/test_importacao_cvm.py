@@ -1203,7 +1203,7 @@ def test_o_leitor_avisa_quando_precisou_corrigir(weg):
 
 def test_linha_filha_nao_soma_duas_vezes():
     """Companhia que abre 'Arrendamentos' e, abaixo, 'Arrendamentos a pagar'."""
-    from valuation.importacao.cvm import LinhaCVM, arrendamento_fora_da_divida
+    from valuation.importacao.cvm import LinhaCVM, arrendamento_no_passivo
 
     def linha(codigo, descricao, valor):
         return LinhaCVM(
@@ -1216,7 +1216,7 @@ def test_linha_filha_nao_soma_duas_vezes():
             escopo="con",
         )
 
-    fora = arrendamento_fora_da_divida(
+    fora = arrendamento_no_passivo(
         [
             linha("2.02.02.02", "Arrendamentos", 100.0),
             linha("2.02.02.02.01", "Arrendamentos a pagar", 60.0),
@@ -1224,13 +1224,14 @@ def test_linha_filha_nao_soma_duas_vezes():
         ]
     )
     assert fora["longo"][2024] == pytest.approx(100.0), "somou pai e filhas"
+    assert fora["longo_fora"][2024] == pytest.approx(100.0)
 
 
 def test_o_que_ja_esta_na_divida_nao_e_somado_de_novo():
     """2.01.04.03 ja entra por 2.01.04; soma-lo aqui contaria duas vezes."""
-    from valuation.importacao.cvm import LinhaCVM, arrendamento_fora_da_divida
+    from valuation.importacao.cvm import LinhaCVM, arrendamento_no_passivo
 
-    fora = arrendamento_fora_da_divida(
+    fora = arrendamento_no_passivo(
         [
             LinhaCVM(
                 codigo="2.01.04.03",
@@ -1243,4 +1244,76 @@ def test_o_que_ja_esta_na_divida_nao_e_somado_de_novo():
             )
         ]
     )
-    assert not fora["curto"] and not fora["longo"]
+    # O arrendamento total conta a linha; a parcela "fora da divida", nao --
+    # 2.01.04.03 ja entrou pela divida de curto prazo.
+    assert fora["curto"][2024] == pytest.approx(500.0)
+    assert not fora["curto_fora"] and not fora["longo_fora"]
+
+
+# ---------------------------------------------------------------------------
+# D&A: o erro que deixava 95% das companhias com EBITDA igual ao EBIT
+# ---------------------------------------------------------------------------
+
+
+def test_depreciacao_vem_da_dfc_quando_a_dre_nao_destaca(weg):
+    """A WEG publica D&A so no ajuste da DFC, como quase toda companhia.
+
+    Antes desta correcao ``depreciacao_dfc`` era **inalcancavel**: o rotulo
+    "Depreciacao, Amortizacao e Exaustao" casava primeiro com a conta da DRE, e
+    o filtro por demonstracao rejeitava sem tentar o proximo candidato. Medido
+    em 150 companhias de 2024: **8 tinham D&A reconhecida, contra 116 depois**.
+    Sem D&A, EBITDA = EBIT -- e a mediana da base tem D&A valendo 24% do EBIT.
+    """
+    assert weg.valor("depreciacao_amortizacao", 2024) == pytest.approx(812_485_000.0)
+    assert weg.derivadas.get("depreciacao_amortizacao"), "veio da DRE, nao da DFC?"
+    assert weg.mapeamento["depreciacao_dfc"].startswith("6.01.01.02")
+
+
+def test_ebitda_da_weg_bate_com_o_publicado(weg):
+    """EBITDA = EBIT + D&A, com os dois numeros da demonstracao real."""
+    assert weg.ebitda()[2024] == pytest.approx(8_503_013_000.0)
+    assert weg.ebitda()[2024] > weg.valor("ebit", 2024), "D&A sumiu de novo"
+    margem = weg.ebitda()[2024] / weg.valor("receita_liquida", 2024)
+    assert 0.20 < margem < 0.25
+
+
+def test_plural_casa_com_o_sinonimo_singular():
+    """A CVM escreve no plural e o vocabulario declarava no singular."""
+    from valuation.importacao.esquema import reconhecer, singularizar
+
+    assert singularizar("depreciacoes e amortizacoes") == "depreciacao e amortizacao"
+    assert reconhecer("Depreciações e Amortizações", demonstracao="dre").chave == (
+        "depreciacao_amortizacao"
+    )
+    # Palavra curta nao pode ser mutilada: "mais" nao vira "mal".
+    assert singularizar("mais valia") == "mais valia"
+
+
+def test_o_mesmo_rotulo_vai_para_a_conta_da_demonstracao_certa():
+    """'Depreciacao e Amortizacao' e conta da DRE e ajuste da DFC."""
+    from valuation.importacao.esquema import reconhecer
+
+    assert reconhecer("Depreciação e Amortização", demonstracao="dre").chave == (
+        "depreciacao_amortizacao"
+    )
+    assert reconhecer("Depreciação e Amortização", demonstracao="dfc").chave == (
+        "depreciacao_dfc"
+    )
+
+
+def test_zero_na_dre_nao_bloqueia_a_derivacao():
+    """Companhia que publica o campo de D&A como zero e o valor real na DFC."""
+    import pandas as pd
+
+    from valuation.importacao.esquema import DERIVACOES
+    from valuation.importacao.importador import _derivar
+
+    derivacao = next(d for d in DERIVACOES if d.chave == "depreciacao_amortizacao")
+    assert derivacao.substitui_zero
+
+    tabela = {
+        "depreciacao_amortizacao": {2023: 0.0, 2024: 0.0},
+        "depreciacao_dfc": {2023: 900.0, 2024: 1000.0},
+    }
+    _derivar(tabela, [2023, 2024])
+    assert tabela["depreciacao_amortizacao"][2024] == pytest.approx(1000.0)

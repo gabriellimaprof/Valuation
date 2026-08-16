@@ -342,3 +342,164 @@ def _taxa_anual(serie: pd.Series) -> float:
     if inicio <= 0 or fim <= 0:
         return float("nan")
     return (fim / inicio) ** (1 / periodos) - 1
+
+
+# ---------------------------------------------------------------------------
+# Ler a DRE como era antes do IFRS 16
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class VisaoExIFRS16:
+    """EBITDA, EBIT e divida como seriam sem o IFRS 16.
+
+    **Por que alguem quer isso.** Ate 2018 o aluguel era despesa operacional e
+    entrava no EBITDA. Desde o IFRS 16 / CPC 06 (R2) ele virou depreciacao de
+    direito de uso mais juros, entao **o EBITDA subiu sem que nada tenha
+    melhorado no negocio**. Numa rede de farmacias isso e enorme: medido na
+    Raia Drogasil de 2024, a margem EBITDA e 10,8% reportada e 6,5% ex-IFRS 16.
+    Na Pague Menos, 8,6% contra 3,3%.
+
+    Para quem compara com o historico anterior a 2019, com par que reporta em
+    US GAAP (onde o aluguel operacional continua no resultado) ou simplesmente
+    quer saber quanto caixa sobra depois de pagar o ponto, a visao ex-IFRS 16 e
+    a que responde.
+
+    **A regra que nao pode ser quebrada:** as duas visoes nao se misturam. Ou se
+    usa EBITDA reportado com a divida que inclui arrendamento, ou EBITDA
+    ex-IFRS 16 com a divida que o exclui. Cruzar as duas -- divida cheia sobre
+    EBITDA sem aluguel -- infla a alavancagem; ao contrario, esconde.
+
+    Como cada numero e obtido
+    -------------------------
+
+    ``aluguel`` e o desembolso do ano (principal + juros), que e o que mais se
+    parece com o aluguel que existia na DRE::
+
+        EBITDA_ex = EBITDA - aluguel
+        EBIT_ex   = EBIT - juros
+        divida_ex = divida bruta - passivo de arrendamento
+
+    O ``EBIT`` ja desconta a depreciacao do direito de uso, que em regime
+    estacionario se aproxima do principal; o que sobra para tirar e o juro. A
+    depreciacao do direito de uso viria mais direto, mas so 10% das companhias
+    a publicam em linha propria -- esparsa demais para sustentar a conta.
+    """
+
+    ebitda: pd.Series
+    ebitda_reportado: pd.Series
+    ebit: pd.Series
+    ebit_reportado: pd.Series
+    receita: pd.Series
+    aluguel: pd.Series
+    principal: pd.Series
+    juros: pd.Series
+    divida_bruta: pd.Series
+    divida_bruta_reportada: pd.Series
+    caixa: pd.Series
+    tem_juros: bool
+
+    @property
+    def margem_ebitda(self) -> pd.Series:
+        return self.ebitda / self.receita
+
+    @property
+    def margem_ebitda_reportada(self) -> pd.Series:
+        return self.ebitda_reportado / self.receita
+
+    @property
+    def margem_ebit(self) -> pd.Series:
+        return self.ebit / self.receita
+
+    @property
+    def divida_liquida(self) -> pd.Series:
+        return self.divida_bruta - self.caixa
+
+    @property
+    def alavancagem(self) -> pd.Series:
+        """Divida liquida sem arrendamento sobre EBITDA sem aluguel."""
+        return self.divida_liquida / self.ebitda.replace(0, np.nan)
+
+    @property
+    def alavancagem_reportada(self) -> pd.Series:
+        return (self.divida_bruta_reportada - self.caixa) / self.ebitda_reportado.replace(
+            0, np.nan
+        )
+
+    @property
+    def peso_do_aluguel(self) -> float:
+        """Quanto do EBITDA reportado e, na verdade, aluguel."""
+        aluguel = self.aluguel.dropna()
+        ebitda = self.ebitda_reportado.reindex(aluguel.index).dropna()
+        if ebitda.empty or not (ebitda > 0).any():
+            return float("nan")
+        return float((aluguel / ebitda.replace(0, np.nan)).median())
+
+    @property
+    def relevante(self) -> bool:
+        """Vale a pena olhar as duas visoes nesta companhia?"""
+        peso = self.peso_do_aluguel
+        return bool(np.isfinite(peso) and peso >= 0.10)
+
+    @property
+    def ressalva(self) -> str:
+        if self.tem_juros:
+            return ""
+        return (
+            "Esta companhia não publica os juros do arrendamento em linha própria, "
+            "então o aluguel usado aqui é só o principal. O ajuste é um **piso**: "
+            "o EBITDA ex-IFRS 16 real é menor do que o mostrado."
+        )
+
+    @property
+    def explicacao(self) -> str:
+        peso = self.peso_do_aluguel
+        if not np.isfinite(peso):
+            return "Não há desembolso de arrendamento na DFC para montar a visão ex-IFRS 16."
+        return (
+            f"O aluguel consome {peso:.1%} do EBITDA reportado. Sem ele, a margem "
+            f"EBITDA cai de {self.margem_ebitda_reportada.dropna().iloc[-1]:.1%} para "
+            f"{self.margem_ebitda.dropna().iloc[-1]:.1%}."
+        )
+
+
+def ver_ex_ifrs16(analise: AnaliseHistorica) -> VisaoExIFRS16 | None:
+    """Monta a visao ex-IFRS 16, ou ``None`` se a DFC nao traz o desembolso.
+
+    Devolver ``None`` e melhor do que devolver uma visao igual a reportada:
+    "sem arrendamento no caixa" e "arrendamento zero" sao coisas diferentes, e
+    so a primeira e verdade aqui.
+    """
+    d = analise.demonstracoes
+    principal = d.serie("arrendamento_principal_pago")
+    juros = d.serie("arrendamento_juros_pagos")
+    if principal.dropna().empty and juros.dropna().empty:
+        return None
+
+    aluguel = principal.fillna(0).add(juros.fillna(0), fill_value=0)
+    aluguel = aluguel.where(aluguel != 0)
+
+    ebitda = d.ebitda()
+    ebit = d.serie("ebit")
+    arrendamento = d.serie("arrendamento_curto_prazo").add(
+        d.serie("arrendamento_longo_prazo"), fill_value=0
+    )
+    divida = d.divida_bruta()
+    caixa = d.serie("caixa_equivalentes").add(
+        d.serie("aplicacoes_financeiras"), fill_value=0
+    )
+
+    return VisaoExIFRS16(
+        ebitda=ebitda.sub(aluguel.fillna(0), fill_value=0),
+        ebitda_reportado=ebitda,
+        ebit=ebit.sub(juros.fillna(0), fill_value=0),
+        ebit_reportado=ebit,
+        receita=d.serie("receita_liquida"),
+        aluguel=aluguel,
+        principal=principal,
+        juros=juros,
+        divida_bruta=divida.sub(arrendamento.fillna(0), fill_value=0),
+        divida_bruta_reportada=divida,
+        caixa=caixa,
+        tem_juros=bool(juros.dropna().any()),
+    )

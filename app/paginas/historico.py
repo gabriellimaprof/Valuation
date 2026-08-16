@@ -44,6 +44,9 @@ def render() -> None:
     _cartoes(analise, dfs)
     st.divider()
 
+    from valuation.casos_especiais import ver_ex_ifrs16
+
+    visao = ver_ex_ifrs16(analise)
     rotulos = [
         "Resultado",
         "Qualidade dos lucros",
@@ -51,6 +54,8 @@ def render() -> None:
         "Reinvestimento",
         "Capital de giro",
     ]
+    if visao is not None:
+        rotulos += ["IFRS 16"]
     tem_arvore = getattr(dfs, "detalhe", None) is not None and not dfs.detalhe.empty
     if tem_arvore:
         rotulos += ["Liquidez e composição"]
@@ -67,8 +72,13 @@ def render() -> None:
         _reinvestimento(analise)
     with abas[4]:
         _capital_de_giro(analise)
+    proxima = 5
+    if visao is not None:
+        with abas[proxima]:
+            _ifrs16(visao, dfs)
+        proxima += 1
     if tem_arvore:
-        with abas[5]:
+        with abas[proxima]:
             _liquidez(analise, dfs)
     with abas[-1]:
         st.dataframe(
@@ -79,6 +89,97 @@ def render() -> None:
         st.dataframe(
             analise.resumo().style.format("{:,.3f}", na_rep="—"),
             width="stretch",
+        )
+
+
+def _ifrs16(visao, dfs) -> None:
+    """As duas leituras do resultado: com e sem o aluguel dentro do EBITDA.
+
+    Não existe leitura "certa" aqui — existem duas, e a única coisa que não pode
+    acontecer é misturá-las. A tela mostra as duas lado a lado justamente para
+    que a comparação seja entre pares de números coerentes.
+    """
+    st.markdown(
+        "Até 2018 o aluguel era despesa operacional e entrava no EBITDA. Desde o "
+        "**IFRS 16 / CPC 06 (R2)** ele virou depreciação de direito de uso mais "
+        "juros — então o EBITDA subiu sem que nada tenha melhorado no negócio, e "
+        "o passivo de arrendamento apareceu no balanço."
+    )
+
+    if not visao.relevante:
+        st.info(
+            "Nesta companhia o aluguel é pequeno em relação ao EBITDA, então as "
+            "duas leituras quase coincidem. A tabela abaixo mostra as duas mesmo "
+            "assim."
+        )
+
+    unidade = dfs.unidade
+    colunas = st.columns(4)
+    with colunas[0]:
+        metrica(
+            "Margem EBITDA reportada",
+            float(visao.margem_ebitda_reportada.dropna().iloc[-1]),
+            "pct",
+        )
+    with colunas[1]:
+        metrica(
+            "Margem EBITDA ex-IFRS 16",
+            float(visao.margem_ebitda.dropna().iloc[-1]),
+            "pct",
+        )
+    with colunas[2]:
+        metrica(
+            "Dív. líq./EBITDA reportada",
+            float(visao.alavancagem_reportada.dropna().iloc[-1]),
+            "numero",
+        )
+    with colunas[3]:
+        metrica(
+            "Dív. líq./EBITDA ex-IFRS 16",
+            float(visao.alavancagem.dropna().iloc[-1]),
+            "numero",
+        )
+
+    st.warning(
+        "**As duas colunas não se misturam.** Ou dívida **com** arrendamento sobre "
+        "EBITDA **com** aluguel dentro, ou dívida **sem** arrendamento sobre EBITDA "
+        "**sem** aluguel. Cruzar — dívida cheia sobre EBITDA ex-aluguel — infla a "
+        "alavancagem; ao contrário, esconde."
+    )
+
+    anos = [str(a) for a in dfs.anos]
+    tabela = pd.DataFrame(
+        {
+            "EBITDA reportado": visao.ebitda_reportado,
+            "(−) Aluguel pago": -visao.aluguel,
+            "EBITDA ex-IFRS 16": visao.ebitda,
+            "EBIT reportado": visao.ebit_reportado,
+            "(−) Juros de arrendamento": -visao.juros,
+            "EBIT ex-IFRS 16": visao.ebit,
+            "Dívida bruta reportada": visao.divida_bruta_reportada,
+            "(−) Passivo de arrendamento": visao.divida_bruta - visao.divida_bruta_reportada,
+            "Dívida bruta ex-IFRS 16": visao.divida_bruta,
+        }
+    ).T
+    tabela.columns = anos
+    st.dataframe(tabela_formatada(tabela, "moeda", unidade), width="stretch")
+
+    st.markdown(f"**{visao.explicacao}**")
+    if visao.ressalva:
+        st.warning(visao.ressalva)
+
+    with st.expander("Como cada número é obtido"):
+        st.markdown(
+            "- **Aluguel** = principal + juros de arrendamento desembolsados no ano, "
+            "lidos da DFC. É o que mais se parece com o aluguel que existia na DRE.\n"
+            "- **EBITDA ex** = EBITDA − aluguel.\n"
+            "- **EBIT ex** = EBIT − juros. O EBIT já desconta a depreciação do direito "
+            "de uso, que em regime estacionário se aproxima do principal; o que sobra "
+            "para tirar é o juro.\n"
+            "- **Dívida ex** = dívida bruta − passivo de arrendamento.\n\n"
+            "A depreciação do direito de uso viria mais direto, mas só **10% das "
+            "companhias** a publicam em linha própria — esparsa demais para sustentar "
+            "a conta."
         )
 
 
@@ -113,7 +214,9 @@ def _qualidade(analise) -> None:
             metrica("Conversão mediana FCO / EBITDA", qualidade.conversao_mediana, "pct")
         colunas[1].caption(
             "Acima de 90% é uma empresa que entrega em caixa o que reporta em lucro; "
-            "abaixo de 60% pede explicação antes de projetar."
+            "abaixo de 60% pede explicação antes de projetar. Para calibrar: a "
+            "**mediana brasileira converte 64%**, medida em 423 companhias — o corte "
+            "de 90% é aproximadamente o quartil superior da base."
         )
 
     for sinal in qualidade.por_severidade:

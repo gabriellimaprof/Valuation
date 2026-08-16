@@ -750,6 +750,28 @@ CONTAS_DFC: tuple[Conta, ...] = (
         ordem="6.01.50",  # dentro do operacional, junto dos ajustes
     ),
     Conta(
+        chave="arrendamento_principal_pago",
+        rotulo="Arrendamento pago (principal)",
+        demonstracao="dfc",
+        ordem="6.03.90",
+        sinonimos=("pagamento de arrendamento", "amortizacao de arrendamento"),
+        ajuda=(
+            "Saida de caixa do contrato de arrendamento, sem os juros. Somada aos "
+            "juros, aproxima o aluguel que existia na DRE antes do IFRS 16."
+        ),
+    ),
+    Conta(
+        chave="arrendamento_juros_pagos",
+        rotulo="Arrendamento pago (juros)",
+        demonstracao="dfc",
+        ordem="6.03.91",
+        sinonimos=("juros sobre arrendamento", "juros de arrendamento"),
+        ajuda=(
+            "A parcela de juros do arrendamento. Ja esta dentro de juros pagos; "
+            "aparece separada para permitir a leitura ex-IFRS 16."
+        ),
+    ),
+    Conta(
         chave="fluxo_investimento",
         rotulo="Caixa liquido de investimento",
         demonstracao="dfc",
@@ -930,6 +952,13 @@ class Derivacao:
     requer: tuple[str, ...]
     formula: str
     explicacao: str
+    # Quando a conta ja existe **mas e zero em todos os anos**, deriva mesmo
+    # assim. Existe por causa da D&A: muita companhia publica 3.04.02.02 como
+    # zero, porque a depreciacao esta dentro do CPV e das despesas, e divulga o
+    # numero de verdade so no ajuste da DFC. Sem isto, o zero da DRE bloqueia a
+    # derivacao e a companhia fica com EBITDA igual ao EBIT -- na Raia Drogasil,
+    # R$ 1,85 bilhao a menos.
+    substitui_zero: bool = False
 
 
 DERIVACOES: tuple[Derivacao, ...] = (
@@ -950,6 +979,7 @@ DERIVACOES: tuple[Derivacao, ...] = (
         requer=("depreciacao_dfc",),
         formula="depreciacao_dfc",
         explicacao="D&A trazida da DFC, quando a DRE nao a destaca",
+        substitui_zero=True,
     ),
     Derivacao(
         chave="lucro_antes_impostos",
@@ -1043,13 +1073,78 @@ _SINONIMOS_EXATOS: dict[str, str] = {}
 for _normalizado, _chave in _SINONIMOS:
     _SINONIMOS_EXATOS.setdefault(_normalizado, _chave)
 
+
+# Terminacoes de plural em portugues, da mais especifica para a mais geral.
+# Aplicadas aos dois lados da comparacao, entao nao importa se a forma resultante
+# e uma palavra de verdade -- importa que "depreciacoes" e "depreciacao" cheguem
+# a mesma coisa.
+_PLURAIS: tuple[tuple[str, str], ...] = (
+    ("oes", "ao"),
+    ("aes", "ao"),
+    ("ais", "al"),
+    ("eis", "el"),
+    ("ois", "ol"),
+    ("res", "r"),
+    ("zes", "z"),
+    ("ns", "m"),
+)
+
+
+def singularizar(texto: str) -> str:
+    """Reduz plurais para permitir casar rotulo com sinonimo.
+
+    A CVM escreve "Depreciacoes e Amortizacoes" e o vocabulario declarava
+    "Depreciacao e Amortizacao". Sem esta reducao os dois nao casam, e o efeito
+    nao e cosmetico: **medido na DFP consolidada de 2024, 35% das linhas de
+    depreciacao ficavam sem reconhecimento**, e companhia sem D&A reconhecida
+    fica com EBITDA igual ao EBIT. Na Raia Drogasil isso escondia R$ 1,85 bilhao.
+
+    Palavras curtas ficam de fora: "mais" nao deve virar "mal".
+    """
+    palavras = []
+    for palavra in texto.split():
+        if len(palavra) <= 4:
+            palavras.append(palavra)
+            continue
+        for fim, troca in _PLURAIS:
+            if palavra.endswith(fim):
+                palavra = palavra[: -len(fim)] + troca
+                break
+        else:
+            if palavra.endswith("s"):
+                palavra = palavra[:-1]
+        palavras.append(palavra)
+    return " ".join(palavras)
+
+
+_SINONIMOS_SINGULARES: dict[str, str] = {}
+for _normalizado, _chave in _SINONIMOS:
+    _SINONIMOS_SINGULARES.setdefault(singularizar(_normalizado), _chave)
+
+# O mesmo sinonimo pode pertencer a contas de demonstracoes diferentes:
+# "Depreciacao e Amortizacao" e conta da DRE **e** ajuste da DFC. Sem indexar
+# por demonstracao, a primeira declarada ganha sempre e a outra fica inalcancavel
+# -- foi o que manteve ``depreciacao_dfc`` morta, e com ela o EBITDA de quem so
+# divulga D&A no fluxo de caixa.
+_POR_DEMONSTRACAO: dict[str, dict[str, str]] = {}
+_SINGULARES_POR_DEMONSTRACAO: dict[str, dict[str, str]] = {}
+for _conta in CONTAS:
+    _exatos = _POR_DEMONSTRACAO.setdefault(_conta.demonstracao, {})
+    _singulares = _SINGULARES_POR_DEMONSTRACAO.setdefault(_conta.demonstracao, {})
+    for _sinonimo in _conta.sinonimos:
+        _norm = normalizar(_sinonimo)
+        _exatos.setdefault(_norm, _conta.chave)
+        _singulares.setdefault(singularizar(_norm), _conta.chave)
+
 _CODIGOS: dict[str, str] = {}
 for _conta in CONTAS:
     for _codigo in _conta.codigos_cvm:
         _CODIGOS.setdefault(_codigo, _conta.chave)
 
 
-def reconhecer(rotulo: str, codigo: str | None = None) -> Reconhecimento:
+def reconhecer(
+    rotulo: str, codigo: str | None = None, demonstracao: str | None = None
+) -> Reconhecimento:
     """Identifica a conta canonica de um rotulo de planilha.
 
     A ordem das tentativas vai da evidencia mais forte para a mais fraca:
@@ -1060,19 +1155,35 @@ def reconhecer(rotulo: str, codigo: str | None = None) -> Reconhecimento:
     """
     codigo = codigo or extrair_codigo_cvm(rotulo)
     if codigo and codigo in _CODIGOS:
-        return Reconhecimento(_CODIGOS[codigo], 1.0, f"codigo CVM {codigo}")
+        candidata = _CODIGOS[codigo]
+        if demonstracao is None or POR_CHAVE[candidata].demonstracao == demonstracao:
+            return Reconhecimento(candidata, 1.0, f"codigo CVM {codigo}")
 
     normalizado = normalizar(rotulo)
     if not normalizado:
         return Reconhecimento(None, 0.0, "rotulo vazio")
 
-    if normalizado in _SINONIMOS_EXATOS:
-        return Reconhecimento(_SINONIMOS_EXATOS[normalizado], 0.95, "sinonimo exato")
+    exatos = _POR_DEMONSTRACAO.get(demonstracao, _SINONIMOS_EXATOS) if demonstracao else _SINONIMOS_EXATOS
+    if normalizado in exatos:
+        return Reconhecimento(exatos[normalizado], 0.95, "sinonimo exato")
+
+    # Plural e singular sao a mesma conta. Vem antes do casamento parcial porque
+    # e evidencia mais forte: o rotulo inteiro casa, so a flexao difere.
+    singulares = (
+        _SINGULARES_POR_DEMONSTRACAO.get(demonstracao, _SINONIMOS_SINGULARES)
+        if demonstracao
+        else _SINONIMOS_SINGULARES
+    )
+    singular = singularizar(normalizado)
+    if singular in singulares:
+        return Reconhecimento(singulares[singular], 0.90, "sinonimo exato (plural)")
 
     # Casamento parcial: exige que o sinonimo ocupe boa parte do rotulo, para
     # "receita liquida" nao capturar "receita liquida de juros de aplicacoes".
     melhor = Reconhecimento(None, 0.0, "sem correspondencia")
     for sinonimo, chave in _SINONIMOS:
+        if demonstracao and POR_CHAVE[chave].demonstracao != demonstracao:
+            continue
         if len(sinonimo) < 5 or sinonimo not in normalizado:
             continue
         proporcao = len(sinonimo) / len(normalizado)

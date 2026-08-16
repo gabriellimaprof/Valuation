@@ -103,6 +103,11 @@ def _ajustar_horizonte(operacionais, horizonte: int):
             return list(valores[:horizonte])
         return list(valores) + [valores[-1]] * (horizonte - len(valores))
 
+    extras = {}
+    if operacionais.arrendamento_pct_receita is not None:
+        extras["arrendamento_pct_receita"] = redimensionar(
+            operacionais.arrendamento_pct_receita
+        )
     return replace(
         operacionais,
         crescimento_receita=redimensionar(operacionais.crescimento_receita),
@@ -110,6 +115,7 @@ def _ajustar_horizonte(operacionais, horizonte: int):
         depreciacao_pct_receita=redimensionar(operacionais.depreciacao_pct_receita),
         capex_pct_receita=redimensionar(operacionais.capex_pct_receita),
         capital_giro_pct_receita=redimensionar(operacionais.capital_giro_pct_receita),
+        **extras,
     )
 
 
@@ -126,18 +132,21 @@ def _editor(operacionais, anos: list[int], analise) -> None:
     st.subheader("Direcionadores, ano a ano")
     st.caption("Percentuais em pontos percentuais: digite 12,5 para 12,5%.")
 
-    tabela = pd.DataFrame(
-        {
-            "Crescimento da receita (%)": [v * 100 for v in operacionais.crescimento_receita],
-            "Margem EBITDA (%)": [v * 100 for v in operacionais.margem_ebitda],
-            "Depreciação / receita (%)": [v * 100 for v in operacionais.depreciacao_pct_receita],
-            "Capex / receita (%)": [v * 100 for v in operacionais.capex_pct_receita],
-            "Capital de giro / receita (%)": [
-                v * 100 for v in operacionais.capital_giro_pct_receita
-            ],
-        },
-        index=[str(a) for a in anos],
-    )
+    colunas_tabela = {
+        "Crescimento da receita (%)": [v * 100 for v in operacionais.crescimento_receita],
+        "Margem EBITDA (%)": [v * 100 for v in operacionais.margem_ebitda],
+        "Depreciação / receita (%)": [v * 100 for v in operacionais.depreciacao_pct_receita],
+        "Capex / receita (%)": [v * 100 for v in operacionais.capex_pct_receita],
+        "Capital de giro / receita (%)": [
+            v * 100 for v in operacionais.capital_giro_pct_receita
+        ],
+    }
+    tem_arrendamento = operacionais.arrendamento_pct_receita is not None
+    if tem_arrendamento:
+        colunas_tabela["Arrendamento / receita (%)"] = [
+            v * 100 for v in operacionais.arrendamento_pct_receita
+        ]
+    tabela = pd.DataFrame(colunas_tabela, index=[str(a) for a in anos])
 
     editada = st.data_editor(
         tabela,
@@ -156,23 +165,33 @@ def _editor(operacionais, anos: list[int], analise) -> None:
         _referencia(analise, "Capex / Receita"),
         _referencia(analise, "Capital de giro / Receita"),
     ]
+    if tem_arrendamento:
+        referencias.append(_referencia(analise, "Arrendamento / Divida bruta"))
     visiveis = [f"**{c}** — {r}" for c, r in zip(tabela.columns, referencias) if r]
     if visiveis:
         st.caption("Referências do histórico: " + " · ".join(visiveis))
 
+    if tem_arrendamento:
+        st.caption(
+            "**Arrendamento / receita** é o saldo do passivo de arrendamento, não o "
+            "aluguel do ano. Ele existe porque contrato novo de aluguel **não passa "
+            "pelo capex**: assinar um ponto cria ativo e passivo na mesma hora. Sem "
+            "esta linha, uma rede que abre lojas mostra EBITDA subindo, capex parado "
+            "e FCFF generoso, enquanto a dívida cresce todo ano."
+        )
+
     colunas = st.columns([1, 3])
     if colunas[0].button("Aplicar", type="primary"):
-        estado.substituir_bloco(
-            "operacionais",
-            replace(
-                operacionais,
-                crescimento_receita=[v / 100 for v in editada.iloc[:, 0]],
-                margem_ebitda=[v / 100 for v in editada.iloc[:, 1]],
-                depreciacao_pct_receita=[v / 100 for v in editada.iloc[:, 2]],
-                capex_pct_receita=[v / 100 for v in editada.iloc[:, 3]],
-                capital_giro_pct_receita=[v / 100 for v in editada.iloc[:, 4]],
-            ),
+        novas = dict(
+            crescimento_receita=[v / 100 for v in editada.iloc[:, 0]],
+            margem_ebitda=[v / 100 for v in editada.iloc[:, 1]],
+            depreciacao_pct_receita=[v / 100 for v in editada.iloc[:, 2]],
+            capex_pct_receita=[v / 100 for v in editada.iloc[:, 3]],
+            capital_giro_pct_receita=[v / 100 for v in editada.iloc[:, 4]],
         )
+        if tem_arrendamento:
+            novas["arrendamento_pct_receita"] = [v / 100 for v in editada.iloc[:, 5]]
+        estado.substituir_bloco("operacionais", replace(operacionais, **novas))
         st.rerun()
 
     with colunas[1]:

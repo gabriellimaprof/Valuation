@@ -120,6 +120,17 @@ class PremissasOperacionais:
     capital_giro_pct_receita: list[float]
     capital_giro_inicial: float | None = None
     ano_base: int = 0
+    # Saldo do passivo de arrendamento como percentual da receita. Opcional, e
+    # nasce desligado: quem nao informa continua com a projecao de antes.
+    #
+    # Existe porque contrato novo de aluguel **nao passa pelo capex**. Assinar um
+    # ponto cria ativo de direito de uso e passivo de arrendamento sem tocar o
+    # fluxo de investimento: numa rede que abre lojas, o EBITDA sobe, o capex
+    # fica parado, o FCFF sai generoso -- e a divida cresce todo ano sem que a
+    # ponte, congelada na data-base, saiba. Informado aqui, o crescimento do
+    # passivo vira saida de caixa, como a variacao do capital de giro.
+    arrendamento_pct_receita: list[float] | None = None
+    arrendamento_inicial: float | None = None
 
     def __post_init__(self) -> None:
         if self.receita_base <= 0:
@@ -131,6 +142,8 @@ class PremissasOperacionais:
             "capex_pct_receita": len(self.capex_pct_receita),
             "capital_giro_pct_receita": len(self.capital_giro_pct_receita),
         }
+        if self.arrendamento_pct_receita is not None:
+            tamanhos["arrendamento_pct_receita"] = len(self.arrendamento_pct_receita)
         if len(set(tamanhos.values())) != 1:
             raise ValueError(
                 f"As listas de premissas operacionais tem tamanhos diferentes: {tamanhos}"

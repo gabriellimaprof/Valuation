@@ -113,6 +113,36 @@ companhias e "IR e CSLL" em 17. O plano é detectado uma vez por companhia pelo
 topo da DRE; fora do industrial o reconhecimento passa a ser só pelo rótulo e a
 tela avisa. Confiar no código sem isso põe número errado na conta certa, calado.
 
+**A D&A não estava sendo lida, e isso era o maior erro da base.** O rótulo da
+CVM vem no plural ("Depreciações e Amortizações") e o vocabulário declarava no
+singular; e `reconhecer` escolhia o candidato **antes** de conferir a
+demonstração, então a conta da DRE ganhava sempre e `depreciacao_dfc` era
+inalcançável — apesar de a maioria das companhias só divulgar D&A no ajuste da
+DFC. Resultado medido em 150 companhias de 2024: **8 tinham D&A reconhecida.
+Depois da correção, 116.** As outras 142 tinham EBITDA igual ao EBIT, com a
+mediana da base tendo D&A valendo 24% do EBIT. Na Raia Drogasil escondia R$ 1,85
+bi; na WEG, R$ 812 mi.
+
+Três correções, todas medidas antes de entrar: `singularizar()` reduz plurais
+dos dois lados da comparação (1.085 linhas novas reconhecidas na base, 20 linhas
+mudando de conta — e essas 20 eram correções); `reconhecer(..., demonstracao=)`
+busca dentro da demonstração certa em vez de rejeitar depois; e
+`Derivacao.substitui_zero` deixa a derivação passar por cima de uma série que a
+DRE publica como zero.
+
+**IFRS 16: as duas leituras não se misturam.** Desde 2019 o aluguel saiu do
+resultado e virou depreciação mais juros, então o EBITDA subiu sem nada melhorar.
+Medido: Raia Drogasil com margem EBITDA de 10,8% reportada e **6,5% ex-IFRS 16**;
+Pague Menos 8,6% → 3,3%; Smart Fit **48,0% → 21,8%**. `ver_ex_ifrs16` monta as
+duas visões a partir do desembolso na DFC (`EBITDA_ex = EBITDA − aluguel`,
+`EBIT_ex = EBIT − juros`, `dívida_ex = dívida − arrendamento`).
+
+A regra que a tela repete e os testes travam: **ou dívida com arrendamento sobre
+EBITDA com aluguel, ou dívida sem sobre EBITDA sem.** Cruzar infla a alavancagem;
+ao contrário, esconde. Cobertura: 258 das 467 companhias publicam o principal,
+184 os juros — sem os juros o ajuste é declarado como **piso**. A depreciação do
+direito de uso viria mais direto, mas só 10% a publicam.
+
 **Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
 2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
 Medido em 368 companhias: **a mediana brasileira descola 8,2 p.p.**, porque a
@@ -194,7 +224,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-671 testes passando. Verificado de verdade: contas financeiras, identidades,
+693 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -383,14 +413,17 @@ Em ordem de valor:
    de uso também (`1.02.03.02`), a tela tem de onde partir.
 2. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
    oferece a opção, mas não há onde informar a dívida ano a ano.
-3. **A projeção não faz o arrendamento crescer.** O estoque agora é lido certo
-   e aparece na tela de Valor, e o diagnóstico levanta alerta quando o
-   arrendamento é relevante e acompanha a receita. Mas o **fluxo** continua
-   fora do modelo: contrato novo de aluguel cria passivo sem passar pelo capex,
-   então uma rede que abre lojas mostra EBITDA subindo, capex parado e FCFF
-   generoso, enquanto a dívida real cresce todo ano — e a ponte fica congelada
-   na data-base. Fechar isso exige projetar adições de arrendamento junto com a
-   receita, o que muda `projecao.py`.
+3. **Arrendamento fechado nas três pontas.** O estoque é lido certo (inclusive
+   fora da subárvore de dívida), a leitura ex-IFRS 16 existe, e a projeção agora
+   faz o passivo crescer: `arrendamento_pct_receita` em `PremissasOperacionais`
+   transforma a adição anual em saída de caixa, porque contrato novo de aluguel
+   não passa pelo capex. Nasce desligado e `sugerir_premissas` só o propõe
+   quando o arrendamento passa de 2% da receita. Medido: Raia Drogasil perde
+   10,2% de equity value com a linha ligada; Smart Fit, 48,7%.
+
+   O que ainda **não** está fechado: a perpetuidade cresce o FCFF já líquido da
+   adição, o que assume implicitamente que a razão arrendamento/receita fica
+   constante para sempre. É defensável e não foi verificado contra alternativa.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte

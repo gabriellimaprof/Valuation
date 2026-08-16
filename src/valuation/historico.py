@@ -305,6 +305,37 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
             arrendamento, divida_bruta
         )
 
+    # Ex-IFRS 16. Desde 2019 o aluguel saiu do resultado operacional e virou
+    # depreciacao mais juros, entao o EBITDA subiu sem que nada tenha melhorado.
+    # Em rede de farmacia ou de academia isso muda a leitura inteira: a margem da
+    # Smart Fit e 48% reportada e 21,8% sem o aluguel.
+    #
+    # As duas visoes **nao se misturam**: a alavancagem ex-IFRS 16 usa a divida
+    # sem arrendamento sobre o EBITDA sem aluguel. Cruzar as duas infla ou
+    # esconde, dependendo do lado que se troca.
+    aluguel = d.serie("arrendamento_principal_pago").add(
+        d.serie("arrendamento_juros_pagos"), fill_value=0
+    )
+    if aluguel.notna().any():
+        ebitda_ex = ebitda.sub(aluguel.fillna(0), fill_value=0)
+        indicadores["Aluguel (arrendamento pago) / Receita"] = _divisao_segura(
+            aluguel, receita
+        )
+        indicadores["Aluguel / EBITDA"] = _divisao_segura(aluguel, ebitda)
+        indicadores["Margem EBITDA (ex-IFRS 16)"] = _divisao_segura(ebitda_ex, receita)
+        juros_arrendamento = d.serie("arrendamento_juros_pagos")
+        if juros_arrendamento.notna().any():
+            indicadores["Margem EBIT (ex-IFRS 16)"] = _divisao_segura(
+                ebit.sub(juros_arrendamento.fillna(0), fill_value=0), receita
+            )
+        if arrendamento.notna().any():
+            divida_liquida_ex = divida_bruta.sub(
+                arrendamento.fillna(0), fill_value=0
+            ).sub(caixa_total, fill_value=0)
+            indicadores["Divida liquida / EBITDA (ex-IFRS 16)"] = _divisao_segura(
+                divida_liquida_ex, ebitda_ex
+            )
+
     indicadores["Ciclo de conversao de caixa (dias)"] = (
         indicadores["Prazo medio de recebimento (dias)"]
         .add(indicadores["Prazo medio de estoque (dias)"], fill_value=0)
@@ -449,6 +480,28 @@ def sugerir_premissas(
             f"Mediana historica de {giro_pct:.1%} da receita."
         )
 
+    # Arrendamento so entra na projecao quando a companhia tem arrendamento
+    # relevante. Sugerir zero para todo mundo seria poluir o modelo de quem nao
+    # aluga nada; nao sugerir para quem aluga deixa o FCFF generoso demais.
+    arrendamento = d.serie("arrendamento_curto_prazo").add(
+        d.serie("arrendamento_longo_prazo"), fill_value=0
+    )
+    arrendamento_pct = None
+    arrendamento_inicial = None
+    if arrendamento.notna().any():
+        razao = (arrendamento / d.serie("receita_liquida")).replace(
+            [np.inf, -np.inf], np.nan
+        ).dropna()
+        if not razao.empty and float(razao.median()) > 0.02:
+            arrendamento_pct = [float(razao.median())] * horizonte
+            arrendamento_inicial = float(arrendamento.dropna().iloc[-1])
+            justificativas["arrendamento_pct_receita"] = (
+                f"Passivo de arrendamento mediano de {float(razao.median()):.1%} da "
+                "receita. Crescendo com ela, a adicao anual vira saida de caixa: "
+                "contrato novo de aluguel nao passa pelo capex, e sem esta linha o "
+                "FCFF sairia maior do que e."
+            )
+
     operacionais = PremissasOperacionais(
         receita_base=receita_base,
         crescimento_receita=crescimentos,
@@ -456,6 +509,8 @@ def sugerir_premissas(
         depreciacao_pct_receita=[depreciacao_pct] * horizonte,
         capex_pct_receita=[capex_pct] * horizonte,
         capital_giro_pct_receita=[giro_pct] * horizonte,
+        arrendamento_pct_receita=arrendamento_pct,
+        arrendamento_inicial=arrendamento_inicial,
         capital_giro_inicial=(
             float(d.capital_giro().dropna().iloc[-1])
             if d.capital_giro().notna().any()

@@ -28,6 +28,12 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
+# Medidos em 423 companhias: a mediana brasileira converte 64% do EBITDA em
+# caixa e o P75 fica em 93%. Os cortes continuam absolutos -- 90% e 60% querem
+# dizer a mesma coisa em qualquer pais --, mas agora se sabe onde caem: "boa" e
+# aproximadamente o quartil superior, e "fraca" pega quase metade da base. Por
+# isso o sinal reporta o percentil junto do numero: ler so o absoluto faz o
+# analista estranhar o normal do seu mercado.
 CONVERSAO_BOA = 0.90
 CONVERSAO_FRACA = 0.60
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
