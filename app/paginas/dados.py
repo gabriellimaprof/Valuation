@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from valuation import biblioteca
 from valuation.historico import sugerir_premissas
 from valuation.importacao import (
     CONTAS,
@@ -44,25 +45,27 @@ def render() -> None:
         "Importe as demonstrações financeiras ou preencha o essencial à mão",
     )
 
-    aba_retomar, aba_cvm, aba_importar, aba_template, aba_manual = st.tabs(
-        [
-            "Retomar valuation salvo",
-            "Buscar na CVM",
-            "Importar planilha",
-            "Baixar template",
-            "Preencher à mão",
-        ]
-    )
+    # A aba da biblioteca so existe quando ela foi ligada por configuracao: num
+    # servidor a variavel nao e definida e o app segue sem estado em disco.
+    rotulos = ["Retomar valuation salvo", "Buscar na CVM", "Importar planilha"]
+    if biblioteca.esta_ligada():
+        rotulos.insert(0, "Biblioteca")
+    rotulos += ["Baixar template", "Preencher à mão"]
 
-    with aba_retomar:
+    abas = dict(zip(rotulos, st.tabs(rotulos)))
+
+    if "Biblioteca" in abas:
+        with abas["Biblioteca"]:
+            _biblioteca()
+    with abas["Retomar valuation salvo"]:
         _retomar()
-    with aba_cvm:
+    with abas["Buscar na CVM"]:
         _cvm()
-    with aba_importar:
+    with abas["Importar planilha"]:
         _importar()
-    with aba_template:
+    with abas["Baixar template"]:
         _template()
-    with aba_manual:
+    with abas["Preencher à mão"]:
         _manual()
 
     # A conferencia fica fora das abas, e nao dentro de cada origem, porque o
@@ -71,6 +74,53 @@ def render() -> None:
     # com chave duplicada. Fora das abas ela tambem passa a ser o que o nome diz
     # -- uma tela de conferencia so, comum a qualquer origem de importacao.
     _mostrar_importacao_atual()
+
+
+def _biblioteca() -> None:
+    """Lista os valuations guardados na pasta local e permite abri-los."""
+    pasta = biblioteca.diretorio()
+    st.markdown(
+        "Os valuations que você guardou nesta máquina. Cada um é um arquivo "
+        "**.yaml** na pasta abaixo — dá para versionar em Git, copiar ou abrir "
+        "num editor sem passar pelo app."
+    )
+    st.caption(f"Pasta: `{pasta}` · definida em `{biblioteca.VARIAVEL}`.")
+
+    entradas = biblioteca.listar()
+    if not entradas:
+        st.info(
+            "Nenhum valuation guardado ainda. Monte um e use **Exportar → Guardar "
+            "na biblioteca**."
+        )
+        return
+
+    for indice, entrada in enumerate(entradas):
+        colunas = st.columns([4, 2, 2, 1, 1])
+        colunas[0].markdown(f"**{entrada.empresa}**")
+        colunas[0].caption(entrada.nome_do_arquivo)
+        colunas[1].caption(entrada.periodo + (f" · {entrada.unidade}" if entrada.unidade else ""))
+        colunas[2].caption(entrada.atualizado_em.strftime("%d/%m/%Y %H:%M"))
+
+        if not entrada.legivel:
+            colunas[1].caption(":red[não consegui ler]")
+            colunas[3].caption("—")
+        elif colunas[3].button("Abrir", key=f"abrir_{indice}"):
+            _abrir_da_biblioteca(entrada)
+
+        if colunas[4].button("Excluir", key=f"excluir_{indice}"):
+            biblioteca.excluir(entrada.caminho)
+            st.rerun()
+
+
+def _abrir_da_biblioteca(entrada) -> None:
+    try:
+        projeto = biblioteca.abrir(entrada.caminho)
+    except (ValueError, FileNotFoundError) as erro:
+        st.error(f"Não consegui abrir {entrada.nome_do_arquivo}: {erro}")
+        return
+    estado.aplicar_projeto(projeto)
+    st.success(f"{entrada.empresa} restaurado.")
+    st.rerun()
 
 
 def _retomar() -> None:

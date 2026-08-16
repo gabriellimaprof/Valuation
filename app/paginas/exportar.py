@@ -9,7 +9,7 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
-from valuation import exportar_excel
+from valuation import biblioteca, exportar_excel
 
 from .. import estado
 from ..componentes import aviso_sem_modelo, etapa
@@ -149,13 +149,17 @@ def _salvar_projeto() -> None:
         return
 
     nome = f"{_slug(estado.empresa().nome)}.yaml"
-    st.download_button(
-        "Baixar o valuation (.yaml)",
-        data=texto.encode("utf-8"),
-        file_name=nome,
-        mime="text/yaml",
-        type="primary",
-    )
+    colunas = st.columns(2)
+    with colunas[0]:
+        st.download_button(
+            "Baixar o valuation (.yaml)",
+            data=texto.encode("utf-8"),
+            file_name=nome,
+            mime="text/yaml",
+            type="primary",
+        )
+    with colunas[1]:
+        _guardar_na_biblioteca()
     tamanho = len(texto.encode("utf-8")) / 1024
     st.caption(
         f"{nome} · {tamanho:,.0f} KB · também aceito pela linha de comando: "
@@ -164,6 +168,25 @@ def _salvar_projeto() -> None:
 
     with st.expander("Ver o conteúdo do arquivo"):
         st.code(texto, language="yaml")
+
+
+def _guardar_na_biblioteca() -> None:
+    """Grava direto na pasta local, quando a biblioteca esta ligada.
+
+    So aparece com ``VALUATION_BIBLIOTECA`` definida. Sem ela o app nao tem para
+    onde gravar, e o botao nao existe -- em vez de existir e falhar.
+    """
+    if not biblioteca.esta_ligada():
+        return
+
+    if st.button("Guardar na biblioteca", type="secondary"):
+        try:
+            caminho = biblioteca.guardar(estado.projeto_atual())
+        except (OSError, biblioteca.BibliotecaDesligada) as erro:
+            st.error(f"Não consegui guardar: {erro}")
+            return
+        st.success(f"Guardado em `{caminho}`.")
+    st.caption(f"Pasta: `{biblioteca.diretorio()}`")
 
 
 def _slug(nome: str) -> str:

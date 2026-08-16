@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 464 testes
+pytest                        # 484 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -52,6 +52,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   casos_especiais.py    P&D, ciclicidade, leasing
   dados_setoriais.py    betas e prêmios por setor e país
   projeto.py            salvar e retomar um valuation inteiro
+  biblioteca.py         pasta local de valuations, desligada por padrão
   excel.py              exportação com fórmulas vivas
   modelo.py             orquestração e substituição de premissas
 app/                    interface Streamlit
@@ -80,6 +81,15 @@ causa de um typo é pior que nenhuma tabela, porque parece resultado.
 **Nada é descartado em silêncio.** O importador devolve linhas não reconhecidas,
 contas derivadas e divergências contábeis como campos do resultado, e a tela
 mostra tudo.
+
+**O app não grava nada em disco — exceto quando mandam.** O estado vive na
+sessão, e é isso que permite publicar num servidor compartilhado sem revisar o
+código inteiro. A única exceção é `biblioteca.py`, que **nasce desligada**: só
+existe quando `VALUATION_BIBLIOTECA` aponta para uma pasta, o que é escolha de
+quem roda o app na própria máquina. Num deploy a variável não é definida e não
+há caminho de código em que o servidor comece a guardar valuations por acidente.
+Ao mexer ali, mantenha essa propriedade: o botão não existe quando desligada, em
+vez de existir e falhar.
 
 **Os arquivos da CVM têm armadilhas que já custaram caro.** `ORDEM_EXERC` traz
 `ÚLTIMO` e `PENÚLTIMO` no mesmo arquivo — o zip de 2024 já contém 2023, e
@@ -156,7 +166,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-464 testes passando. Verificado de verdade: contas financeiras, identidades,
+484 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

@@ -17,6 +17,22 @@ from valuation import (
 
 
 @pytest.fixture
+def demonstracoes():
+    """Demonstracoes minimas, para testes que so precisam de algo importado."""
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {"receita_liquida": 1000.0, "ebit": 200.0},
+            2024: {"receita_liquida": 1100.0, "ebit": 220.0},
+        }
+    )
+    return Demonstracoes(empresa="Teste S.A.", valores=valores, unidade="R$ milhões")
+
+
+@pytest.fixture
 def macro() -> PremissasMacro:
     return PremissasMacro(inflacao_brl=0.04, inflacao_usd=0.023, aliquota_ir=0.34)
 
