@@ -86,6 +86,23 @@ def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
     }
     if dfs.fonte:
         dados["fonte"] = dict(dfs.fonte)
+    # A arvore publicada e a parte que explica de onde vem cada total. Sem ela
+    # no arquivo, retomar um valuation devolveria as contas do modelo e perderia
+    # a quebra -- que e justamente o que o analista abre para entender o numero.
+    if dfs.detalhe is not None and not dfs.detalhe.empty:
+        dados["detalhe"] = [
+            {
+                "codigo": str(linha["codigo"]),
+                "rotulo": str(linha["rotulo"]),
+                "demonstracao": str(linha["demonstracao"]),
+                "valores": {
+                    int(ano): (None if pd.isna(linha[ano]) else float(linha[ano]))
+                    for ano in dfs.detalhe.columns
+                    if isinstance(ano, int)
+                },
+            }
+            for _, linha in dfs.detalhe.iterrows()
+        ]
     # As linhas nao reconhecidas sao o que a tela de conferencia oferece para o
     # usuario corrigir a mao. Sem elas no arquivo, retomar um valuation salvo
     # devolvia os numeros mas nao a possibilidade de mexer neles -- e uma
@@ -147,7 +164,31 @@ def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
         ],
         avisos=[str(a) for a in (dados.get("avisos") or [])],
         fonte=dict(dados.get("fonte") or {}),
+        detalhe=_dados_para_detalhe(dados.get("detalhe")),
     )
+
+
+def _dados_para_detalhe(linhas: Any) -> pd.DataFrame | None:
+    """Reconstroi a arvore publicada, com nivel e ordem derivados do codigo."""
+    if not linhas:
+        return None
+
+    from .importacao.cvm import _ordem_do_codigo
+
+    registros = []
+    for linha in linhas:
+        codigo = str(linha.get("codigo", ""))
+        registro: dict[str, Any] = {
+            "codigo": codigo,
+            "rotulo": str(linha.get("rotulo", "")),
+            "demonstracao": str(linha.get("demonstracao", "")),
+            "nivel": codigo.count(".") + 1,
+            "ordem": _ordem_do_codigo(codigo),
+        }
+        for ano, valor in (linha.get("valores") or {}).items():
+            registro[int(ano)] = np.nan if valor is None else float(valor)
+        registros.append(registro)
+    return pd.DataFrame(registros)
 
 
 def serializar(projeto: Projeto) -> str:

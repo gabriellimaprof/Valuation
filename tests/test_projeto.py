@@ -13,6 +13,7 @@ import pytest
 
 from valuation import Alvo, Comparavel, avaliar
 from valuation.importacao import Demonstracoes
+from valuation.importacao.importador import RECUO
 from valuation.projeto import (
     VERSAO,
     Projeto,
@@ -91,6 +92,38 @@ def test_conferencia_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
     assert recuperada.melhor_palpite == "estoques"
     assert recuperada.confianca == pytest.approx(0.42)
     assert volta.demonstracoes.avisos == ["Ativo e passivo divergem em 2%."]
+
+
+def test_arvore_publicada_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
+    """A quebra e o que explica o total; perde-la ao salvar esvazia o arquivo."""
+    detalhe = pd.DataFrame(
+        [
+            {"codigo": "1", "rotulo": "Ativo Total", "demonstracao": "bp",
+             "nivel": 1, "ordem": (1,), 2023: 100.0, 2024: 120.0},
+            {"codigo": "1.01", "rotulo": "Ativo Circulante", "demonstracao": "bp",
+             "nivel": 2, "ordem": (1, 1), 2023: 60.0, 2024: 70.0},
+            {"codigo": "1.01.02", "rotulo": "Aplicações", "demonstracao": "bp",
+             "nivel": 3, "ordem": (1, 1, 2), 2023: 10.0, 2024: np.nan},
+        ]
+    )
+    original = type(demonstracoes)(**{**demonstracoes.__dict__, "detalhe": detalhe})
+    volta = desserializar(
+        serializar(Projeto(empresa=empresa_exemplo, demonstracoes=original))
+    )
+
+    reconstruida = volta.demonstracoes.detalhe
+    assert list(reconstruida["codigo"]) == ["1", "1.01", "1.01.02"]
+    assert list(reconstruida["nivel"]) == [1, 2, 3]
+    assert reconstruida.loc[1, 2024] == pytest.approx(70.0)
+    assert np.isnan(reconstruida.loc[2, 2024])
+
+    # E a arvore volta a se ler com a hierarquia, nao so os dados crus.
+    arvore = volta.demonstracoes.arvore("bp")
+    assert list(arvore.index) == [
+        "Ativo Total",
+        RECUO + "Ativo Circulante",
+        RECUO * 2 + "Aplicações",
+    ]
 
 
 def test_fonte_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):

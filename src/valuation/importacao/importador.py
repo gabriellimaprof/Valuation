@@ -30,6 +30,11 @@ from .leitura import Grade, carregar_abas, linhas_da_grade, localizar_grade
 
 CONFIANCA_MINIMA = 0.6
 
+# Recuo da arvore publicada. E o espaco de figura (U+2007), e nao o comum:
+# o espaco normal colapsa quando o rotulo e renderizado como HTML, e a
+# hierarquia -- que e a informacao -- desapareceria na tela.
+RECUO = "\u2007" * 3
+
 
 def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFrame | None:
     """Divide so as colunas de ano da arvore; codigo e nivel nao sao valores."""
@@ -96,7 +101,7 @@ class Demonstracoes:
         tabela = tabela.sort_values("ordem")
         anos = [c for c in tabela.columns if isinstance(c, int)]
         rotulos = [
-            " " * 3 * (int(nivel) - 1) + str(rotulo)
+            RECUO * (int(nivel) - 1) + str(rotulo)
             for nivel, rotulo in zip(tabela["nivel"], tabela["rotulo"])
         ]
         saida = tabela[anos].copy()
