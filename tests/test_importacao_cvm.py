@@ -48,7 +48,7 @@ from valuation.importacao.cvm import (
 
 DADOS = Path(__file__).parent / "dados" / "cvm"
 
-WEG, VIVARA, SAO_MARTINHO, ELEKTRO = 5410, 24805, 20516, 17485
+WEG, VIVARA, SAO_MARTINHO, ELEKTRO, BANCO_BRASIL = 5410, 24805, 20516, 17485, 1023
 
 
 @pytest.fixture(scope="module")
@@ -296,6 +296,156 @@ def test_nada_e_descartado_em_silencio(weg):
 
 
 # ---------------------------------------------------------------------------
+# Classificacao detalhada: DRE, BP e DFC abertos
+# ---------------------------------------------------------------------------
+
+
+def test_reconhece_a_demonstracao_inteira(weg):
+    """O objetivo nao e achar as contas do modelo, e ler a DF publicada."""
+    assert len(weg.valores.index) >= 60, "a cobertura do plano de contas regrediu"
+    for demonstracao, minimo in (("dre", 15), ("bp", 25), ("dfc", 8)):
+        assert len(weg.tabela(demonstracao).index) >= minimo, demonstracao
+
+
+def test_capex_soma_imobilizado_e_intangivel(weg):
+    """A WEG separa em duas linhas; guardar so uma subestima o investimento.
+
+    6.02.02 Imobilizado (1.780.663) + 6.02.03 Intangivel (69.659), em milhares.
+    """
+    assert weg.valor("capex", 2024) == pytest.approx(1_850_322_000.0)
+    assert " + " in weg.mapeamento["capex"]
+    assert "6.02.02" in weg.mapeamento["capex"]
+    assert "6.02.03" in weg.mapeamento["capex"]
+
+
+def test_capex_nao_engole_a_venda_de_imobilizado(weg):
+    """6.02.04 e recebimento pela venda de imobilizado -- entrada, nao capex."""
+    assert "6.02.04" not in weg.mapeamento["capex"]
+    naos = [linha.rotulo for linha in weg.nao_reconhecidas]
+    assert any(r.startswith("6.02.04") for r in naos)
+
+
+def test_juros_pagos_somados_das_duas_secoes(weg):
+    """A WEG paga juros dentro do operacional e do financiamento."""
+    assert weg.tem("juros_pagos")
+    assert weg.valor("juros_pagos", 2024) == pytest.approx(160_301_000.0)
+    assert weg.mapeamento["juros_pagos"].count(" + ") >= 1
+
+
+def test_juros_pagos_nao_confunde_jcp_com_juros_de_divida(weg):
+    """JCP e remuneracao ao acionista; entra em dividendos, nao no custo da divida."""
+    assert "Capital Próprio" not in weg.mapeamento["juros_pagos"]
+    assert "Capital Próprio" in weg.mapeamento["dividendos_pagos"]
+
+
+def test_dividendos_pagos_separado_dos_recebidos(weg):
+    assert weg.valor("dividendos_pagos", 2024) == pytest.approx(2_934_611_000.0)
+    assert "recebid" not in weg.mapeamento["dividendos_pagos"].lower()
+
+
+def test_investimento_em_capital_de_giro_vem_da_dfc(weg):
+    """6.01.02 e o giro medido pelo caixa, nao pela diferenca de saldos."""
+    assert weg.valor("variacao_capital_giro", 2024) == pytest.approx(-2_310_041_000.0)
+    # Negativo: o giro consumiu caixa no ano.
+    assert weg.valor("variacao_capital_giro", 2024) < 0
+
+
+def test_fco_se_abre_em_geracao_e_giro(weg):
+    """Caixa gerado nas operacoes + variacao do giro + outros = caixa operacional."""
+    soma = (
+        weg.valor("caixa_das_operacoes", 2024)
+        + weg.valor("variacao_capital_giro", 2024)
+    )
+    # "Outros" (6.01.03) fecha a diferenca; a geracao tem que explicar a maior parte.
+    assert soma == pytest.approx(weg.valor("fluxo_operacional", 2024), rel=0.01)
+
+
+def test_a_dfc_fecha(weg):
+    """Operacional + investimento + financiamento + cambio = variacao do caixa."""
+    for ano in weg.anos:
+        soma = (
+            weg.valor("fluxo_operacional", ano)
+            + weg.valor("fluxo_investimento", ano)
+            + weg.valor("fluxo_financiamento", ano)
+            + weg.valor("variacao_cambial_caixa", ano)
+        )
+        assert soma == pytest.approx(weg.valor("variacao_caixa", ano), rel=1e-6)
+
+
+def test_lucro_se_reparte_entre_controladores_e_minoritarios(weg):
+    assert weg.valor("lucro_controladores", 2024) + weg.valor(
+        "lucro_nao_controladores", 2024
+    ) == pytest.approx(weg.valor("lucro_liquido", 2024))
+
+
+def test_divida_aberta_em_debentures_e_arrendamento(catalogo):
+    """Arrendamento e debenture sao filhas de emprestimos, nao parcelas a somar."""
+    dfs = importar_cvm(SAO_MARTINHO, [2024], cache=DADOS, catalogo=catalogo)
+    for filha, mae in (
+        ("arrendamento_curto_prazo", "divida_curto_prazo"),
+        ("debentures_curto_prazo", "divida_curto_prazo"),
+        ("arrendamento_longo_prazo", "divida_longo_prazo"),
+        ("debentures_longo_prazo", "divida_longo_prazo"),
+    ):
+        if dfs.tem(filha) and dfs.tem(mae):
+            assert dfs.valor(filha, 2024) <= dfs.valor(mae, 2024) * 1.001, filha
+
+
+def test_direito_de_uso_esta_dentro_do_imobilizado(weg):
+    assert weg.valor("direito_uso_arrendamento", 2024) <= weg.valor("imobilizado", 2024)
+
+
+def test_goodwill_esta_dentro_do_intangivel(weg):
+    assert weg.valor("goodwill", 2024) <= weg.valor("intangivel", 2024)
+
+
+# ---------------------------------------------------------------------------
+# Planos de contas diferentes
+# ---------------------------------------------------------------------------
+
+
+def test_banco_e_reconhecido_como_outro_plano_de_contas(catalogo):
+    """No plano financeiro os mesmos codigos sao outras contas.
+
+    3.06 e "Resultado Financeiro" na industria e "IR e CSLL" no banco. Ler pelo
+    codigo poria o imposto na linha do resultado financeiro sem avisar.
+    """
+    dfs = importar_cvm(BANCO_BRASIL, [2024], cache=DADOS, catalogo=catalogo)
+    assert any("instituicao financeira" in aviso for aviso in dfs.avisos)
+
+    # A receita de intermediacao nao pode ter virado receita de venda pelo codigo.
+    if dfs.tem("resultado_financeiro"):
+        rotulo = dfs.mapeamento["resultado_financeiro"]
+        assert "Imposto de Renda" not in rotulo
+
+
+def test_plano_industrial_nao_dispara_o_aviso(weg):
+    assert not any("instituicao financeira" in aviso for aviso in weg.avisos)
+
+
+def test_deteccao_do_plano_e_por_companhia():
+    from valuation.importacao.cvm import (
+        PLANO_FINANCEIRO,
+        PLANO_INDUSTRIAL,
+        LinhaCVM,
+        detectar_plano,
+    )
+
+    def linha(codigo, descricao):
+        return LinhaCVM(codigo, descricao, 1.0, 2024, "dre", "MIL", "con")
+
+    assert detectar_plano([linha("3.01", "Receita de Venda de Bens e/ou Serviços")]) == (
+        PLANO_INDUSTRIAL
+    )
+    assert detectar_plano([linha("3.01", "Receitas de Intermediação Financeira")]) == (
+        PLANO_FINANCEIRO
+    )
+    assert detectar_plano([linha("3.01", "Receitas das Atividades Seguradoras")]) == (
+        PLANO_FINANCEIRO
+    )
+
+
+# ---------------------------------------------------------------------------
 # Casos reais que quebram a suposicao ingenua
 # ---------------------------------------------------------------------------
 
@@ -335,9 +485,8 @@ def test_lista_de_anos_vazia_e_erro():
 
 
 def test_cadastro_carrega_companhias(catalogo):
-    assert len(catalogo) == 4
     codigos = {c.codigo_cvm for c in catalogo}
-    assert codigos == {WEG, VIVARA, SAO_MARTINHO, ELEKTRO}
+    assert codigos == {WEG, VIVARA, SAO_MARTINHO, ELEKTRO, BANCO_BRASIL}
     assert all(c.ativa for c in catalogo)
 
 
@@ -578,14 +727,19 @@ def test_planilha_permite_corrigir_um_mapeamento_a_mao(tmp_path):
     destino = tmp_path / "weg.xlsx"
     dfs = importar_cvm(WEG, [2023, 2024], cache=DADOS, planilha=destino)
 
-    alvo = next(
-        linha.rotulo
-        for linha in dfs.nao_reconhecidas
-        if linha.rotulo.startswith("1.02.01")
-    )
+    # Uma linha do balanco qualquer que o app nao reconheceu. Nao fixa qual: a
+    # lista encolhe a cada melhora do reconhecimento, e o que se testa aqui e o
+    # mecanismo de remapear, nao qual conta sobrou de fora.
+    alvo = next(l.rotulo for l in dfs.nao_reconhecidas if l.aba == "Balanço")
+
+    # O valor esperado vem da propria planilha, pela linha de mesmo rotulo.
+    planilha = carregar_abas(destino)["Balanço"]
+    coluna_2024 = list(planilha.iloc[0]).index(2024)
+    esperado = float(planilha[planilha.iloc[:, 1] == alvo].iloc[0, coluna_2024])
+
     corrigido = aplicar_mapeamento_manual(dfs, destino, {alvo: "aplicacoes_financeiras"})
 
-    assert corrigido.valor("aplicacoes_financeiras", 2024) == pytest.approx(1_442_220_000.0)
+    assert corrigido.valor("aplicacoes_financeiras", 2024) == pytest.approx(esperado)
     assert "[manual]" in corrigido.mapeamento["aplicacoes_financeiras"]
     assert len(corrigido.nao_reconhecidas) == len(dfs.nao_reconhecidas) - 1
 

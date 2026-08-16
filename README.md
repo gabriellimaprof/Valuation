@@ -102,6 +102,20 @@ O que o arquivo real exige, e que não se descobre lendo a documentação:
 - **Nem toda companhia publica consolidado** — 242 das 709 de 2024 só publicam
   individual. O leitor prefere o consolidado, cai para o individual quando não
   há, e avisa na tela quando isso acontece.
+- **O código só vale dentro do plano em que foi escrito.** A CVM usa planos de
+  contas distintos para indústria, bancos e seguradoras: `3.06` é "Resultado
+  Financeiro" em 450 companhias e "IR e CSLL" em 17. O plano é detectado uma vez
+  por companhia; fora do industrial vale só o rótulo, e a tela avisa.
+- **Capex, juros pagos e dividendos pagos chegam partidos em várias linhas** e
+  são remontados por soma. O que separa um do outro é a direção, não o assunto:
+  "Dividendos recebidos" aparece em 80 companhias e não é dividendo pago.
+
+São **62 contas canônicas por companhia**, com a DRE, o balanço e a DFC lidos na
+ordem do plano de contas — dívida aberta em debêntures e arrendamento, direito
+de uso, goodwill, o FCO separado entre geração e variação de giro. Rodado nas
+467 companhias com DFP consolidada de 2024, as identidades fecham em todas:
+ativo = passivo, e operacional + investimento + financiamento + câmbio =
+variação de caixa.
 
 Os arquivos ficam em cache (`~/.cache/valuation/cvm`): o segundo valuation da
 mesma empresa não baixa nada de novo.
@@ -203,7 +217,7 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-406 testes cobrindo identidades contábeis, casos de borda econômicos, a
+438 testes cobrindo identidades contábeis, casos de borda econômicos, a
 equivalência Excel/Python, as origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.
@@ -239,3 +253,4 @@ comportamento: WEG (escala `MIL`), Vivara (escala `UNIDADE`), São Martinho
 Os números valem o que valem as premissas. O app automatiza a aritmética, a
 documentação e a checagem de consistência do modelo — não o julgamento. Revise
 as premissas antes de usar qualquer resultado em decisão de investimento.
+

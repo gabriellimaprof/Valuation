@@ -120,13 +120,20 @@ class Demonstracoes:
         )
 
     def tabela(self, demonstracao: str | None = None) -> pd.DataFrame:
-        """Tabela com rotulos legiveis, opcionalmente filtrada por demonstracao."""
-        chaves = [
-            c.chave
+        """Tabela com rotulos legiveis, opcionalmente filtrada por demonstracao.
+
+        As linhas saem na ordem do plano de contas -- receita no topo, lucro
+        liquido embaixo --, e nao na ordem em que o vocabulario foi escrito. Uma
+        DRE fora de ordem obriga o leitor a remontar a demonstracao de cabeca.
+        """
+        contas = [
+            c
             for c in CONTAS
             if c.chave in self.valores.index
             and (demonstracao is None or c.demonstracao == demonstracao)
         ]
+        contas.sort(key=lambda c: (c.demonstracao != "dre", c.posicao))
+        chaves = [c.chave for c in contas]
         tabela = self.valores.loc[chaves].copy()
         tabela.index = [POR_CHAVE[k].rotulo for k in chaves]
         return tabela
@@ -239,6 +246,27 @@ def _conferir(demonstracoes_valores: pd.DataFrame, avisos: list[str]) -> None:
     receita = serie("receita_liquida")
     if receita is not None and (receita.dropna() < 0).any():
         avisos.append("Ha receita liquida negativa; confira o sinal da planilha de origem.")
+
+    # A DFC tem uma identidade propria, e ela e o teste mais direto de que as
+    # secoes foram classificadas certo: se capex caiu no financiamento ou os
+    # juros entraram duas vezes, a soma deixa de bater com a variacao de caixa.
+    partes = [serie(c) for c in ("fluxo_operacional", "fluxo_investimento", "fluxo_financiamento")]
+    variacao = serie("variacao_caixa")
+    if variacao is not None and all(p is not None for p in partes):
+        soma = partes[0]
+        for parte in partes[1:]:
+            soma = soma.add(parte, fill_value=0)
+        cambio = serie("variacao_cambial_caixa")
+        if cambio is not None:
+            soma = soma.add(cambio, fill_value=0)
+        escala = variacao.abs().replace(0, np.nan)
+        desvio = ((soma - variacao).abs() / escala).max()
+        if np.isfinite(desvio) and desvio > 0.02:
+            avisos.append(
+                f"A DFC nao fecha em ate {desvio:.1%}: operacional, investimento, "
+                "financiamento e variacao cambial nao somam a variacao de caixa. "
+                "Confira se alguma linha foi classificada na secao errada."
+            )
 
     ebit, lucro = serie("ebit"), serie("lucro_liquido")
     if ebit is not None and lucro is not None:

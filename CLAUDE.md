@@ -81,12 +81,26 @@ causa de um typo é pior que nenhuma tabela, porque parece resultado.
 contas derivadas e divergências contábeis como campos do resultado, e a tela
 mostra tudo.
 
-**Os arquivos da CVM têm duas armadilhas que já custaram caro.** `ORDEM_EXERC`
-traz `ÚLTIMO` e `PENÚLTIMO` no mesmo arquivo — o zip de 2024 já contém 2023, e
+**Os arquivos da CVM têm armadilhas que já custaram caro.** `ORDEM_EXERC` traz
+`ÚLTIMO` e `PENÚLTIMO` no mesmo arquivo — o zip de 2024 já contém 2023, e
 empilhar anos sem filtrar duplica o ano do meio. `ESCALA_MOEDA` diz se os
 valores estão em `MIL` ou em `UNIDADE`, e **varia entre empresas do mesmo
-arquivo**; ignorá-lo erra a empresa por mil vezes. Ambas estão travadas por
+arquivo**; ignorá-lo erra a empresa por mil vezes. Todas estão travadas por
 teste em `tests/test_importacao_cvm.py`, contra recorte do arquivo real.
+
+**O código CVM só vale dentro do plano em que foi escrito.** A CVM publica
+planos de contas distintos para indústria, bancos e seguradoras, e o mesmo
+código muda de conta entre eles: `3.06` é "Resultado Financeiro" em 450
+companhias e "IR e CSLL" em 17. O plano é detectado uma vez por companhia pelo
+topo da DRE; fora do industrial o reconhecimento passa a ser só pelo rótulo e a
+tela avisa. Confiar no código sem isso põe número errado na conta certa, calado.
+
+**Capex, juros pagos e dividendos pagos não existem como linha única.** A CVM
+padroniza só os totais de seção da DFC (`6.01`, `6.02`, `6.03`); abaixo é conta
+livre. Cada um chega partido em várias rubricas e é remontado por soma em
+`REGRAS_SOMADAS`, que declara o que **exclui** — "Dividendos recebidos" aparece
+em 80 companhias e não é dividendo pago; venda de imobilizado fala de
+imobilizado e não é capex. A direção é o que separa, não o assunto.
 
 **Textos em português acentuado, números no padrão brasileiro** (milhar com
 ponto, decimal com vírgula). Use os formatadores existentes; não escreva
@@ -136,7 +150,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-406 testes passando. Verificado de verdade: contas financeiras, identidades,
+438 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -146,6 +160,12 @@ real antes de existir código. Os testes rodam contra recortes em bytes desses
 mesmos arquivos (`tests/dados/cvm`), e o fluxo foi percorrido no navegador
 importando a WEG de 2019 a 2025 pela tela nova.
 
+**A importação foi rodada em lote nas 467 companhias com DFP consolidada de
+2024**, e as identidades fecham em 100% delas: ativo = passivo; operacional +
+investimento + financiamento + câmbio = variação de caixa; arrendamento e
+debênture nunca excedem a dívida de que são parte. São 62 contas canônicas por
+companhia, ante 26 antes.
+
 **Não verificado, e é honesto dizer:**
 
 1. A planilha nunca foi aberta no Excel de verdade (validada com o pacote
@@ -153,26 +173,28 @@ importando a WEG de 2019 a 2025 pela tela nova.
 2. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
 3. Da CVM, só a **DFP** (anual) é lida. O ITR trimestral tem estrutura parecida
-   e não foi tocado. Bancos e seguradoras são importados sem erro, mas o plano
-   de contas deles usa os mesmos códigos para outra coisa — 3.01 é receita de
-   intermediação financeira — e o FCFF/WACC não se aplica a eles de qualquer
-   forma.
-4. A importação da CVM foi conferida com quatro companhias de perto e uma no
-   navegador; não foi rodada em lote contra as 663 do cadastro.
+   e não foi tocado.
+4. Bancos e seguradoras (19 das 467) são detectados e avisados, mas o
+   reconhecimento só por rótulo cobre bem menos contas, e o FCFF/WACC não se
+   aplica a eles de qualquer forma.
+5. As contas somadas por regra — capex, juros pagos, dividendos pagos — cobrem
+   88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
+   e cai na lista de não reconhecidas, para mapeamento manual.
 
 ## Lacunas conhecidas
 
 Em ordem de valor:
 
 1. **Capitalização de P&D e de leasing sem tela** — existem e são testados em
-   `casos_especiais.py`, mas só a normalização cíclica chegou à interface.
+   `casos_especiais.py`, mas só a normalização cíclica chegou à interface. Agora
+   que o arrendamento é lido do balanço (`2.01.04.03`, `2.02.01.03`) e o direito
+   de uso também (`1.02.03.02`), a tela tem de onde partir.
 2. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
    oferece a opção, mas não há onde informar a dívida ano a ano.
-3. **Capex da DFC nem sempre é reconhecido.** A conta 6.02.02 não tem código
-   fixo no plano da CVM e cada empresa a rotula do seu jeito: "Aquisição de
-   imobilizado" casa, "Imobilizado" (o rótulo da WEG) não. A linha aparece
-   como não reconhecida para o usuário mapear à mão, mas resolver isso no
-   `esquema.py` pouparia o passo.
+3. **O motor ainda não usa as contas novas.** Arrendamento, juros pagos e a
+   variação de giro da DFC são lidos e exibidos, mas `historico.py` e a ponte de
+   valor continuam derivando giro do balanço e custo da dívida da DRE. Usar o
+   dado da DFC seria mais fiel ao caixa.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte

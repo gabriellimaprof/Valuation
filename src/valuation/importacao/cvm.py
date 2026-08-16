@@ -508,16 +508,149 @@ def _linhas_da_demonstracao(
 # ---------------------------------------------------------------------------
 
 
-def _reconhecer_na_demonstracao(linha: LinhaCVM):
-    """Reconhece a conta, restrita as contas da demonstracao de origem.
+# ---------------------------------------------------------------------------
+# Contas somadas: reconstruidas pela estrutura, nao pelo rotulo
+# ---------------------------------------------------------------------------
 
-    A restricao existe por um caso concreto: a DFC da WEG tem uma linha chamada
-    apenas ``Imobilizado`` (codigo 6.02.02, que e o capex), e o vocabulario tem
-    ``imobilizado`` como sinonimo exato da conta de balanco. Sem amarrar o
-    reconhecimento a demonstracao de origem, um numero de fluxo de caixa entra
-    no lugar de um saldo patrimonial.
+# Tres contas que o analista pede sempre -- capex, juros pagos e dividendos
+# pagos -- nao existem como linha unica na DFC. A CVM padroniza so os totais de
+# secao (6.01, 6.02, 6.03, 100% de cobertura); tudo abaixo e conta livre, com
+# codigo e nome a criterio da companhia. Entao cada uma chega partida em varias
+# rubricas ("Aquisicao de imobilizado" + "Aquisicao de intangivel", "Juros
+# pagos sobre emprestimos" + "Juros pagos sobre arrendamentos"), e a disputa por
+# confianca que resolve o resto do vocabulario aqui escolheria uma e jogaria o
+# resto fora, subestimando o numero.
+#
+# O que separa uma da outra nao e o assunto, e a **direcao**: "Dividendos
+# recebidos" aparece em 80 companhias e nao e dividendo pago; venda de
+# imobilizado fala de imobilizado e nao e capex. Por isso cada regra declara o
+# que exclui, e nao so o que inclui.
+
+
+@dataclass(frozen=True)
+class RegraSomada:
+    """Uma conta canonica montada somando varias linhas da DFC."""
+
+    chave: str
+    inclui: re.Pattern
+    exclui: re.Pattern
+    confirma: re.Pattern
+    prefixo: str = ""
+    secao_dispensa_verbo: str = ""
+    rotulo_curto_basta: bool = False
+
+    def casa(self, linha: LinhaCVM) -> bool:
+        if linha.demonstracao != "dfc":
+            return False
+        codigo = linha.codigo
+        if self.prefixo and not codigo.startswith(self.prefixo):
+            return False
+        # O total da secao nao e a conta: e a soma dela com todo o resto.
+        if codigo in {self.prefixo.rstrip("."), self.secao_dispensa_verbo}:
+            return False
+        texto = linha.descricao
+        if not self.inclui.search(texto) or self.exclui.search(texto):
+            return False
+        if self.confirma.search(texto):
+            return True
+        # Na secao de financiamento, a linha ja e movimento de caixa: "Juros
+        # sobre emprestimos" ali e juro pago, mesmo sem o verbo.
+        if self.secao_dispensa_verbo and codigo.startswith(self.secao_dispensa_verbo):
+            return True
+        # "Imobilizado" e "Intangivel" sozinhos, sem verbo, sao capex na secao de
+        # investimento -- e como a WEG e boa parte das companhias rotulam.
+        return self.rotulo_curto_basta and len(texto.split()) <= 3
+
+
+REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
+    RegraSomada(
+        chave="capex",
+        prefixo="6.02.",
+        inclui=re.compile(r"imobiliz|intang[ií]|ativo fixo|capex|permanente", re.I),
+        exclui=re.compile(
+            r"venda|aliena|baixa|recebiment|resgate|receb\.|desinvestiment", re.I
+        ),
+        confirma=re.compile(
+            r"aquisi|adi[cç][aã]o|adi[cç][oõ]es|compra|dispêndio|desembolso|"
+            r"investiment|^no\s|^em\s",
+            re.I,
+        ),
+        rotulo_curto_basta=True,
+    ),
+    RegraSomada(
+        chave="juros_pagos",
+        inclui=re.compile(r"juros", re.I),
+        # JCP e remuneracao ao acionista, nao custo da divida: vai em dividendos.
+        exclui=re.compile(
+            r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar", re.I
+        ),
+        confirma=re.compile(r"pag", re.I),
+        secao_dispensa_verbo="6.03",
+    ),
+    RegraSomada(
+        chave="dividendos_pagos",
+        inclui=re.compile(r"dividendo|capital pr[óo]prio|\bjcp\b", re.I),
+        exclui=re.compile(r"recebid|a receber|a pagar|receita", re.I),
+        confirma=re.compile(r"pag|distribu", re.I),
+    ),
+)
+
+
+def _e_capex(linha: LinhaCVM) -> bool:
+    """A linha e desembolso de capital sob a secao de investimento da DFC?"""
+    return REGRAS_SOMADAS[0].casa(linha)
+
+
+# ---------------------------------------------------------------------------
+# Qual plano de contas a companhia usa
+# ---------------------------------------------------------------------------
+
+PLANO_INDUSTRIAL = "industrial"
+PLANO_FINANCEIRO = "financeiro"
+
+# A CVM publica planos de contas diferentes para industria, bancos e
+# seguradoras, e o mesmo codigo muda de significado entre eles. Em 2024, 3.06 e
+# "Resultado Financeiro" em 450 companhias e "Imposto de Renda e Contribuicao
+# Social" em 17; 3.08 e "IR e CSLL" nas primeiras e "Resultado Liquido das
+# Operacoes Descontinuadas" nas segundas. Ler o codigo sem saber o plano poe o
+# numero errado na conta certa, calado.
+#
+# A escolha do plano e da companhia, nao da linha: basta identifica-lo uma vez.
+# O topo da DRE e a assinatura mais confiavel para isso.
+_MARCA_FINANCEIRA = re.compile(
+    r"intermedia[cç][aã]o financeira|atividades? seguradora|resseguradora", re.I
+)
+_CODIGOS_ASSINATURA = ("3.01", "3.02", "3.03")
+
+
+def detectar_plano(linhas: list[LinhaCVM]) -> str:
+    """Descobre se a companhia publica no plano industrial ou no financeiro."""
+    for linha in linhas:
+        if linha.demonstracao == "dre" and linha.codigo in _CODIGOS_ASSINATURA:
+            if _MARCA_FINANCEIRA.search(linha.descricao):
+                return PLANO_FINANCEIRO
+    return PLANO_INDUSTRIAL
+
+
+def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
+    """Reconhece a conta canonica de uma linha da CVM.
+
+    **A demonstracao de origem limita as contas possiveis.** A DFC da WEG tem
+    uma linha chamada apenas ``Imobilizado`` (o capex), e o vocabulario tem
+    ``imobilizado`` como sinonimo exato da conta de balanco. Sem a restricao, um
+    numero de fluxo de caixa entra no lugar de um saldo patrimonial.
+
+    **O codigo so vale no plano em que foi escrito.** Os codigos do vocabulario
+    descrevem o plano industrial; num banco eles apontam para outra coisa. Fora
+    do plano industrial, o reconhecimento passa a ser so pelo rotulo -- que
+    acerta menos, mas erra de forma visivel, deixando a linha na lista de nao
+    reconhecidas em vez de preencher a conta com o numero de outra.
     """
-    resultado = reconhecer(linha.descricao, linha.codigo)
+    if plano == PLANO_INDUSTRIAL:
+        resultado = reconhecer(linha.descricao, linha.codigo)
+    else:
+        resultado = reconhecer(linha.descricao, None)
+
     if resultado.chave is None:
         return resultado
     if POR_CHAVE[resultado.chave].demonstracao != linha.demonstracao:
@@ -548,8 +681,37 @@ def montar_demonstracoes(
 
     rotulo_da_aba = {"dre": "DRE", "bp": "Balanço", "dfc": "DFC"}
 
-    for linha in linhas:
-        resultado = _reconhecer_na_demonstracao(linha)
+    plano = detectar_plano(linhas)
+    if plano == PLANO_FINANCEIRO:
+        avisos.append(
+            "Esta companhia publica no plano de contas de instituicao financeira "
+            "ou seguradora, em que os mesmos codigos significam outras contas. "
+            "Reconheci as linhas apenas pelo nome, e o modelo de FCFF/WACC nao se "
+            "aplica a bancos e seguradoras -- confira conta por conta antes de usar."
+        )
+
+    # As contas somadas (ver REGRAS_SOMADAS) sao montadas antes, e as linhas que
+    # as compoem ficam fora da disputa por confianca do resto do vocabulario.
+    somadas: dict[str, dict[int, float]] = {}
+    origens: dict[str, list[str]] = {}
+    consumidas: set[int] = set()
+    for indice, linha in enumerate(linhas):
+        for regra in REGRAS_SOMADAS:
+            if not regra.casa(linha):
+                continue
+            valores = somadas.setdefault(regra.chave, {})
+            valores[linha.ano] = valores.get(linha.ano, 0.0) + linha.valor
+            etiqueta = f"{linha.codigo} - {linha.descricao}"
+            partes = origens.setdefault(regra.chave, [])
+            if etiqueta not in partes:
+                partes.append(etiqueta)
+            consumidas.add(indice)
+            break
+
+    for indice, linha in enumerate(linhas):
+        if indice in consumidas:
+            continue
+        resultado = _reconhecer_na_demonstracao(linha, plano)
         if resultado.chave is None or resultado.confianca < CONFIANCA_MINIMA:
             etiqueta = f"{linha.codigo} - {linha.descricao}"
             nao_reconhecidas.setdefault(
@@ -573,6 +735,10 @@ def montar_demonstracoes(
         confiancas[(chave, linha.ano)] = resultado.confianca
         tabela.setdefault(chave, {})[linha.ano] = linha.valor
         mapeamento[chave] = f"{linha.codigo} - {linha.descricao}"
+
+    for chave, valores in somadas.items():
+        tabela[chave] = valores
+        mapeamento[chave] = " + ".join(origens[chave])
 
     if not tabela:
         raise ErroCVM(

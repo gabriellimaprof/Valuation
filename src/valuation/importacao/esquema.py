@@ -33,6 +33,19 @@ class Conta:
     obrigatoria: bool = False
     sinal_invertido: bool = False
     ajuda: str = ""
+    # Onde a conta aparece quando a demonstracao e exibida inteira. Vazio usa o
+    # primeiro codigo CVM, que ja ordena naturalmente (3.01 antes de 3.04.01
+    # antes de 3.05). So as contas sem codigo -- capex, juros pagos, D&A --
+    # precisam declarar, para nao caírem no fim da tabela longe do seu bloco.
+    ordem: str = ""
+
+    @property
+    def posicao(self) -> tuple[int, ...]:
+        """Chave de ordenacao pela posicao no plano de contas."""
+        referencia = self.ordem or (self.codigos_cvm[0] if self.codigos_cvm else "")
+        if not referencia:
+            return (99,)
+        return tuple(int(p) for p in referencia.split("."))
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +137,7 @@ CONTAS_DRE: tuple[Conta, ...] = (
             "Despesa sem saida de caixa. E o que separa o EBITDA do EBIT, e volta ao "
             "fluxo de caixa depois de calculado o imposto."
         ),
+        ordem="3.04.90",  # dentro das operacionais, logo antes do EBIT
     ),
     Conta(
         chave="ebit",
@@ -217,6 +231,110 @@ CONTAS_DRE: tuple[Conta, ...] = (
         codigos_cvm=("3.11", "3.09"),
         obrigatoria=True,
         ajuda="Resultado que sobra para o acionista. Base do ROE e do P/L.",
+    ),
+    # --- abertura das linhas acima, para leitura da DRE -------------------
+    Conta(
+        chave="despesas_vendas",
+        rotulo="Despesas com vendas",
+        demonstracao="dre",
+        sinonimos=("despesas com vendas", "despesas comerciais", "selling expenses"),
+        codigos_cvm=("3.04.01",),
+        sinal_invertido=True,
+        ajuda="Parte do SG&A que acompanha o volume vendido mais de perto.",
+    ),
+    Conta(
+        chave="despesas_administrativas",
+        rotulo="Despesas gerais e administrativas",
+        demonstracao="dre",
+        sinonimos=(
+            "despesas gerais e administrativas",
+            "despesas administrativas",
+            "general and administrative expenses",
+        ),
+        codigos_cvm=("3.04.02",),
+        sinal_invertido=True,
+        ajuda="A parcela mais fixa da estrutura: nao cai junto com a receita.",
+    ),
+    Conta(
+        chave="equivalencia_patrimonial",
+        rotulo="Resultado de equivalencia patrimonial",
+        demonstracao="dre",
+        sinonimos=(
+            "resultado de equivalencia patrimonial",
+            "equivalencia patrimonial",
+            "equity in earnings of affiliates",
+        ),
+        codigos_cvm=("3.04.06",),
+        ajuda=(
+            "Resultado de coligadas que nao entram no consolidado. Nao gera caixa "
+            "na controladora, entao inflar o EBIT com ele distorce o multiplo."
+        ),
+    ),
+    Conta(
+        chave="receitas_financeiras",
+        rotulo="Receitas financeiras",
+        demonstracao="dre",
+        sinonimos=("receitas financeiras", "receita financeira", "financial income"),
+        codigos_cvm=("3.06.01",),
+        ajuda="Rendimento do caixa aplicado. Separada das despesas, mostra o custo bruto da divida.",
+    ),
+    Conta(
+        chave="imposto_corrente",
+        rotulo="IR e CSLL correntes",
+        demonstracao="dre",
+        sinonimos=("corrente", "imposto corrente", "current income tax"),
+        codigos_cvm=("3.08.01",),
+        sinal_invertido=True,
+        ajuda="A parcela do imposto que vira caixa no ano; o diferido nao.",
+    ),
+    Conta(
+        chave="imposto_diferido",
+        rotulo="IR e CSLL diferidos",
+        demonstracao="dre",
+        sinonimos=("diferido", "imposto diferido", "deferred income tax"),
+        codigos_cvm=("3.08.02",),
+        ajuda="Pode inverter de sinal entre anos; nao e saida de caixa.",
+    ),
+    Conta(
+        chave="operacoes_descontinuadas",
+        rotulo="Resultado de operacoes descontinuadas",
+        demonstracao="dre",
+        sinonimos=(
+            "resultado liquido de operacoes descontinuadas",
+            "operacoes descontinuadas",
+            "discontinued operations",
+        ),
+        codigos_cvm=("3.10",),
+        ajuda=(
+            "Nao se projeta: e resultado de negocio que a empresa esta deixando. "
+            "Precisa sair da base antes de estimar crescimento."
+        ),
+    ),
+    Conta(
+        chave="lucro_controladores",
+        rotulo="Lucro atribuido aos controladores",
+        demonstracao="dre",
+        sinonimos=(
+            "atribuido a socios da empresa controladora",
+            "atribuido aos socios da empresa controladora",
+            "lucro atribuido aos controladores",
+        ),
+        codigos_cvm=("3.11.01",),
+        ajuda=(
+            "E este, e nao o lucro consolidado, que pertence ao acionista da "
+            "holding -- o denominador certo do LPA e do P/L."
+        ),
+    ),
+    Conta(
+        chave="lucro_nao_controladores",
+        rotulo="Lucro atribuido aos nao controladores",
+        demonstracao="dre",
+        sinonimos=(
+            "atribuido a socios nao controladores",
+            "atribuido aos socios nao controladores",
+            "minority interest in earnings",
+        ),
+        codigos_cvm=("3.11.02",),
     ),
 )
 
@@ -401,6 +519,181 @@ CONTAS_BP: tuple[Conta, ...] = (
         obrigatoria=True,
         ajuda="Base do ROE, do P/VPA e do capital investido.",
     ),
+    # --- abertura do ativo -------------------------------------------------
+    Conta(
+        chave="tributos_recuperar",
+        rotulo="Tributos a recuperar",
+        demonstracao="bp",
+        sinonimos=("tributos a recuperar", "impostos a recuperar", "tributos correntes a recuperar"),
+        codigos_cvm=("1.01.06",),
+    ),
+    Conta(
+        chave="despesas_antecipadas",
+        rotulo="Despesas antecipadas",
+        demonstracao="bp",
+        sinonimos=("despesas antecipadas", "prepaid expenses"),
+        codigos_cvm=("1.01.07",),
+    ),
+    Conta(
+        chave="outros_ativos_circulantes",
+        rotulo="Outros ativos circulantes",
+        demonstracao="bp",
+        sinonimos=("outros ativos circulantes",),
+        codigos_cvm=("1.01.08",),
+    ),
+    Conta(
+        chave="ativo_nao_circulante",
+        rotulo="Ativo nao circulante",
+        demonstracao="bp",
+        sinonimos=("ativo nao circulante", "total non current assets"),
+        codigos_cvm=("1.02",),
+    ),
+    Conta(
+        chave="realizavel_longo_prazo",
+        rotulo="Ativo realizavel a longo prazo",
+        demonstracao="bp",
+        sinonimos=("ativo realizavel a longo prazo", "realizavel a longo prazo"),
+        codigos_cvm=("1.02.01",),
+    ),
+    Conta(
+        chave="investimentos",
+        rotulo="Investimentos (participacoes societarias)",
+        demonstracao="bp",
+        sinonimos=("participacoes societarias", "investimentos em coligadas"),
+        codigos_cvm=("1.02.02",),
+        ajuda=(
+            "Coligadas nao consolidadas. Andam junto com a equivalencia "
+            "patrimonial na DRE e ficam fora do capital operacional."
+        ),
+    ),
+    Conta(
+        chave="direito_uso_arrendamento",
+        rotulo="Direito de uso em arrendamento",
+        demonstracao="bp",
+        sinonimos=(
+            "direito de uso em arrendamento",
+            "direito de uso",
+            "right of use asset",
+        ),
+        codigos_cvm=("1.02.03.02",),
+        ajuda=(
+            "O ativo que o IFRS 16 criou. Ja esta dentro do imobilizado; "
+            "aparece separado porque tem o passivo de arrendamento do outro lado."
+        ),
+    ),
+    Conta(
+        chave="goodwill",
+        rotulo="Agio por expectativa de rentabilidade (goodwill)",
+        demonstracao="bp",
+        sinonimos=("goodwill", "agio por expectativa de rentabilidade futura"),
+        codigos_cvm=("1.02.04.02",),
+        ajuda="Ja esta dentro do intangivel. Nao repoe capex e nao gera caixa proprio.",
+    ),
+    # --- abertura do passivo ----------------------------------------------
+    Conta(
+        chave="obrigacoes_sociais_trabalhistas",
+        rotulo="Obrigacoes sociais e trabalhistas",
+        demonstracao="bp",
+        sinonimos=("obrigacoes sociais e trabalhistas", "obrigacoes trabalhistas"),
+        codigos_cvm=("2.01.01",),
+    ),
+    Conta(
+        chave="obrigacoes_fiscais",
+        rotulo="Obrigacoes fiscais",
+        demonstracao="bp",
+        sinonimos=("obrigacoes fiscais", "obrigacoes fiscais federais"),
+        codigos_cvm=("2.01.03",),
+    ),
+    Conta(
+        chave="debentures_curto_prazo",
+        rotulo="Debentures (curto prazo)",
+        demonstracao="bp",
+        sinonimos=("debentures",),
+        codigos_cvm=("2.01.04.02",),
+        ajuda="Ja somada em emprestimos e financiamentos; separada so para leitura.",
+    ),
+    Conta(
+        chave="arrendamento_curto_prazo",
+        rotulo="Arrendamento a pagar (curto prazo)",
+        demonstracao="bp",
+        sinonimos=(
+            "financiamento por arrendamento",
+            "arrendamento a pagar",
+            "passivo de arrendamento",
+            "lease liabilities",
+        ),
+        codigos_cvm=("2.01.04.03",),
+        ajuda=(
+            "Divida de aluguel trazida ao balanco pelo IFRS 16. Ja esta dentro de "
+            "emprestimos e financiamentos: some as duas e voce conta duas vezes."
+        ),
+    ),
+    Conta(
+        chave="provisoes_circulante",
+        rotulo="Provisoes (curto prazo)",
+        demonstracao="bp",
+        sinonimos=("provisoes fiscais previdenciarias trabalhistas e civeis",),
+        codigos_cvm=("2.01.06",),
+    ),
+    Conta(
+        chave="passivo_nao_circulante",
+        rotulo="Passivo nao circulante",
+        demonstracao="bp",
+        sinonimos=("passivo nao circulante", "total non current liabilities"),
+        codigos_cvm=("2.02",),
+    ),
+    Conta(
+        chave="debentures_longo_prazo",
+        rotulo="Debentures (longo prazo)",
+        demonstracao="bp",
+        codigos_cvm=("2.02.01.02",),
+        ajuda="Ja somada em emprestimos e financiamentos de longo prazo.",
+    ),
+    Conta(
+        chave="arrendamento_longo_prazo",
+        rotulo="Arrendamento a pagar (longo prazo)",
+        demonstracao="bp",
+        codigos_cvm=("2.02.01.03",),
+        ajuda=(
+            "A parcela longa do passivo de arrendamento. Ja esta dentro da divida "
+            "de longo prazo; some separado so se tiver tirado de la antes."
+        ),
+    ),
+    Conta(
+        chave="tributos_diferidos_passivo",
+        rotulo="Tributos diferidos (passivo)",
+        demonstracao="bp",
+        sinonimos=("imposto de renda e contribuicao social diferidos",),
+        codigos_cvm=("2.02.03",),
+    ),
+    Conta(
+        chave="provisoes_nao_circulante",
+        rotulo="Provisoes (longo prazo)",
+        demonstracao="bp",
+        codigos_cvm=("2.02.04",),
+        ajuda="Base para as contingencias que entram na ponte de valor.",
+    ),
+    Conta(
+        chave="capital_social",
+        rotulo="Capital social realizado",
+        demonstracao="bp",
+        sinonimos=("capital social realizado", "capital social", "common stock"),
+        codigos_cvm=("2.03.01",),
+    ),
+    Conta(
+        chave="reservas_lucros",
+        rotulo="Reservas de lucros",
+        demonstracao="bp",
+        sinonimos=("reservas de lucros",),
+        codigos_cvm=("2.03.04",),
+    ),
+    Conta(
+        chave="lucros_acumulados",
+        rotulo="Lucros/prejuizos acumulados",
+        demonstracao="bp",
+        sinonimos=("lucros/prejuizos acumulados", "retained earnings"),
+        codigos_cvm=("2.03.05",),
+    ),
 )
 
 
@@ -442,6 +735,7 @@ CONTAS_DFC: tuple[Conta, ...] = (
             "Investimento em ativo fixo. Comparado a depreciacao, diz se a empresa esta "
             "crescendo, apenas repondo ou encolhendo."
         ),
+        ordem="6.02.50",  # dentro da secao de investimento
     ),
     Conta(
         chave="depreciacao_dfc",
@@ -453,6 +747,143 @@ CONTAS_DFC: tuple[Conta, ...] = (
             "depreciation and amortization",
         ),
         ajuda="Muitas empresas so divulgam a D&A na DFC, nao na DRE.",
+        ordem="6.01.50",  # dentro do operacional, junto dos ajustes
+    ),
+    Conta(
+        chave="fluxo_investimento",
+        rotulo="Caixa liquido de investimento",
+        demonstracao="dfc",
+        sinonimos=(
+            "caixa liquido atividades de investimento",
+            "caixa liquido das atividades de investimento",
+            "fluxo de caixa de investimento",
+            "cash flow from investing activities",
+            "net cash used in investing activities",
+        ),
+        codigos_cvm=("6.02",),
+        ajuda=(
+            "Somado ao caixa operacional da o fluxo de caixa livre da empresa. "
+            "Serve de conferencia contra o capex informado linha a linha."
+        ),
+    ),
+    Conta(
+        chave="fluxo_financiamento",
+        rotulo="Caixa liquido de financiamento",
+        demonstracao="dfc",
+        sinonimos=(
+            "caixa liquido atividades de financiamento",
+            "caixa liquido das atividades de financiamento",
+            "fluxo de caixa de financiamento",
+            "cash flow from financing activities",
+            "net cash used in financing activities",
+        ),
+        codigos_cvm=("6.03",),
+        ajuda="Mostra quanto a empresa captou ou devolveu a credores e acionistas.",
+    ),
+    Conta(
+        chave="dividendos_pagos",
+        rotulo="Dividendos e JCP pagos",
+        demonstracao="dfc",
+        sinonimos=(
+            "dividendos pagos",
+            "dividendos e juros sobre capital proprio pagos",
+            "dividendos e jcp pagos",
+            "pgto de dividendos juros s capital proprio",
+            "pagamento de dividendos",
+            "pagamento de dividendos e juros sobre capital proprio",
+            "juros sobre capital proprio pagos",
+            "dividends paid",
+        ),
+        sinal_invertido=True,
+        ajuda=(
+            "Entra na decomposicao do retorno do acionista: e a parcela do TSR "
+            "que chega como caixa, e nao como valorizacao."
+        ),
+        ordem="6.03.50",  # dentro da secao de financiamento
+    ),
+    Conta(
+        chave="caixa_das_operacoes",
+        rotulo="Caixa gerado nas operacoes (antes do capital de giro)",
+        demonstracao="dfc",
+        sinonimos=(
+            "caixa gerado nas operacoes",
+            "caixa gerado pelas operacoes",
+            "lucro liquido ajustado",
+        ),
+        codigos_cvm=("6.01.01",),
+        ajuda=(
+            "O lucro ja ajustado pelo que nao e caixa, antes de girar o capital "
+            "de giro. Separado da variacao, mostra se o caixa veio da operacao "
+            "ou de esticar prazo com fornecedor."
+        ),
+    ),
+    Conta(
+        chave="variacao_capital_giro",
+        rotulo="Variacao nos ativos e passivos (capital de giro)",
+        demonstracao="dfc",
+        sinonimos=(
+            "variacoes nos ativos e passivos",
+            "variacao nos ativos e passivos",
+            "variacoes patrimoniais",
+            "changes in working capital",
+        ),
+        codigos_cvm=("6.01.02",),
+        ajuda=(
+            "Quanto de caixa o capital de giro consumiu (negativo) ou liberou "
+            "(positivo) no ano. E o investimento em giro medido pelo caixa, e "
+            "nao pela diferenca de saldos do balanco."
+        ),
+    ),
+    Conta(
+        chave="juros_pagos",
+        rotulo="Juros pagos",
+        demonstracao="dfc",
+        sinonimos=(
+            "juros pagos",
+            "juros pagos sobre emprestimos",
+            "juros sobre emprestimos e financiamentos pagos",
+            "pagamento de juros",
+            "juros pagos s/ emprestimos e financiamentos",
+            "interest paid",
+        ),
+        sinal_invertido=True,
+        ajuda=(
+            "O juro que virou caixa no ano. Comparado a despesa financeira da "
+            "DRE, revela quanto do custo da divida foi capitalizado em vez de pago."
+        ),
+        ordem="6.01.60",  # junto dos demais desembolsos operacionais
+    ),
+    Conta(
+        chave="variacao_cambial_caixa",
+        rotulo="Variacao cambial sobre caixa",
+        demonstracao="dfc",
+        sinonimos=(
+            "variacao cambial s/ caixa e equivalentes",
+            "variacao cambial sobre caixa e equivalentes",
+            "efeito de variacao cambial sobre o caixa",
+            "effect of exchange rate changes on cash",
+        ),
+        codigos_cvm=("6.04",),
+        ajuda=(
+            "Fecha a DFC de quem tem caixa no exterior. Nao e fluxo: e o caixa "
+            "de fora sendo reconvertido. Sem ela a demonstracao nao bate em "
+            "Vale, Gerdau ou Braskem."
+        ),
+    ),
+    Conta(
+        chave="variacao_caixa",
+        rotulo="Aumento (reducao) de caixa e equivalentes",
+        demonstracao="dfc",
+        sinonimos=(
+            "aumento (reducao) de caixa e equivalentes",
+            "aumento reducao de caixa e equivalentes",
+            "variacao liquida de caixa",
+        ),
+        codigos_cvm=("6.05",),
+        ajuda=(
+            "Fecha a DFC: operacional + investimento + financiamento + cambio. "
+            "Serve de conferencia contra a variacao do caixa no balanco."
+        ),
     ),
 )
 
