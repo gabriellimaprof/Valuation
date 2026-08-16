@@ -91,6 +91,67 @@ def test_conta_sintetica_vem_antes_da_analitica():
     assert posicao < LIMITE_CONFERENCIA, "o capex voltou a ficar fora da tela"
 
 
+def test_cotacao_vira_valor_de_mercado_na_unidade_certa():
+    """Valor de mercado = cotacao x acoes, com as acoes na unidade dos valores.
+
+    Errar isto produz um multiplo plausivel e errado por um fator de mil, que e
+    o pior tipo de erro: nao parece erro.
+    """
+    from app.paginas.multiplos import comparavel_de_peer
+
+    # WEG em R$ milhoes: 4.195,5 milhoes de acoes a R$ 50,00.
+    peer = comparavel_de_peer(
+        {
+            "Empresa": "WEG SA",
+            "Cotação (R$/ação)": 50.0,
+            "Ações": 4195.537378,
+            "Dívida líquida": -3000.0,
+            "Receita": 40804.1,
+            "EBITDA": 8000.0,
+            "EBIT": 7690.5,
+            "Lucro líquido": 6318.8,
+            "Patrimônio líquido": 23125.2,
+        }
+    )
+    assert peer is not None
+    assert peer.valor_mercado == pytest.approx(209_776.87, abs=0.1)  # R$ milhoes
+    assert peer.receita == pytest.approx(40804.1)
+    assert peer.divida_liquida == pytest.approx(-3000.0)
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        {"Empresa": "", "Cotação (R$/ação)": 10.0, "Ações": 100.0},
+        {"Empresa": "X", "Cotação (R$/ação)": None, "Ações": 100.0},
+        {"Empresa": "X", "Cotação (R$/ação)": 10.0, "Ações": 0.0},
+        {"Empresa": "X", "Cotação (R$/ação)": 10.0, "Ações": None},
+    ],
+)
+def test_peer_incompleto_nao_vira_comparavel(linha):
+    """Sem nome, cotacao ou acoes nao da para calcular valor de mercado."""
+    from app.paginas.multiplos import comparavel_de_peer
+
+    assert comparavel_de_peer(linha) is None
+
+
+@pytest.mark.parametrize(
+    "alvo,peer,esperado",
+    [
+        (40_000.0, 38_000.0, False),   # mesmo porte
+        (40_000.0, 3_000.0, True),     # peer 13x menor
+        (3_000.0, 40_000.0, True),     # peer 13x maior
+        (40_000.0, 4_500.0, False),    # 9x, ainda dentro da faixa
+        (40_000.0, float("nan"), False),  # sem dado nao acusa
+        (0.0, 100.0, False),           # receita zero nao divide
+    ],
+)
+def test_faixa_de_porte_do_peer_group(alvo, peer, esperado):
+    from app.paginas.multiplos import fora_de_porte
+
+    assert fora_de_porte(alvo, peer) is esperado
+
+
 def test_atualizar_da_cvm_so_avanca_no_tempo():
     """Atualizar acrescenta exercicios novos, nunca desce buscar decada antiga.
 

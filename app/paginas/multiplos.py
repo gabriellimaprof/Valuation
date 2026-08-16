@@ -107,6 +107,7 @@ def _peers_da_cvm() -> None:
             list(rotulos),
             help=f"Os números vêm da DFP de {ano}, a mesma data-base do histórico.",
         )
+        _aviso_de_porte(escolhidos, rotulos, dfs, ano)
         if not escolhidos:
             st.caption(
                 "Escolha as companhias. O app busca receita, EBITDA, EBIT, lucro, "
@@ -119,6 +120,55 @@ def _peers_da_cvm() -> None:
 
     if st.session_state.get("peers_cvm"):
         _precificar_peers()
+
+
+FAIXA_DE_PORTE = 10.0
+
+
+def fora_de_porte(receita_alvo: float, receita_peer: float) -> bool:
+    """A diferença de porte já invalida a comparação?
+
+    Múltiplo de empresa dez vezes menor não descreve a maior: muda o custo de
+    capital, o acesso a crédito, a liquidez da ação e o prêmio de controle. A
+    faixa é larga de propósito — serve para pegar o disparate, não para impor
+    um universo de comparáveis.
+    """
+    if not (np.isfinite(receita_alvo) and np.isfinite(receita_peer)):
+        return False
+    if receita_alvo <= 0 or receita_peer <= 0:
+        return False
+    razao = max(receita_alvo, receita_peer) / min(receita_alvo, receita_peer)
+    return razao > FAIXA_DE_PORTE
+
+
+def _aviso_de_porte(escolhidos, rotulos, dfs, ano: int) -> None:
+    """Avisa quando um comparável escolhido é de outro porte."""
+    receita_alvo = dfs.valor("receita_liquida", ano)
+    if not escolhidos or not np.isfinite(receita_alvo):
+        return
+
+    destoantes = []
+    for rotulo in escolhidos:
+        companhia = rotulos[rotulo]
+        cache = st.session_state.setdefault("receita_peers", {})
+        chave = (companhia.codigo_cvm, ano)
+        if chave not in cache:
+            try:
+                cache[chave] = importar_cvm(companhia, [ano]).valor(
+                    "receita_liquida", ano
+                )
+            except ErroCVM:
+                cache[chave] = float("nan")
+        if fora_de_porte(receita_alvo, cache[chave]):
+            destoantes.append(companhia.nome)
+
+    if destoantes:
+        st.warning(
+            "Fora da faixa de porte (mais de 10x de diferença de receita): "
+            + ", ".join(destoantes)
+            + ". O múltiplo de uma empresa muito menor não descreve esta: muda "
+            "custo de capital, acesso a crédito e liquidez da ação."
+        )
 
 
 def _buscar_peers(companhias, ano: int, unidade: str) -> None:
@@ -196,27 +246,45 @@ def _precificar_peers() -> None:
     if st.button(f"Adicionar {len(prontos)} comparável(is)", type="primary"):
         novos = list(estado.comparaveis())
         existentes = {c.nome for c in novos}
+        adicionados = 0
         for _, linha in prontos.iterrows():
             if linha["Empresa"] in existentes:
                 continue
-            novos.append(
-                Comparavel(
-                    nome=str(linha["Empresa"]),
-                    # A cotacao e por acao inteira; as acoes ja estao na unidade
-                    # dos valores, entao o produto sai na mesma unidade.
-                    valor_mercado=float(linha["Cotação (R$/ação)"]) * float(linha["Ações"]),
-                    divida_liquida=_num(linha["Dívida líquida"], 0.0),
-                    receita=_num(linha["Receita"]),
-                    ebitda=_num(linha["EBITDA"]),
-                    ebit=_num(linha["EBIT"]),
-                    lucro_liquido=_num(linha["Lucro líquido"]),
-                    patrimonio_liquido=_num(linha["Patrimônio líquido"]),
-                )
-            )
+            comparavel = comparavel_de_peer(dict(linha))
+            if comparavel is None:
+                continue
+            novos.append(comparavel)
+            adicionados += 1
         estado.definir_comparaveis(novos)
         st.session_state.pop("peers_cvm", None)
-        st.success(f"{len(prontos)} comparável(is) adicionado(s).")
+        st.success(f"{adicionados} comparável(is) adicionado(s).")
         st.rerun()
+
+
+def comparavel_de_peer(linha: dict) -> Comparavel | None:
+    """Converte uma linha da tabela de cotação em um comparável.
+
+    Separada da tela por ser onde a conta acontece: o valor de mercado sai de
+    cotação x ações, e as ações já vêm na unidade dos valores, então o produto
+    sai na mesma unidade do resto do modelo. Errar isso produz um múltiplo
+    plausível e errado por um fator de mil.
+    """
+    cotacao = _num(linha.get("Cotação (R$/ação)"))
+    acoes = _num(linha.get("Ações"))
+    nome = str(linha.get("Empresa") or "").strip()
+    if not nome or not np.isfinite(cotacao) or not np.isfinite(acoes) or acoes <= 0:
+        return None
+
+    return Comparavel(
+        nome=nome,
+        valor_mercado=cotacao * acoes,
+        divida_liquida=_num(linha.get("Dívida líquida"), 0.0),
+        receita=_num(linha.get("Receita")),
+        ebitda=_num(linha.get("EBITDA")),
+        ebit=_num(linha.get("EBIT")),
+        lucro_liquido=_num(linha.get("Lucro líquido")),
+        patrimonio_liquido=_num(linha.get("Patrimônio líquido")),
+    )
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
