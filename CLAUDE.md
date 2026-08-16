@@ -200,6 +200,37 @@ companhia, ante 26 antes.
    88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
    e cai na lista de não reconhecidas, para mapeamento manual.
 
+## Estressar macro: como o dono do projeto trabalha, e o que falta
+
+Prática dele, hoje mantida à mão porque o modelo não a representa: **IPCA de
+5%** e **PIB real de 1,5%** como base, e o **g perpétuo ancorado em IPCA ou em
+PIB nominal** — `(1,05 × 1,015) − 1 = 6,58%`.
+
+Duas ausências:
+
+- **`pib_real` não existe em `PremissasMacro`.** Só há `inflacao_brl` e
+  `inflacao_usd`. A premissa de crescimento real não tem onde morar.
+- **`crescimento_perpetuo` é valor solto.** Mudar o IPCA não move o g. Não há
+  âncora (`livre` / `IPCA` / `PIB nominal`) que recalcule, então a disciplina de
+  ancorar g fica fora do modelo — e o diagnóstico não pode acusar g acima do PIB
+  nominal, que é o erro clássico de perpetuidade.
+
+**O efeito de segunda ordem, que é contraintuitivo e precisa ser dito na tela.**
+O IPCA entra em dois lugares: no g, se ancorado nele, e no desconto — o Ke é
+montado em USD e convertido para BRL pelo diferencial de inflação, então subir o
+IPCA sobe o WACC. Estressar inflação é, portanto, **quase neutro em valor**, e
+isso é propriedade correta: em termos reais nada mudou.
+
+Mas não é exatamente neutro, e a direção surpreende. Num Gordon, o spread é
+`WACC − g`; subindo a inflação em Δ, o WACC sobe `(1+WACC)×Δ` e o g sobe
+`(1+g)×Δ`. Como `WACC > g`, o WACC sobe mais em pontos absolutos: **o spread
+abre e o valor cai um pouco**.
+
+Consequência prática: **o que move valor é estressar PIB real e prêmio de risco,
+não IPCA.** Um teste de estresse que só mexe na inflação vai parecer inócuo — e
+estará certo em parecer. A tela precisa dizer isso, ou o usuário conclui que o
+estresse está quebrado.
+
 ## Fontes de mercado já verificadas em campo (não implementadas)
 
 Três APIs públicas foram confirmadas contra o endpoint real, com formato e
