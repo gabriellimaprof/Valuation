@@ -629,11 +629,17 @@ REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
         prefixo="6.02.",
         inclui=re.compile(r"imobiliz|intang[ií]|ativo fixo|capex|permanente", re.I),
         exclui=re.compile(
-            r"venda|aliena|baixa|recebiment|resgate|receb\.|desinvestiment", re.I
+            r"venda|aliena|baixa|recebiment|resgate|receb\.|desinvestiment|"
+            # Aporte em controlada nao e capex: e investimento em participacao,
+            # que sai do capital operacional em vez de repor ativo fixo.
+            r"aumento de capital|futuro aumento",
+            re.I,
         ),
         confirma=re.compile(
             r"aquisi|adi[cç][aã]o|adi[cç][oõ]es|compra|dispêndio|desembolso|"
-            r"investiment|^no\s|^em\s",
+            # "Aplicacoes no ativo imobilizado" e "Acrescimo de imobilizado" sao
+            # como boa parte das companhias rotulam o mesmo desembolso.
+            r"investiment|aplica[cç]|acr[eé]scim|^no\s|^em\s",
             re.I,
         ),
         rotulo_curto_basta=True,
@@ -643,16 +649,21 @@ REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
         inclui=re.compile(r"juros", re.I),
         # JCP e remuneracao ao acionista, nao custo da divida: vai em dividendos.
         exclui=re.compile(
-            r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar", re.I
+            r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar|"
+            r"n[aã]o realizad|provis[aã]o",
+            re.I,
         ),
-        confirma=re.compile(r"pag", re.I),
+        confirma=re.compile(r"pag|liquida[cç]", re.I),
         secao_dispensa_verbo="6.03",
     ),
     RegraSomada(
         chave="dividendos_pagos",
         inclui=re.compile(r"dividendo|capital pr[óo]prio|\bjcp\b", re.I),
-        exclui=re.compile(r"recebid|a receber|a pagar|receita", re.I),
+        exclui=re.compile(r"recebid|a receber|a pagar|receita|declarad", re.I),
         confirma=re.compile(r"pag|distribu", re.I),
+        # Na secao de financiamento, "Dividendos" sem verbo e saida de caixa: o
+        # dividendo recebido entra em investimento, e o exclui ja o barra.
+        secao_dispensa_verbo="6.03",
     ),
 )
 
