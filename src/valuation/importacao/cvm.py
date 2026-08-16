@@ -454,6 +454,55 @@ def _filtrar_empresa(dados: pd.DataFrame, codigo_cvm: int) -> pd.DataFrame:
     return recorte
 
 
+def _cnpj_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None:
+    """CNPJ a partir do codigo CVM, lido das proprias demonstracoes."""
+    for escopo in ESCOPOS:
+        dados = _ler_csv_do_zip(
+            zip_path, _nome_no_zip("DRE", escopo, ano), codigo_cvm
+        )
+        if dados is not None and not dados.empty:
+            return _texto(dados["CNPJ_CIA"].iloc[0])
+    return None
+
+
+def acoes_em_circulacao(zip_path: Path, ano: int, codigo_cvm: int) -> float | None:
+    """Acoes emitidas menos as em tesouraria, do arquivo de composicao de capital.
+
+    A CVM publica a quantidade junto da DFP, o que evita pedir ao usuario um
+    numero que ele teria de procurar em outro lugar -- e que, digitado errado,
+    erra o preco por acao sem errar o valor da empresa, que e o tipo de engano
+    que passa despercebido numa revisao.
+
+    Este arquivo e identificado por CNPJ e nao tem coluna CD_CVM, entao o
+    recorte rapido em bytes -- que depende da posicao de CD_CVM na linha -- nao
+    serve aqui. Ele tem uma linha por companhia, e pequeno o bastante para ler
+    inteiro.
+    """
+    cnpj = _cnpj_da_companhia(zip_path, ano, codigo_cvm)
+    if cnpj is None:
+        return None
+
+    nome = f"dfp_cia_aberta_composicao_capital_{ano}.csv"
+    dados = _ler_csv_do_zip(zip_path, nome)
+    if dados is None or dados.empty:
+        return None
+    dados = dados[dados["CNPJ_CIA"].map(_so_digitos) == _so_digitos(cnpj)]
+    if dados.empty:
+        return None
+
+    versoes = pd.to_numeric(dados["VERSAO"], errors="coerce")
+    if versoes.notna().any():
+        dados = dados[versoes == versoes.max()]
+
+    total = pd.to_numeric(dados["QT_ACAO_TOTAL_CAP_INTEGR"], errors="coerce").max()
+    tesouraria = pd.to_numeric(dados["QT_ACAO_TOTAL_TESOURO"], errors="coerce").max()
+    if not np.isfinite(total) or total <= 0:
+        return None
+    if not np.isfinite(tesouraria):
+        tesouraria = 0.0
+    return float(total - tesouraria)
+
+
 def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None:
     """Consolidado ou individual, decidido uma vez para a companhia inteira.
 
@@ -691,7 +740,12 @@ def montar_demonstracoes(
     confiancas: dict[tuple[str, int], float] = {}
     nao_reconhecidas: dict[str, LinhaNaoReconhecida] = {}
 
-    rotulo_da_aba = {"dre": "DRE", "bp": "Balanço", "dfc": "DFC"}
+    rotulo_da_aba = {
+        "dre": "DRE",
+        "bp": "Balanço",
+        "dfc": "DFC",
+        "capital": "Capital",
+    }
 
     plano = detectar_plano(linhas)
     if plano == PLANO_FINANCEIRO:
@@ -868,14 +922,16 @@ def importar_cvm(
     :func:`escrever_planilha`), que e o que permite corrigir um mapeamento a
     mao depois.
     """
+    registro: Companhia | None = None
     if isinstance(companhia, Companhia):
+        registro = companhia
         codigo_cvm, nome = companhia.codigo_cvm, companhia.nome
     else:
         codigo_cvm = int(companhia)
         nome = str(companhia)
-        for registro in catalogo or []:
-            if registro.codigo_cvm == codigo_cvm:
-                nome = registro.nome
+        for candidato in catalogo or []:
+            if candidato.codigo_cvm == codigo_cvm:
+                registro, nome = candidato, candidato.nome
                 break
 
     anos = sorted({int(a) for a in anos})
@@ -906,8 +962,31 @@ def importar_cvm(
         if not do_ano:
             anos_sem_dados.append(ano)
             continue
+
+        acoes = acoes_em_circulacao(zip_path, ano, codigo_cvm)
+        if acoes:
+            # A quantidade acompanha a escala dos valores para que equity
+            # dividido por acoes de o preco por acao na unidade certa.
+            do_ano.append(
+                LinhaCVM(
+                    # O rotulo casa com o sinonimo da conta canonica; a origem
+                    # (emitidas menos tesouraria) fica documentada em
+                    # ``acoes_em_circulacao``.
+                    codigo="9.01",
+                    descricao="Ações em circulação",
+                    valor=acoes,
+                    ano=max(l.ano for l in do_ano),
+                    demonstracao="capital",
+                    escala="UNIDADE",
+                    escopo=escopo,
+                )
+            )
         linhas.extend(do_ano)
-        escalas.update(linha.escala for linha in do_ano)
+        # A quantidade de acoes nao e valor monetario: deixa-la entrar aqui
+        # dispararia o aviso de escala trocada em toda companhia.
+        escalas.update(
+            linha.escala for linha in do_ano if linha.demonstracao != "capital"
+        )
         escopos.update(linha.escopo for linha in do_ano)
 
     if not linhas:
@@ -943,7 +1022,12 @@ def importar_cvm(
         avisos=avisos,
         # Guardar codigo e anos e o que permite refazer esta mesma busca depois
         # -- quando sair um exercicio novo, ou quando a companhia reapresentar a
-        # DFP. Sem isso, o valuation salvo sabe de onde veio em portugues, mas o
-        # app nao sabe o suficiente para ir buscar de novo.
-        fonte={"tipo": FONTE_CVM, "codigo_cvm": codigo_cvm, "anos": list(anos)},
+        # DFP. O setor viaja junto porque e o que permite montar um peer group
+        # sem pedir ao usuario que classifique a empresa de novo.
+        fonte={
+            "tipo": FONTE_CVM,
+            "codigo_cvm": codigo_cvm,
+            "anos": list(anos),
+            **({"setor": registro.setor} if registro and registro.setor else {}),
+        },
     )

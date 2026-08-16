@@ -7,6 +7,12 @@ import pandas as pd
 import streamlit as st
 
 from valuation import Alvo, Comparavel, avaliar_por_multiplos, estatisticas, tabela_comparaveis
+from valuation.importacao.cvm import (
+    FONTE_CVM,
+    ErroCVM,
+    carregar_cadastro,
+    importar_cvm,
+)
 
 from .. import estado
 from ..componentes import conceito, etapa, formatar, grafico
@@ -28,6 +34,7 @@ def render() -> None:
     etapa("Passo 8", "Múltiplos", "O que o mercado paga por empresas parecidas")
     conceito("multiplos", "Avaliação relativa")
 
+    _peers_da_cvm()
     _editor_peers()
 
     comparaveis = estado.comparaveis()
@@ -48,6 +55,173 @@ def render() -> None:
         _implicito(alvo, comparaveis)
     with abas[2]:
         _comparar(alvo, comparaveis)
+
+
+def _peers_da_cvm() -> None:
+    """Monta o peer group a partir do setor da própria companhia, na CVM.
+
+    A CVM publica tudo que o comparável precisa menos o preço da ação. Como ela
+    publica a quantidade de ações (emitidas menos tesouraria), o que sobra para
+    o usuário é digitar a cotação — e não calcular o valor de mercado, que é
+    onde o erro costuma entrar.
+    """
+    dfs = estado.demonstracoes()
+    fonte = getattr(dfs, "fonte", None) or {} if dfs is not None else {}
+    if fonte.get("tipo") != FONTE_CVM:
+        return
+
+    with st.expander("Montar peer group com dados da CVM", expanded=False):
+        try:
+            catalogo = _catalogo()
+        except ErroCVM as erro:
+            st.error(f"Não consegui obter o cadastro da CVM: {erro}")
+            return
+
+        st.caption(
+            "O setor vem do **cadastro** da CVM, que é uma classificação de "
+            "registro e não um agrupamento econômico: uma fabricante global pode "
+            "aparecer como “Emp. Adm. Part.”, ao lado de companhias sem nenhuma "
+            "semelhança de negócio ou porte. Troque o setor à vontade e confira "
+            "cada nome — peer group ruim contamina o múltiplo mais do que a "
+            "ausência de peer group."
+        )
+
+        setores = sorted({c.setor for c in catalogo if c.setor})
+        padrao = fonte.get("setor")
+        indice = setores.index(padrao) if padrao in setores else 0
+        setor = st.selectbox("Setor", setores, index=indice)
+
+        ano = int(dfs.anos[-1])
+        candidatos = [
+            c
+            for c in catalogo
+            if c.setor == setor and c.codigo_cvm != fonte.get("codigo_cvm")
+        ]
+        if not candidatos:
+            st.info("Nenhuma outra companhia ativa neste setor.")
+            return
+
+        rotulos = {f"{c.nome} ({c.codigo_cvm})": c for c in candidatos}
+        escolhidos = st.multiselect(
+            f"Comparáveis ({len(candidatos)} no setor)",
+            list(rotulos),
+            help=f"Os números vêm da DFP de {ano}, a mesma data-base do histórico.",
+        )
+        if not escolhidos:
+            st.caption(
+                "Escolha as companhias. O app busca receita, EBITDA, EBIT, lucro, "
+                "patrimônio, dívida líquida e quantidade de ações; falta só a cotação."
+            )
+            return
+
+        if st.button(f"Buscar dados de {ano}", type="primary"):
+            _buscar_peers([rotulos[e] for e in escolhidos], ano, dfs.unidade)
+
+    if st.session_state.get("peers_cvm"):
+        _precificar_peers()
+
+
+def _buscar_peers(companhias, ano: int, unidade: str) -> None:
+    divisor = {"R$ milhões": 1e6, "R$ mil": 1e3, "R$ bilhões": 1e9}.get(unidade, 1.0)
+    achados, falhas = [], []
+
+    barra = st.progress(0.0, "Buscando…")
+    for indice, companhia in enumerate(companhias, start=1):
+        barra.progress(indice / len(companhias), f"{companhia.nome}…")
+        try:
+            d = importar_cvm(companhia, [ano])
+        except ErroCVM:
+            falhas.append(companhia.nome)
+            continue
+        achados.append(
+            {
+                "Empresa": companhia.nome,
+                "Cotação (R$/ação)": None,
+                "Ações": _serie(d, "acoes_em_circulacao", ano, divisor),
+                "Dívida líquida": _serie_metodo(d.divida_liquida(), ano, divisor),
+                "Receita": _serie(d, "receita_liquida", ano, divisor),
+                "EBITDA": _serie_metodo(d.ebitda(), ano, divisor),
+                "EBIT": _serie(d, "ebit", ano, divisor),
+                "Lucro líquido": _serie(d, "lucro_liquido", ano, divisor),
+                "Patrimônio líquido": _serie(d, "patrimonio_liquido", ano, divisor),
+            }
+        )
+    barra.empty()
+
+    st.session_state["peers_cvm"] = achados
+    if falhas:
+        st.warning("Sem DFP em " + str(ano) + " para: " + ", ".join(falhas))
+    st.rerun()
+
+
+def _serie(d, chave: str, ano: int, divisor: float) -> float:
+    valor = d.valor(chave, ano)
+    return float(valor) / divisor if np.isfinite(valor) else float("nan")
+
+
+def _serie_metodo(serie, ano: int, divisor: float) -> float:
+    valor = serie.get(ano, float("nan"))
+    return float(valor) / divisor if np.isfinite(valor) else float("nan")
+
+
+def _precificar_peers() -> None:
+    st.markdown("**Informe a cotação de cada comparável**")
+    st.caption(
+        "O valor de mercado sai de cotação × ações em circulação. Use o preço da "
+        "mesma data-base do balanço, ou aceite que o múltiplo mistura duas datas."
+    )
+
+    tabela = pd.DataFrame(st.session_state["peers_cvm"])
+    editada = st.data_editor(
+        tabela,
+        width="stretch",
+        key="editor_peers_cvm",
+        disabled=[c for c in tabela.columns if c not in ("Cotação (R$/ação)",)],
+        column_config={
+            "Cotação (R$/ação)": st.column_config.NumberColumn(
+                "Cotação (R$/ação)", format="%.2f", help="Preço por ação, em reais."
+            ),
+            # As acoes estao na unidade dos valores para que cotacao x acoes saia
+            # na mesma unidade; sem casas decimais o numero apareceria como zero.
+            "Ações": st.column_config.NumberColumn(
+                "Ações", format="%.4f", help="Na mesma unidade dos valores."
+            ),
+        },
+    )
+
+    prontos = editada[editada["Cotação (R$/ação)"].notna()]
+    if prontos.empty:
+        return
+
+    if st.button(f"Adicionar {len(prontos)} comparável(is)", type="primary"):
+        novos = list(estado.comparaveis())
+        existentes = {c.nome for c in novos}
+        for _, linha in prontos.iterrows():
+            if linha["Empresa"] in existentes:
+                continue
+            novos.append(
+                Comparavel(
+                    nome=str(linha["Empresa"]),
+                    # A cotacao e por acao inteira; as acoes ja estao na unidade
+                    # dos valores, entao o produto sai na mesma unidade.
+                    valor_mercado=float(linha["Cotação (R$/ação)"]) * float(linha["Ações"]),
+                    divida_liquida=_num(linha["Dívida líquida"], 0.0),
+                    receita=_num(linha["Receita"]),
+                    ebitda=_num(linha["EBITDA"]),
+                    ebit=_num(linha["EBIT"]),
+                    lucro_liquido=_num(linha["Lucro líquido"]),
+                    patrimonio_liquido=_num(linha["Patrimônio líquido"]),
+                )
+            )
+        estado.definir_comparaveis(novos)
+        st.session_state.pop("peers_cvm", None)
+        st.success(f"{len(prontos)} comparável(is) adicionado(s).")
+        st.rerun()
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def _catalogo():
+    return carregar_cadastro()
 
 
 def _editor_peers() -> None:

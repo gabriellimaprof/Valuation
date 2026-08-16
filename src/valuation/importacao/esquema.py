@@ -888,7 +888,32 @@ CONTAS_DFC: tuple[Conta, ...] = (
 )
 
 
-CONTAS: tuple[Conta, ...] = CONTAS_DRE + CONTAS_BP + CONTAS_DFC
+# ---------------------------------------------------------------------------
+# Capital social
+# ---------------------------------------------------------------------------
+
+CONTAS_CAPITAL: tuple[Conta, ...] = (
+    Conta(
+        chave="acoes_em_circulacao",
+        rotulo="Acoes em circulacao",
+        demonstracao="capital",
+        sinonimos=(
+            "acoes em circulacao",
+            "quantidade de acoes",
+            "shares outstanding",
+        ),
+        ordem="9.01",
+        ajuda=(
+            "Total emitido menos tesouraria. Fica fora das tres demonstracoes "
+            "porque nao e valor monetario -- mas acompanha a escala dos valores, "
+            "para que equity dividido por acoes de o preco por acao na mesma "
+            "unidade."
+        ),
+    ),
+)
+
+
+CONTAS: tuple[Conta, ...] = CONTAS_DRE + CONTAS_BP + CONTAS_DFC + CONTAS_CAPITAL
 POR_CHAVE: dict[str, Conta] = {c.chave: c for c in CONTAS}
 CHAVES_OBRIGATORIAS: tuple[str, ...] = tuple(c.chave for c in CONTAS if c.obrigatoria)
 

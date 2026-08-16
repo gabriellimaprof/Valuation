@@ -822,6 +822,40 @@ def test_kd_implausivel_nao_e_propagado(weg):
     assert any("custo da divida" in alerta.lower() for alerta in sugestao.alertas)
 
 
+def test_acoes_em_circulacao_vem_do_arquivo_de_capital(weg):
+    """Emitidas menos tesouraria: 4.197.317.998 - 1.780.620 na WEG de 2024."""
+    assert weg.valor("acoes_em_circulacao", 2024) == pytest.approx(4_195_537_378.0)
+
+
+def test_acoes_acompanham_a_escala_dos_valores(weg):
+    """Equity dividido por acoes tem que dar o mesmo preco em qualquer unidade."""
+    em_reais = weg.valor("patrimonio_liquido", 2024) / weg.valor(
+        "acoes_em_circulacao", 2024
+    )
+    milhoes = weg.escalar(1_000_000, "R$ milhões")
+    em_milhoes = milhoes.valor("patrimonio_liquido", 2024) / milhoes.valor(
+        "acoes_em_circulacao", 2024
+    )
+    assert em_reais == pytest.approx(em_milhoes)
+    assert em_reais == pytest.approx(5.51, abs=0.01)
+
+
+def test_acoes_nao_disparam_aviso_de_escala(weg):
+    """A quantidade nao e valor monetario e nao entra na checagem de escala."""
+    assert not any("escala mudou" in aviso for aviso in weg.avisos)
+
+
+def test_acoes_preenchem_a_ponte_sem_o_usuario_digitar(weg):
+    sugestao = sugerir_premissas(analisar(weg), horizonte=5)
+    assert sugestao.ponte.acoes_em_circulacao == pytest.approx(4_195_537_378.0)
+    assert "Acoes em circulacao" in sugestao.justificativas["ponte"]
+
+
+def test_setor_viaja_na_fonte_para_montar_o_peer_group(catalogo):
+    dfs = importar_cvm(WEG, [2024], cache=DADOS, catalogo=catalogo)
+    assert dfs.fonte["setor"]
+
+
 def test_indicadores_de_caixa_aparecem_quando_ha_dfc(weg):
     analise = analisar(weg)
     for indicador in (

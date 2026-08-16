@@ -426,6 +426,11 @@ def sugerir_premissas(
         ano_base=d.ano_base or 0,
     )
 
+    # A quantidade de acoes vem da propria origem quando ela a informa (a CVM
+    # publica emitidas e em tesouraria junto da DFP). Sem ela nao ha valor por
+    # acao, e o numero que o usuario digitaria a mao erra o preco sem errar o
+    # valor da empresa -- um engano que atravessa revisao sem ser notado.
+    acoes = d.valor("acoes_em_circulacao")
     ponte = PonteValor(
         divida_bruta=float(np.nan_to_num(d.divida_bruta().dropna().iloc[-1]))
         if d.divida_bruta().notna().any()
@@ -433,10 +438,16 @@ def sugerir_premissas(
         caixa=float(np.nan_to_num(d.valor("caixa_equivalentes"))),
         aplicacoes_financeiras=float(np.nan_to_num(d.valor("aplicacoes_financeiras"))),
         minoritarios=float(np.nan_to_num(d.valor("minoritarios"))),
+        acoes_em_circulacao=float(acoes) if np.isfinite(acoes) and acoes > 0 else None,
     )
     justificativas["ponte"] = (
         f"Saldos do balanco de {d.ano_base}: divida bruta, caixa, aplicacoes e "
         "minoritarios."
+        + (
+            " Acoes em circulacao (emitidas menos tesouraria) vieram da origem."
+            if ponte.acoes_em_circulacao
+            else ""
+        )
     )
 
     divida_pl = analise.ultimo("Divida bruta / Patrimonio liquido")
