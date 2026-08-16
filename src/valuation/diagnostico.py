@@ -141,7 +141,9 @@ def diagnosticar(
     para quem entregou 18% nos ultimos cinco anos.
 
     ``crescimento_nominal_economia`` e o teto natural do crescimento perpetuo.
-    Sem ele, e estimado como inflacao de longo prazo mais 2% de PIB real.
+    Sem ele, vem da propria macro da empresa: inflacao de longo prazo composta
+    com o PIB real. Antes eram 2% de PIB real fixos no codigo, o que fazia o
+    teto ignorar quem tinha estressado a macro.
 
     ``retorno`` e uma ``DecomposicaoTSR`` ja calculada. Com ela, a checklist
     passa a cobrir tambem a tese de retorno -- de onde vem o ganho esperado e se
@@ -151,7 +153,7 @@ def diagnosticar(
     wacc = resultado.dcf.taxa_desconto
     g = empresa.perpetuidade.crescimento_perpetuo
     if crescimento_nominal_economia is None:
-        crescimento_nominal_economia = empresa.macro.inflacao_brl + 0.02
+        crescimento_nominal_economia = empresa.macro.pib_nominal
 
     achados: list[Achado] = []
     achados += _checar_perpetuidade(resultado, g, wacc, crescimento_nominal_economia)

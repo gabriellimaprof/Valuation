@@ -16,7 +16,7 @@ import pandas as pd
 
 from .custo_capital import ResultadoCustoCapital, calcular_custo_capital
 from .dcf import ResultadoDCF, avaliar_dcf, ponte_ev_equity
-from .premissas import Empresa
+from .premissas import Empresa, PremissasPerpetuidade
 from .projecao import Projecao, projetar
 
 
@@ -169,6 +169,15 @@ def substituir_varios(objeto: Any, alteracoes: dict[str, Any]) -> Any:
         if isinstance(atual, list) and not isinstance(valor, list):
             valor = [valor] * len(atual)
         mudancas[campo] = valor
+
+    # Mexer no crescimento perpetuo na mao solta a ancora. Sem esta regra, o
+    # valor informado seria reescrito pela ancora ao remontar a Empresa, e uma
+    # tabela de sensibilidade sobre o g sairia inteira igual -- sem erro, sem
+    # aviso, sem nada na tela que explicasse por que. Quem passa 'ancora'
+    # explicitamente junto continua mandando.
+    if isinstance(objeto, PremissasPerpetuidade) and "crescimento_perpetuo" in folhas:
+        mudancas.setdefault("ancora", "livre")
+
     for campo, sub in ramos.items():
         atual = getattr(objeto, campo)
         if atual is None:

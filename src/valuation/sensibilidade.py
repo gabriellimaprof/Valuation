@@ -106,7 +106,10 @@ def _rotular(caminho: str, valor: float) -> str:
     """Formata como percentual os caminhos que sao taxas, e como numero os demais."""
     e_taxa = caminho == CAMINHO_WACC or any(
         chave in caminho
-        for chave in ("crescimento", "margem", "taxa", "inflacao", "roic", "pct", "rf_")
+        for chave in (
+            "crescimento", "margem", "taxa", "inflacao", "roic", "pct", "rf_",
+            "pib", "risco_pais", "spread", "premio", "aliquota",
+        )
     )
     if e_taxa:
         return f"{valor * 100:.2f}%".replace(".", ",")

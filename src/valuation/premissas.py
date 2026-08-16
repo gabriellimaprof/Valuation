@@ -12,10 +12,13 @@ Convencao de unidades adotada em todo o projeto:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 # Aliquota combinada IRPJ (15% + adicional de 10%) + CSLL (9%) do lucro real.
 ALIQUOTA_IR_BRASIL = 0.34
+
+# Como o crescimento perpetuo e determinado. Ver PremissasPerpetuidade.ancora.
+ANCORAS_PERPETUIDADE = ("livre", "ipca", "pib_nominal")
 
 
 @dataclass(frozen=True)
@@ -25,20 +28,37 @@ class PremissasMacro:
     ``inflacao_brl`` e ``inflacao_usd`` sao as inflacoes de longo prazo usadas
     para converter um custo de capital estimado em USD nominal para BRL
     nominal (paridade de poder de compra).
+
+    ``pib_real`` e o crescimento real da economia no longo prazo. **Ele nao
+    entra no custo de capital**: serve para compor o crescimento nominal da
+    economia, que e o teto natural do crescimento perpetuo e uma das ancoras
+    possiveis para ele.
     """
 
     inflacao_brl: float = 0.04
     inflacao_usd: float = 0.023
     aliquota_ir: float = ALIQUOTA_IR_BRASIL
+    pib_real: float = 0.015
 
     def __post_init__(self) -> None:
-        for nome in ("inflacao_brl", "inflacao_usd", "aliquota_ir"):
+        for nome in ("inflacao_brl", "inflacao_usd", "aliquota_ir", "pib_real"):
             valor = getattr(self, nome)
             if not -1 < valor < 1:
                 raise ValueError(
                     f"{nome}={valor!r} fora do intervalo esperado. "
                     "Use decimais (0.34 para 34%), nao percentuais."
                 )
+
+    @property
+    def pib_nominal(self) -> float:
+        """Crescimento nominal da economia, com os dois termos compostos.
+
+        Somar inflacao e PIB real (``0.05 + 0.015``) subestima: quem cresce 1,5%
+        real cresce sobre precos ja reajustados. A diferenca e pequena, mas esta
+        no teto de uma perpetuidade -- o lugar do modelo onde um erro pequeno
+        nao fica pequeno.
+        """
+        return (1 + self.inflacao_brl) * (1 + self.pib_real) - 1
 
 
 @dataclass(frozen=True)
@@ -135,12 +155,24 @@ class PremissasPerpetuidade:
     fluxo perpetuo passa a ser ``NOPAT_n * (1 + g) * (1 - g / ROIC)``, que e a
     unica forma consistente de crescer para sempre. Sem ele, o fluxo do ultimo
     ano projetado e simplesmente crescido a ``g``.
+
+    ``ancora`` diz **de onde vem** o ``g``:
+
+    * ``"livre"``: e um numero informado, e ninguem o move sozinho.
+    * ``"ipca"``: ``g`` = inflacao de longo prazo. Diz que a empresa cresce com
+      os precos e nao ganha nem perde participacao na economia real.
+    * ``"pib_nominal"``: ``g`` = crescimento nominal da economia. E o teto
+      logico -- acima dele a empresa acabaria maior que o pais.
+
+    Ancorado, ``crescimento_perpetuo`` deixa de ser entrada e passa a ser
+    derivado: quem resolve e ``Empresa``, que e quem tem a macro na mao.
     """
 
     metodo: str = "gordon"
     crescimento_perpetuo: float = 0.04
     roic_perpetuidade: float | None = None
     multiplo_saida: float | None = None
+    ancora: str = "livre"
 
     def __post_init__(self) -> None:
         if self.metodo not in ("gordon", "multiplo"):
@@ -149,6 +181,19 @@ class PremissasPerpetuidade:
             raise ValueError("metodo 'multiplo' exige multiplo_saida.")
         if self.roic_perpetuidade is not None and self.roic_perpetuidade <= 0:
             raise ValueError("roic_perpetuidade deve ser positivo.")
+        if self.ancora not in ANCORAS_PERPETUIDADE:
+            raise ValueError(
+                f"ancora de perpetuidade desconhecida: {self.ancora!r}. "
+                f"Use uma de {list(ANCORAS_PERPETUIDADE)}."
+            )
+
+    def crescimento_ancorado(self, macro: PremissasMacro) -> float | None:
+        """O ``g`` que a ancora impoe, ou ``None`` quando o ``g`` e livre."""
+        if self.ancora == "ipca":
+            return macro.inflacao_brl
+        if self.ancora == "pib_nominal":
+            return macro.pib_nominal
+        return None
 
 
 @dataclass(frozen=True)
@@ -177,7 +222,18 @@ class PonteValor:
 
 @dataclass(frozen=True)
 class Empresa:
-    """Agrupa tudo que descreve uma avaliacao de uma empresa."""
+    """Agrupa tudo que descreve uma avaliacao de uma empresa.
+
+    E aqui que a ancora da perpetuidade se resolve, porque e aqui que a macro e
+    a perpetuidade se encontram. Se ``perpetuidade.ancora`` nao for ``"livre"``,
+    ``crescimento_perpetuo`` e reescrito a partir da macro na construcao.
+
+    A alternativa seria calcular o ``g`` na hora do desconto e deixar o campo
+    guardado com um valor velho. Nao vale: o campo aparece no resumo, no
+    diagnostico, na exportacao e na tela. Um so lugar que lesse o valor guardado
+    em vez do efetivo ja seria um numero errado na frente do usuario, e a tela e
+    onde ele confere.
+    """
 
     nome: str
     macro: PremissasMacro = field(default_factory=PremissasMacro)
@@ -189,3 +245,12 @@ class Empresa:
     data_base: str = ""
     moeda: str = "BRL"
     unidade: str = "R$ milhoes"
+
+    def __post_init__(self) -> None:
+        ancorado = self.perpetuidade.crescimento_ancorado(self.macro)
+        if ancorado is not None and ancorado != self.perpetuidade.crescimento_perpetuo:
+            object.__setattr__(
+                self,
+                "perpetuidade",
+                replace(self.perpetuidade, crescimento_perpetuo=ancorado),
+            )

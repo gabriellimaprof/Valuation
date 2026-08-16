@@ -124,6 +124,14 @@ def _montagem(empresa, premissas) -> None:
         format="%.2f",
     )
 
+    if empresa.perpetuidade.ancora != "livre":
+        rotulo = "IPCA" if empresa.perpetuidade.ancora == "ipca" else "PIB nominal"
+        st.caption(
+            f"O crescimento perpétuo está ancorado em **{rotulo}** — a inflação local "
+            "daqui move o **g** junto com o WACC. É a mesma premissa entrando dos dois "
+            "lados do desconto."
+        )
+
     st.subheader("Estrutura de capital e dívida")
     colunas = st.columns(4)
     divida_pl = colunas[0].number_input(

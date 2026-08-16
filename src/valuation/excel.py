@@ -238,6 +238,12 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     aba.secao("Macroeconomicas", largura=n + 3)
     refs["inflacao_brl"] = aba.entrada("Inflacao BRL de longo prazo", empresa.macro.inflacao_brl, PCT)
     refs["inflacao_usd"] = aba.entrada("Inflacao USD de longo prazo", empresa.macro.inflacao_usd, PCT)
+    refs["pib_real"] = aba.entrada("Crescimento real do PIB de longo prazo", empresa.macro.pib_real, PCT)
+    refs["pib_nominal"] = aba.formula(
+        "Crescimento nominal da economia",
+        f"=(1+{_celula(refs['inflacao_brl'])})*(1+{_celula(refs['pib_real'])})-1",
+        PCT,
+    )
     refs["aliquota_ir"] = aba.entrada("Aliquota de IR/CSLL", empresa.macro.aliquota_ir, PCT)
     aba.pular()
 
@@ -269,7 +275,21 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     perp = empresa.perpetuidade
     aba.secao("Perpetuidade", largura=n + 3)
     refs["metodo_perp"] = aba.entrada("Metodo", perp.metodo, "General")
-    refs["g_perpetuo"] = aba.entrada("Crescimento perpetuo", perp.crescimento_perpetuo, PCT)
+    if perp.ancora == "livre":
+        refs["g_perpetuo"] = aba.entrada("Crescimento perpetuo", perp.crescimento_perpetuo, PCT)
+    else:
+        # A ancora viaja para a planilha como formula: quem mexer no IPCA da
+        # celula azul ve o g acompanhar, como acompanha no app. Exportar o
+        # numero fixo transformaria uma premissa derivada em premissa solta.
+        origem = (
+            _celula(refs["inflacao_brl"])
+            if perp.ancora == "ipca"
+            else _celula(refs["pib_nominal"])
+        )
+        rotulo = "IPCA" if perp.ancora == "ipca" else "PIB nominal"
+        refs["g_perpetuo"] = aba.formula(
+            f"Crescimento perpetuo (ancorado em {rotulo})", f"={origem}", PCT
+        )
     refs["roic_perp"] = aba.entrada(
         "ROIC na perpetuidade (vazio = sem normalizacao)",
         perp.roic_perpetuidade if perp.roic_perpetuidade is not None else "",

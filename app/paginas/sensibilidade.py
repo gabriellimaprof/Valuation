@@ -19,6 +19,9 @@ EIXOS = {
     "Crescimento da receita": ("operacionais.crescimento_receita", True),
     "Capex / receita": ("operacionais.capex_pct_receita", True),
     "ROIC de perpetuidade": ("perpetuidade.roic_perpetuidade", True),
+    "IPCA de longo prazo": ("macro.inflacao_brl", True),
+    "PIB real de longo prazo": ("macro.pib_real", True),
+    "Prêmio de risco-país": ("custo_capital.risco_pais", True),
 }
 
 METRICAS = {
@@ -75,6 +78,10 @@ def _sensibilidade(resultado) -> None:
 
     caminho_l, _ = EIXOS[eixo_linha]
     caminho_c, _ = EIXOS[eixo_coluna]
+    nota = _nota_dos_eixos(empresa, (caminho_l, caminho_c))
+    if nota:
+        st.info(nota)
+
     centro_l = _centro(resultado, empresa, caminho_l)
     centro_c = _centro(resultado, empresa, caminho_c)
 
@@ -144,6 +151,55 @@ def _sensibilidade(resultado) -> None:
             "crescimento perpétuo acima da taxa de desconto, que tornaria o valor "
             "terminal infinito."
         )
+
+
+def _nota_dos_eixos(empresa, caminhos: tuple[str, str]) -> str:
+    """Avisa quando um eixo não faz o que o nome dele sugere.
+
+    Três casos existem e todos produziriam uma tabela que engana em silêncio:
+    mover o g ancorado, mover o IPCA (que entra no g *e* no desconto) e mover o
+    PIB real sem âncora — este último não muda o valuation em nada.
+    """
+    ancora = empresa.perpetuidade.ancora
+    nome_da_ancora = "IPCA" if ancora == "ipca" else "PIB nominal"
+
+    if "perpetuidade.crescimento_perpetuo" in caminhos and ancora != "livre":
+        return (
+            f"O crescimento perpétuo está ancorado em **{nome_da_ancora}**. Movê-lo "
+            "aqui solta a âncora dentro da tabela: cada célula usa o g da própria "
+            "linha, não o derivado da macro."
+        )
+
+    if "macro.pib_real" in caminhos and ancora != "pib_nominal":
+        return (
+            "O PIB real **não altera o valuation** enquanto o crescimento perpétuo "
+            "não estiver ancorado em PIB nominal — ele só desloca o teto usado pelo "
+            "diagnóstico. A tabela sairia inteira igual nesse eixo."
+        )
+
+    if "macro.inflacao_brl" in caminhos:
+        if ancora == "livre":
+            return (
+                "Com o g livre, o IPCA só entra no desconto: o Ke é montado em USD e "
+                "convertido para BRL pelo diferencial de inflação, então inflação "
+                "maior é WACC maior e valor menor. Ancore o g em Premissas para ver "
+                "o efeito dos dois lados."
+            )
+        if empresa.perpetuidade.roic_perpetuidade is not None:
+            return (
+                f"O IPCA entra no desconto e no crescimento perpétuo, ancorado em "
+                f"**{nome_da_ancora}** — mas os dois **não se cancelam**. Com o "
+                "reinvestimento normalizado, um g nominal maior exige reinvestir "
+                "g/ROIC, e o ROIC fica parado: sobra menos fluxo perpétuo. O valor "
+                "cai de todo jeito."
+            )
+        return (
+            f"O IPCA entra no desconto e no crescimento perpétuo, ancorado em "
+            f"**{nome_da_ancora}**. Sem normalização do reinvestimento, os dois quase "
+            "se cancelam — esta linha sai bem mais achatada do que se espera."
+        )
+
+    return ""
 
 
 def _centro(resultado, empresa, caminho: str) -> float | None:
@@ -218,6 +274,129 @@ def _cenarios(resultado) -> None:
         "O cenário **Base** reproduz exatamente o número da tela de Valor — as três "
         "colunas rodam sob as mesmas convenções de desconto do caso principal."
     )
+
+    st.divider()
+    _cenarios_macro(empresa)
+
+
+def _cenarios_macro(empresa) -> None:
+    st.markdown("#### Estresse macro")
+    st.markdown(
+        "As premissas de longo prazo do país, movidas uma de cada vez. É o teste que "
+        "separa o que o modelo diz sobre a **empresa** do que ele diz sobre o "
+        "**Brasil** — e a resposta costuma surpreender quem espera que inflação seja "
+        "o que mais move valor."
+    )
+
+    macro = empresa.macro
+    colunas = st.columns(3)
+    choque_ipca = colunas[0].number_input(
+        "Choque de IPCA (p.p.)", value=2.0, step=0.5, key="macro_ipca"
+    )
+    pib_fraco = colunas[1].number_input(
+        "PIB real no cenário fraco (%)",
+        value=max(0.0, macro.pib_real * 100 - 1.0),
+        step=0.25,
+        key="macro_pib",
+    )
+    choque_risco = colunas[2].number_input(
+        "Choque de risco-país (p.p.)", value=2.0, step=0.5, key="macro_risco"
+    )
+
+    nome_ipca = f"IPCA +{choque_ipca:.1f} p.p.".replace(".", ",", 1)
+    nome_pib = f"PIB real {pib_fraco:.2f}%".replace(".", ",")
+    nome_risco = f"Risco-país +{choque_risco:.1f} p.p.".replace(".", ",", 1)
+    definicoes = {
+        "Base": {},
+        nome_ipca: {"macro.inflacao_brl": macro.inflacao_brl + choque_ipca / 100},
+        nome_pib: {"macro.pib_real": pib_fraco / 100},
+        nome_risco: {
+            "custo_capital.risco_pais": empresa.custo_capital.risco_pais + choque_risco / 100
+        },
+    }
+
+    try:
+        tabela = cenarios(empresa, definicoes, **estado.convencoes())
+    except ValueError as erro:
+        st.error(str(erro))
+        return
+
+    st.session_state["tabela_cenarios_macro"] = tabela
+    st.dataframe(tabela.style.format("{:,.1f}", na_rep="—"), width="stretch")
+
+    if "equity_value" not in tabela.index:
+        return
+
+    base = float(tabela.loc["equity_value", "Base"])
+    if not np.isfinite(base) or base == 0:
+        return
+
+    variacoes = {}
+    colunas = st.columns(3)
+    for coluna, nome in zip(colunas, (nome_ipca, nome_pib, nome_risco)):
+        valor = float(tabela.loc["equity_value", nome])
+        variacao = (valor - base) / base if np.isfinite(valor) else float("nan")
+        variacoes[nome] = variacao
+        coluna.metric(
+            nome,
+            formatar(valor, "moeda", empresa.unidade),
+            delta=formatar(variacao, "pct") if np.isfinite(variacao) else None,
+        )
+
+    st.caption(_leitura_do_estresse(empresa, variacoes, nome_ipca, nome_pib, nome_risco))
+
+
+def _leitura_do_estresse(empresa, variacoes, nome_ipca, nome_pib, nome_risco) -> str:
+    """Lê o resultado medido, em vez de afirmar a teoria por cima dele.
+
+    A tentação aqui é escrever a explicação bonita — "inflação é neutra, entra
+    no g e no desconto". Ela só vale quando o reinvestimento não está
+    normalizado. Com ele ligado, um g nominal maior custa capital e o valor cai
+    de todo modo. O texto lê o modelo que está na tela, não o da teoria.
+    """
+    perp = empresa.perpetuidade
+    ipca, pib, risco = (variacoes[n] for n in (nome_ipca, nome_pib, nome_risco))
+
+    partes = []
+    if perp.ancora == "livre":
+        partes.append(
+            f"O IPCA tira {formatar(abs(ipca), 'pct')} porque, com o **g livre**, ele "
+            "só entra no desconto: o Ke é montado em USD e convertido para BRL pelo "
+            "diferencial de inflação. Ancorar o g o faria entrar também no "
+            "crescimento, e boa parte disso voltaria."
+        )
+    elif perp.roic_perpetuidade is not None:
+        reinvestimento = perp.crescimento_perpetuo / perp.roic_perpetuidade
+        partes.append(
+            f"Com o g ancorado, a inflação entra no crescimento e no desconto — e "
+            f"ainda assim o valor muda {formatar(abs(ipca), 'pct')}. O motivo é o "
+            f"reinvestimento normalizado: g/ROIC come "
+            f"{formatar(reinvestimento, 'pct')} do NOPAT perpétuo hoje, e sobe junto "
+            "com o g nominal enquanto o ROIC fica parado. Crescer nominalmente mais "
+            "custa capital."
+        )
+    else:
+        partes.append(
+            f"Com o g ancorado e sem normalizar o reinvestimento, a inflação entra "
+            f"dos dois lados e sobram {formatar(abs(ipca), 'pct')} de efeito líquido "
+            "— é o caso em que o choque de fato quase se cancela."
+        )
+
+    if empresa.perpetuidade.ancora != "pib_nominal" and abs(pib) < 1e-9:
+        partes.append(
+            "O PIB real não moveu nada: sem âncora em PIB nominal ele não entra em "
+            "conta nenhuma do fluxo, só no teto do diagnóstico."
+        )
+    else:
+        partes.append(f"O PIB fraco tira {formatar(abs(pib), 'pct')}.")
+
+    partes.append(
+        f"E o risco-país move {formatar(abs(risco), 'pct')}: é o único dos três que "
+        "só aperta o desconto, sem nenhuma contrapartida no fluxo. Qual dos dois "
+        "dói mais depende da alavancagem desta empresa — por isso a tabela mede em "
+        "vez de supor."
+    )
+    return " ".join(partes)
 
 
 def _monte_carlo(resultado) -> None:

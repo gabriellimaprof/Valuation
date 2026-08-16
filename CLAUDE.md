@@ -200,36 +200,83 @@ companhia, ante 26 antes.
    88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
    e cai na lista de não reconhecidas, para mapeamento manual.
 
-## Estressar macro: como o dono do projeto trabalha, e o que falta
+## Estressar macro, e o efeito que eu previ errado
 
-Prática dele, hoje mantida à mão porque o modelo não a representa: **IPCA de
-5%** e **PIB real de 1,5%** como base, e o **g perpétuo ancorado em IPCA ou em
-PIB nominal** — `(1,05 × 1,015) − 1 = 6,58%`.
+Prática do dono do projeto, hoje representada no modelo: **IPCA de 5%** e **PIB
+real de 1,5%** como base, com o **g perpétuo ancorado em IPCA ou em PIB
+nominal** — `(1,05 × 1,015) − 1 = 6,58%`, composto e não somado.
 
-Duas ausências:
+Implementado: `PremissasMacro.pib_real` e `pib_nominal`;
+`PremissasPerpetuidade.ancora` (`livre` / `ipca` / `pib_nominal`), resolvida em
+`Empresa.__post_init__` porque é ali que macro e perpetuidade se encontram; o
+teto do diagnóstico passou a sair de `macro.pib_nominal` em vez de
+`inflacao_brl + 0.02` fixos; eixos e cenários macro na tela de Sensibilidade.
 
-- **`pib_real` não existe em `PremissasMacro`.** Só há `inflacao_brl` e
-  `inflacao_usd`. A premissa de crescimento real não tem onde morar.
-- **`crescimento_perpetuo` é valor solto.** Mudar o IPCA não move o g. Não há
-  âncora (`livre` / `IPCA` / `PIB nominal`) que recalcule, então a disciplina de
-  ancorar g fica fora do modelo — e o diagnóstico não pode acusar g acima do PIB
-  nominal, que é o erro clássico de perpetuidade.
+**Duas regras que existem para não criar armadilha silenciosa:**
 
-**O efeito de segunda ordem, que é contraintuitivo e precisa ser dito na tela.**
-O IPCA entra em dois lugares: no g, se ancorado nele, e no desconto — o Ke é
-montado em USD e convertido para BRL pelo diferencial de inflação, então subir o
-IPCA sobe o WACC. Estressar inflação é, portanto, **quase neutro em valor**, e
-isso é propriedade correta: em termos reais nada mudou.
+1. Mexer no `g` por caminho pontilhado **solta a âncora**
+   (`modelo.substituir_varios`). Sem isso, uma tabela de sensibilidade sobre o
+   `g` ancorado sairia inteira igual — sem erro, sem aviso, sem nada na tela.
+2. `macro.pib_real` **não altera o valuation** a menos que a âncora seja
+   `pib_nominal`; fora disso ele só desloca o teto do diagnóstico. O eixo avisa.
 
-Mas não é exatamente neutro, e a direção surpreende. Num Gordon, o spread é
-`WACC − g`; subindo a inflação em Δ, o WACC sobe `(1+WACC)×Δ` e o g sobe
-`(1+g)×Δ`. Como `WACC > g`, o WACC sobe mais em pontos absolutos: **o spread
-abre e o valor cai um pouco**.
+### O que eu escrevi antes, e por que estava errado
 
-Consequência prática: **o que move valor é estressar PIB real e prêmio de risco,
-não IPCA.** Um teste de estresse que só mexe na inflação vai parecer inócuo — e
-estará certo em parecer. A tela precisa dizer isso, ou o usuário conclui que o
-estresse está quebrado.
+Registrei aqui que estressar inflação seria "quase neutro em valor", e que o
+pouco de efeito viria do spread `WACC − g` **abrindo**. Medido no modelo, com
+choque de +2 p.p. de IPCA e `g` ancorado em PIB nominal:
+
+| | g livre | g ancorado, sem ROIC | g ancorado, com ROIC 15% |
+|---|---|---|---|
+| Equity value | −56,5% | −3,2% | −47,5% |
+| EV | −20,6% | −1,8% | −18,8% |
+
+Dois erros no que eu tinha escrito:
+
+- **O spread não abre, fecha.** `(1+g)` escala pelo fator cheio de inflação;
+  `(1+WACC)` escala por menos, porque o Kd entra no WACC depois do benefício
+  fiscal e o `(1−t)` não acompanha a inflação. No caso medido: WACC +1,92 p.p.
+  contra g +2,03 p.p.
+- **"Quase neutro" vale só sem normalização de reinvestimento.** Ligado o
+  `roic_perpetuidade`, o fluxo perpétuo é `NOPAT × (1+g) × (1 − g/ROIC)`. Subir
+  o `g` nominal sobe `g/ROIC` — de 37,1% para 50,6% do NOPAT no caso medido —
+  enquanto o ROIC fica parado. O reinvestimento come mais do que o spread
+  devolve, e o valor terminal cai 22,7%.
+
+Não é defeito da âncora: é o modelo cobrando capital para sustentar crescimento
+nominal maior. Mas **o padrão do app tem `roic_perpetuidade` ligado**, então o
+caso "quase neutro" é a exceção, não a regra. A tela lê o modelo que está na
+frente do usuário em vez de repetir a teoria — `_leitura_do_estresse` em
+`app/paginas/sensibilidade.py`.
+
+### Não há regra geral de sinal, e é por isso que a tela mede
+
+Tentei salvar a conclusão dizendo "então ancorar amortece o choque". Também não
+se sustenta. Medido com choque de +2 p.p. de IPCA, ROIC 15% ligado nos dois:
+
+| | fixture (dívida líquida 650 sobre equity 487) | WEG 2024 (caixa líquido) |
+|---|---|---|
+| g livre | −56,5% | −17,9% |
+| g ancorado em PIB nominal | −47,5% | −19,9% |
+
+Ancorar **melhora** na empresa alavancada e **piora** na de caixa líquido. Na
+WEG o choque de IPCA chega a bater mais forte que +2 p.p. de risco-país
+(−17,9% contra −17,0% com g livre) — o oposto do que eu tinha registrado.
+
+O que sobrevive como afirmação é só o mecanismo, e os testes em
+`tests/test_macro.py` pinam ele e não as magnitudes: **risco-país entra só no
+desconto; a inflação, ancorada, entra no desconto e no fluxo.** Qual dói mais é
+propriedade da empresa, não do modelo. Nenhum texto de tela deve afirmar o sinal
+— eles reportam o número medido.
+
+**Ainda em aberto:** se o `g` é indexado à inflação, o ROIC marginal deveria ser
+também — capital novo é comprado a preços novos. Deixar o ROIC nominal fixo
+enquanto o `g` sobe embute uma piora real de intensidade de capital que ninguém
+pediu. Não foi mexido: seria inventar uma premissa que o dono do projeto não
+pediu, e o efeito é grande demais para entrar sem decisão dele.
+
+Consequência prática que sobrevive: **prêmio de risco é o estresse macro mais
+duro**, porque sobe o desconto sem contrapartida nenhuma no fluxo.
 
 ## Fontes de mercado já verificadas em campo (não implementadas)
 

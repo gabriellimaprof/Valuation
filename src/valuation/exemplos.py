@@ -22,6 +22,7 @@ macro:
   inflacao_brl: 0.04        # IPCA de longo prazo
   inflacao_usd: 0.023       # inflacao americana de longo prazo
   aliquota_ir: 0.34         # IRPJ 25% + CSLL 9%
+  pib_real: 0.015           # crescimento real da economia; nao entra no WACC
 
 custo_capital:
   rf_usd: 0.045             # T-Bond 10 anos
@@ -46,7 +47,9 @@ operacionais:
 
 perpetuidade:
   metodo: gordon            # 'gordon' ou 'multiplo'
-  crescimento_perpetuo: 0.045   # nao deve superar a inflacao + crescimento real do PIB
+  ancora: livre             # 'livre', 'ipca' ou 'pib_nominal'
+  # Ancorado, o g e derivado da macro e este campo abaixo e ignorado.
+  crescimento_perpetuo: 0.045   # nao deve superar o crescimento nominal da economia
   roic_perpetuidade: 0.15   # normaliza o reinvestimento; remova para Gordon simples
   # multiplo_saida: 7.0     # usado quando metodo = multiplo
 

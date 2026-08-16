@@ -204,6 +204,13 @@ def _editor(operacionais, anos: list[int], analise) -> None:
             st.rerun()
 
 
+ANCORAS = {
+    "Livre — digito o número": "livre",
+    "IPCA": "ipca",
+    "PIB nominal": "pib_nominal",
+}
+
+
 def _perpetuidade(empresa) -> None:
     st.subheader("Perpetuidade")
     conceito("perpetuidade", "A parte do modelo que mais pesa no valor")
@@ -218,17 +225,24 @@ def _perpetuidade(empresa) -> None:
     )
     usar_gordon = metodo.startswith("Crescimento")
 
-    crescimento = colunas[1].number_input(
-        "Crescimento perpétuo (%)",
-        value=float(perpetuidade.crescimento_perpetuo * 100),
-        step=0.25,
-        format="%.2f",
-        disabled=not usar_gordon,
-        help=(
-            "Teto natural: crescimento nominal da economia (inflação + PIB real). "
-            "Acima disso, a empresa acabaria maior que o país."
-        ),
-    )
+    rotulos = list(ANCORAS)
+    ancora = ANCORAS[
+        colunas[1].selectbox(
+            "De onde vem o g",
+            rotulos,
+            index=rotulos.index(
+                next(r for r, v in ANCORAS.items() if v == perpetuidade.ancora)
+            ),
+            disabled=not usar_gordon,
+            help=(
+                "Ancorado, o crescimento perpétuo deixa de ser um número solto: "
+                "estressar a macro passa a movê-lo junto. **IPCA** supõe crescimento "
+                "real zero para sempre — a empresa acompanha os preços e nada mais. "
+                "**PIB nominal** é o teto lógico: acima dele, a empresa acabaria "
+                "maior que o país."
+            ),
+        )
+    ]
 
     normalizar = colunas[2].checkbox(
         "Normalizar reinvestimento",
@@ -251,18 +265,56 @@ def _perpetuidade(empresa) -> None:
         disabled=usar_gordon,
     )
 
+    st.markdown("**Economia de longo prazo** — os dois números que formam o teto do g")
+    colunas = st.columns(4)
+
+    ipca = empresa.macro.inflacao_brl
+    colunas[0].metric("IPCA de longo prazo", formatar(ipca, "pct"))
+    colunas[0].caption("Editável em **Custo de capital** — de lá ele também entra no WACC.")
+
+    pib_real = colunas[1].number_input(
+        "PIB real de longo prazo (%)",
+        value=float(empresa.macro.pib_real * 100),
+        step=0.25,
+        format="%.2f",
+        help=(
+            "Crescimento real da economia. Não entra no custo de capital: serve "
+            "para compor o teto do crescimento perpétuo, e como âncora dele."
+        ),
+    )
+
+    pib_nominal = (1 + ipca) * (1 + pib_real / 100) - 1
+    colunas[2].metric("PIB nominal", formatar(pib_nominal, "pct"))
+    colunas[2].caption("Os dois compostos, não somados.")
+
+    previsto = {"livre": None, "ipca": ipca, "pib_nominal": pib_nominal}[ancora]
+    crescimento = colunas[3].number_input(
+        "Crescimento perpétuo (%)",
+        value=float((previsto if previsto is not None else perpetuidade.crescimento_perpetuo) * 100),
+        step=0.25,
+        format="%.2f",
+        disabled=not usar_gordon or previsto is not None,
+        help=(
+            "Teto natural: o crescimento nominal da economia. Acima disso, a "
+            "empresa acabaria maior que o país."
+        ),
+    )
+    if previsto is not None:
+        colunas[3].caption("Derivado da âncora — para digitá-lo, escolha *Livre*.")
+
     if st.button("Aplicar perpetuidade"):
+        alteracoes: dict = {"macro.pib_real": pib_real / 100}
         if usar_gordon:
-            alteracoes = {
-                "perpetuidade.metodo": "gordon",
-                "perpetuidade.crescimento_perpetuo": crescimento / 100,
-                "perpetuidade.roic_perpetuidade": (roic / 100) if normalizar else None,
-            }
+            alteracoes["perpetuidade.metodo"] = "gordon"
+            alteracoes["perpetuidade.ancora"] = ancora
+            alteracoes["perpetuidade.roic_perpetuidade"] = (roic / 100) if normalizar else None
+            # Ancorado, quem escreve o g e a macro. Mandar o numero da tela
+            # junto soltaria a ancora na hora de aplicar.
+            if ancora == "livre":
+                alteracoes["perpetuidade.crescimento_perpetuo"] = crescimento / 100
         else:
-            alteracoes = {
-                "perpetuidade.metodo": "multiplo",
-                "perpetuidade.multiplo_saida": multiplo,
-            }
+            alteracoes["perpetuidade.metodo"] = "multiplo"
+            alteracoes["perpetuidade.multiplo_saida"] = multiplo
         try:
             estado.atualizar(alteracoes)
         except ValueError as erro:
@@ -270,12 +322,13 @@ def _perpetuidade(empresa) -> None:
         else:
             st.rerun()
 
-    inflacao = empresa.macro.inflacao_brl
-    if usar_gordon and crescimento / 100 > inflacao + 0.02:
+    g_previsto = previsto if previsto is not None else crescimento / 100
+    if usar_gordon and g_previsto > pib_nominal:
         st.warning(
-            f"Crescimento de {formatar(crescimento / 100, 'pct')} supera o crescimento "
-            f"nominal estimado da economia ({formatar(inflacao + 0.02, 'pct')} = "
-            "inflação + 2% de PIB real)."
+            f"Crescimento de {formatar(g_previsto, 'pct')} supera o crescimento "
+            f"nominal da economia ({formatar(pib_nominal, 'pct')} = IPCA de "
+            f"{formatar(ipca, 'pct')} composto com PIB real de "
+            f"{formatar(pib_real / 100, 'pct')})."
         )
 
 

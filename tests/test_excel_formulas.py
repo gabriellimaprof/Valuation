@@ -212,3 +212,31 @@ def test_aba_de_retorno_so_aparece_quando_pedida(empresa_exemplo, tmp_path):
     caminho = tmp_path / "sem_tsr.xlsx"
     exportar_excel(resultado, caminho)
     assert "Retorno (TSR)" not in load_workbook(caminho).sheetnames
+
+
+def test_a_ancora_do_g_viaja_para_a_planilha_como_formula(empresa_exemplo, tmp_path):
+    """Exportar o g ancorado como numero fixo quebraria a ancora no Excel.
+
+    Quem recebe a planilha mexe no IPCA da celula azul. Se o g estiver gravado
+    como constante, ele nao acompanha -- e a planilha passa a discordar do app
+    exatamente na premissa que o usuario esta estressando.
+    """
+    from openpyxl import load_workbook
+
+    from valuation import substituir
+
+    ancorada = substituir(empresa_exemplo, "perpetuidade.ancora", "pib_nominal")
+    caminho = tmp_path / "ancorada.xlsx"
+    exportar_excel(avaliar(ancorada), caminho)
+
+    ws = load_workbook(caminho)["Premissas"]
+    linha = _localizar_linha(ws, "Crescimento perpetuo (ancorado em PIB nominal)")
+    assert str(ws.cell(row=linha, column=2).value).startswith("="), "saiu como constante"
+
+    valores = _valores_calculados(caminho)
+    g = _buscar(valores, "Premissas", f"B{linha}", caminho)
+    assert g == pytest.approx(ancorada.perpetuidade.crescimento_perpetuo, abs=1e-9)
+
+    linha_pib = _localizar_linha(ws, "Crescimento nominal da economia")
+    nominal = _buscar(valores, "Premissas", f"B{linha_pib}", caminho)
+    assert nominal == pytest.approx(ancorada.macro.pib_nominal, abs=1e-9)
