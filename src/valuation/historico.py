@@ -230,6 +230,44 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         "Custo da divida efetivo": _divisao_segura(despesas_financeiras, divida_media),
     }
 
+    # Liquidez. Nao entra no DCF -- o fluxo descontado nao pergunta se a empresa
+    # paga a conta do mes que vem --, mas decide se o valuation faz sentido:
+    # empresa que nao atravessa o curto prazo nao chega a perpetuidade.
+    circulante = d.serie("ativo_circulante")
+    passivo_circulante = d.serie("passivo_circulante")
+    caixa_total = d.serie("caixa_equivalentes").add(
+        d.serie("aplicacoes_financeiras"), fill_value=0
+    )
+    if circulante.notna().any() and passivo_circulante.notna().any():
+        indicadores["Liquidez corrente"] = _divisao_segura(
+            circulante, passivo_circulante
+        )
+        indicadores["Liquidez seca"] = _divisao_segura(
+            circulante.sub(d.serie("estoques"), fill_value=0), passivo_circulante
+        )
+        indicadores["Liquidez imediata"] = _divisao_segura(
+            caixa_total, passivo_circulante
+        )
+    caixa_operacional = d.serie("fluxo_operacional")
+    if caixa_operacional.notna().any() and passivo_circulante.notna().any():
+        # Quanto do passivo de curto prazo um ano de operacao cobre. Diz mais
+        # sobre solvencia que a liquidez corrente, que depende de estoque virar
+        # caixa no prazo.
+        indicadores["FCO / Passivo circulante"] = _divisao_segura(
+            caixa_operacional, passivo_circulante
+        )
+    if divida_bruta.notna().any():
+        curto = d.serie("divida_curto_prazo")
+        indicadores["Divida de curto prazo / Divida bruta"] = _divisao_segura(
+            curto, divida_bruta
+        )
+        if caixa_total.notna().any():
+            # Vencimento do ano coberto pelo caixa de hoje: e o teste de
+            # refinanciamento, que a divida liquida sozinha esconde.
+            indicadores["Caixa / Divida de curto prazo"] = _divisao_segura(
+                caixa_total, curto
+            )
+
     # Contraprova de caixa. As linhas acima descrevem o regime de competencia;
     # as de baixo, quando a origem traz a DFC aberta, descrevem o mesmo fato
     # pelo caixa. Elas nao substituem nada -- a divergencia entre as duas e que

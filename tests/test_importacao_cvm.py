@@ -352,6 +352,53 @@ def test_a_arvore_soma_de_baixo_para_cima(weg):
     assert sum(filhas) == pytest.approx(valores["1.01"], rel=0.005)
 
 
+def test_composicao_soma_o_total(weg):
+    """A quebra tem que somar o pai: e o que a torna leitura e nao ilustracao."""
+    comp = weg.composicao("1.01", 2024)
+    assert not comp.empty
+    assert comp["Valor"].sum() == pytest.approx(weg.valor("ativo_circulante", 2024))
+    assert comp["% do total"].sum() == pytest.approx(1.0)
+
+
+def test_composicao_so_pega_filhas_diretas(weg):
+    """1.01.01.01 compoe 1.01.01, nao 1.01 -- somaria em dobro."""
+    codigos = list(weg.composicao("1.01", 2024).index)
+    assert all(c.count(".") == 2 for c in codigos)
+    assert "1.01.01" in codigos
+    assert "1.01.01.01" not in codigos
+
+
+def test_composicao_responde_de_que_e_feita_a_divida(weg):
+    """Emprestimo, debenture ou arrendamento -- o total nao distingue."""
+    comp = weg.composicao("2.01.04", 2024)
+    assert set(comp.index) >= {"2.01.04.01", "2.01.04.02", "2.01.04.03"}
+    assert comp["Valor"].sum() == pytest.approx(weg.valor("divida_curto_prazo", 2024))
+
+
+def test_composicao_de_conta_sem_filhas(weg):
+    assert weg.composicao("1.01.05", 2024).empty
+    assert weg.composicao("9.99", 2024).empty
+
+
+def test_indicadores_de_liquidez(weg):
+    analise = analisar(weg)
+    for indicador in (
+        "Liquidez corrente",
+        "Liquidez seca",
+        "Liquidez imediata",
+        "FCO / Passivo circulante",
+        "Caixa / Divida de curto prazo",
+    ):
+        assert indicador in analise.indicadores.index, indicador
+
+    corrente = analise.ultimo("Liquidez corrente")
+    seca = analise.ultimo("Liquidez seca")
+    assert seca < corrente, "a seca tira o estoque e tem que ser menor"
+    assert corrente == pytest.approx(
+        weg.valor("ativo_circulante", 2024) / weg.valor("passivo_circulante", 2024)
+    )
+
+
 def test_a_arvore_acompanha_a_escala(weg):
     milhoes = weg.escalar(1_000_000, "R$ milhões")
     original = dict(zip(weg.detalhe["codigo"], weg.detalhe[2024]))

@@ -108,6 +108,42 @@ class Demonstracoes:
         saida.index = pd.Index(rotulos, name="Conta")
         return saida
 
+    def composicao(self, codigo: str, ano: int | None = None) -> pd.DataFrame:
+        """Do que uma conta publicada e feita, pelas filhas diretas.
+
+        Responde a pergunta que a conta canonica nao responde: o ativo
+        circulante da empresa e caixa ou estoque parado? A divida vence este ano
+        ou daqui a cinco? O total nao distingue, e e a distincao que muda a
+        leitura de liquidez e de alavancagem.
+
+        So as filhas diretas -- 1.01.01 compoe 1.01, mas 1.01.01.01 compoe
+        1.01.01 e somaria em dobro.
+        """
+        if self.detalhe is None or self.detalhe.empty:
+            return pd.DataFrame()
+
+        ano = ano if ano is not None else (self.ano_base or 0)
+        if ano not in self.detalhe.columns:
+            return pd.DataFrame()
+
+        nivel_filho = codigo.count(".") + 2
+        filhas = self.detalhe[
+            self.detalhe["codigo"].str.startswith(codigo + ".")
+            & (self.detalhe["nivel"] == nivel_filho)
+        ]
+        if filhas.empty:
+            return pd.DataFrame()
+
+        pai = self.detalhe[self.detalhe["codigo"] == codigo]
+        total = float(pai[ano].iloc[0]) if not pai.empty else float(filhas[ano].sum())
+
+        tabela = filhas.sort_values("ordem")[["codigo", "rotulo", ano]].copy()
+        tabela.columns = ["Código", "Conta", "Valor"]
+        tabela["% do total"] = (
+            tabela["Valor"] / total if total else np.nan
+        )
+        return tabela.set_index("Código")
+
     @property
     def anos(self) -> list[int]:
         return list(self.valores.columns)
