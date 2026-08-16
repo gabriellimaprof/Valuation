@@ -763,6 +763,39 @@ def test_download_tenta_de_novo_antes_de_desistir(monkeypatch, tmp_path):
     assert not list(tmp_path.glob("*.parcial"))
 
 
+def test_tamanho_do_cache(tmp_path):
+    from valuation.importacao.cvm import tamanho_do_cache
+
+    assert tamanho_do_cache(tmp_path) == 0
+    (tmp_path / "dfp_cia_aberta_2019.zip").write_bytes(b"x" * 1000)
+    (tmp_path / "cad_cia_aberta.csv").write_bytes(b"y" * 500)
+    assert tamanho_do_cache(tmp_path) == 1500
+
+
+def test_limpar_cache_preserva_o_cadastro(tmp_path):
+    """O cadastro e pequeno e usado em toda busca; limpar nao deve custa-lo."""
+    from valuation.importacao.cvm import limpar_cache
+
+    (tmp_path / "dfp_cia_aberta_2019.zip").write_bytes(b"x")
+    (tmp_path / "dfp_cia_aberta_2020.zip").write_bytes(b"x")
+    (tmp_path / "cad_cia_aberta.csv").write_bytes(b"y")
+
+    assert limpar_cache(tmp_path) == 2
+    assert (tmp_path / "cad_cia_aberta.csv").exists()
+    assert not (tmp_path / "dfp_cia_aberta_2019.zip").exists()
+
+    assert limpar_cache(tmp_path, manter_cadastro=False) == 1
+    assert not (tmp_path / "cad_cia_aberta.csv").exists()
+
+
+def test_limpar_cache_inexistente_nao_quebra(tmp_path):
+    from valuation.importacao.cvm import limpar_cache, tamanho_do_cache
+
+    ausente = tmp_path / "nao_existe"
+    assert tamanho_do_cache(ausente) == 0
+    assert limpar_cache(ausente) == 0
+
+
 def test_zip_corrompido_sugere_limpar_o_cache(tmp_path):
     (tmp_path / "dfp_cia_aberta_2024.zip").write_bytes(b"isto nao e um zip")
     with pytest.raises(ErroCVM, match="cache"):

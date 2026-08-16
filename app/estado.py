@@ -8,7 +8,9 @@ sem que dados de um cliente vazem para a sessao de outro.
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -35,6 +37,25 @@ CHAVE_DFS = "demonstracoes"
 CHAVE_COMPARAVEIS = "comparaveis"
 CHAVE_ALVO = "alvo"
 CHAVE_CONFIG = "config"
+CHAVE_PASTA = "pasta_temporaria"
+
+
+def pasta_temporaria() -> Path:
+    """Pasta de arquivos temporarios exclusiva desta sessao.
+
+    O app escreve alguns arquivos de apoio -- a planilha de conferencia da
+    importacao, o modelo em Excel, o template. Com nome fixo em ``/tmp``, duas
+    sessoes no mesmo servidor escrevem no mesmo caminho: a planilha de uma
+    empresa passa a ser lida como a de outra, sem erro nenhum na tela. Uma pasta
+    por sessao elimina isso sem precisar coordenar nomes.
+    """
+    caminho = st.session_state.get(CHAVE_PASTA)
+    if caminho is None:
+        caminho = tempfile.mkdtemp(prefix="valuation_")
+        st.session_state[CHAVE_PASTA] = caminho
+    pasta = Path(caminho)
+    pasta.mkdir(parents=True, exist_ok=True)
+    return pasta
 
 
 def _empresa_inicial() -> Empresa:

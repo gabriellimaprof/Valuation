@@ -128,6 +128,39 @@ def diretorio_cache() -> Path:
 TENTATIVAS = 2
 
 
+def tamanho_do_cache(cache: Path | None = None) -> int:
+    """Bytes ocupados pelos arquivos ja baixados.
+
+    O cache so cresce: um zip por ano, por download, sem nada que o limpe. Doze
+    anos de DFP passam de 150 MB numa pasta que o usuario nunca abriu. Saber o
+    tamanho e o minimo para ele poder decidir.
+    """
+    pasta = Path(cache) if cache else diretorio_cache()
+    if not pasta.is_dir():
+        return 0
+    return sum(a.stat().st_size for a in pasta.iterdir() if a.is_file())
+
+
+def limpar_cache(cache: Path | None = None, manter_cadastro: bool = True) -> int:
+    """Apaga os zips baixados e devolve quantos arquivos foram removidos.
+
+    O cadastro de companhias e pequeno e usado em toda busca; por padrao fica,
+    para que limpar o cache nao custe um download a mais na proxima tela.
+    """
+    pasta = Path(cache) if cache else diretorio_cache()
+    if not pasta.is_dir():
+        return 0
+    removidos = 0
+    for arquivo in pasta.iterdir():
+        if not arquivo.is_file():
+            continue
+        if manter_cadastro and arquivo.name == "cad_cia_aberta.csv":
+            continue
+        arquivo.unlink()
+        removidos += 1
+    return removidos
+
+
 def _baixar(url: str, destino: Path, forcar: bool = False) -> Path:
     """Baixa ``url`` para ``destino``, reaproveitando o que ja esta em disco.
 

@@ -275,9 +275,35 @@ def _cvm() -> None:
     if st.button("Importar da CVM", type="primary"):
         _processar_cvm(companhia, sorted(anos), unidade)
 
+    _cache_da_cvm()
+
+
+def _cache_da_cvm() -> None:
+    """Mostra o tamanho do cache e permite limpa-lo.
+
+    Os zips ficam numa pasta que o usuario nunca abre e nada apaga; doze anos
+    passam de 150 MB. Melhor mostrar do que deixar crescer calado.
+    """
+    from valuation.importacao.cvm import diretorio_cache, limpar_cache, tamanho_do_cache
+
+    bytes_usados = tamanho_do_cache()
+    if bytes_usados < 50 * 1024 * 1024:
+        return
+
+    megas = f"{bytes_usados / 1e6:,.0f}".replace(",", ".")
+    colunas = st.columns([3, 1])
+    colunas[0].caption(
+        f"Arquivos da CVM em cache: {megas} MB em `{diretorio_cache()}`. "
+        "Limpar só custa baixar de novo o que for usado."
+    )
+    if colunas[1].button("Limpar cache"):
+        removidos = limpar_cache()
+        st.success(f"{removidos} arquivo(s) removido(s).")
+        st.rerun()
+
 
 def _processar_cvm(companhia, anos: list[int], unidade: str) -> None:
-    destino = Path(tempfile.gettempdir()) / f"cvm_{companhia.codigo_cvm}.xlsx"
+    destino = estado.pasta_temporaria() / f"cvm_{companhia.codigo_cvm}.xlsx"
     faixa = f"{anos[0]}–{anos[-1]}" if len(anos) > 1 else str(anos[0])
 
     try:
@@ -332,7 +358,7 @@ def _importar() -> None:
 
 
 def _processar(arquivo, nome_empresa: str, anos_maximos: int, escala: str) -> None:
-    destino = Path(tempfile.gettempdir()) / f"valuation_{arquivo.name}"
+    destino = estado.pasta_temporaria() / f"valuation_{arquivo.name}"
     destino.write_bytes(arquivo.getbuffer())
 
     try:
@@ -453,7 +479,7 @@ def _atualizar_da_cvm(dfs) -> None:
 def _reimportar_da_cvm(dfs, anos: list[int]) -> None:
     fonte = dfs.fonte
     codigo = int(fonte["codigo_cvm"])
-    destino = Path(tempfile.gettempdir()) / f"cvm_{codigo}.xlsx"
+    destino = estado.pasta_temporaria() / f"cvm_{codigo}.xlsx"
     antes = set(dfs.anos)
 
     try:
@@ -635,7 +661,7 @@ def _template() -> None:
     )
 
     anos = list(range(int(ano_final) - int(quantidade) + 1, int(ano_final) + 1))
-    destino = Path(tempfile.gettempdir()) / "template_demonstracoes.xlsx"
+    destino = estado.pasta_temporaria() / "template_demonstracoes.xlsx"
     gerar_template(destino, anos=anos, empresa=estado.empresa().nome)
 
     st.download_button(

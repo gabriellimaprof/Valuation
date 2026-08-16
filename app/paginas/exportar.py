@@ -97,7 +97,7 @@ def render() -> None:
 def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> None:
     from valuation.multiplos import Alvo
 
-    destino = Path(tempfile.gettempdir()) / "valuation_modelo.xlsx"
+    destino = estado.pasta_temporaria() / "valuation_modelo.xlsx"
     comparaveis = estado.comparaveis()
 
     alvo = None
