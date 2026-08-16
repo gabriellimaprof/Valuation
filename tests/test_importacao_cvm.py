@@ -633,10 +633,41 @@ def test_banco_e_reconhecido_como_outro_plano_de_contas(catalogo):
     dfs = importar_cvm(BANCO_BRASIL, [2024], cache=DADOS, catalogo=catalogo)
     assert any("instituicao financeira" in aviso for aviso in dfs.avisos)
 
-    # A receita de intermediacao nao pode ter virado receita de venda pelo codigo.
-    if dfs.tem("resultado_financeiro"):
-        rotulo = dfs.mapeamento["resultado_financeiro"]
-        assert "Imposto de Renda" not in rotulo
+    # A linha 3.06 e o desvio que motivou tudo: no plano industrial e resultado
+    # financeiro, aqui e o imposto. Ela tem que ter chegado em "impostos".
+    donos_do_306 = [c for c, o in dfs.mapeamento.items() if o.startswith("3.06 ")]
+    assert donos_do_306 == ["impostos"], donos_do_306
+
+
+def test_banco_reconhece_pelo_plano_proprio(catalogo):
+    """No plano financeiro 2.07 e patrimonio liquido, e 2.03 sao provisoes."""
+    dfs = importar_cvm(BANCO_BRASIL, [2024], cache=DADOS, catalogo=catalogo)
+
+    for chave in ("ativo_total", "passivo_total", "patrimonio_liquido",
+                  "caixa_equivalentes", "receita_liquida", "lucro_liquido"):
+        assert dfs.tem(chave), chave
+
+    assert dfs.mapeamento["patrimonio_liquido"].startswith("2.07")
+    assert dfs.mapeamento["caixa_equivalentes"].startswith("1.01")
+    # A identidade do balanco tem que fechar tambem no plano financeiro.
+    assert dfs.valor("ativo_total", 2024) == pytest.approx(
+        dfs.valor("passivo_total", 2024)
+    )
+    assert dfs.valor("patrimonio_liquido", 2024) < dfs.valor("ativo_total", 2024)
+
+
+def test_banco_nao_ganha_ebit_inventado(catalogo):
+    """Banco nao tem EBIT nem capital de giro operacional; fingir seria pior."""
+    dfs = importar_cvm(BANCO_BRASIL, [2024], cache=DADOS, catalogo=catalogo)
+    assert not dfs.tem("ebit") or dfs.mapeamento.get("ebit") is None
+    # E o aviso de que o modelo nao se aplica continua.
+    assert any("instituicao financeira" in a for a in dfs.avisos)
+
+
+def test_o_mapa_financeiro_nao_afeta_o_plano_industrial(weg):
+    """3.06 e resultado financeiro na industria, imposto no banco."""
+    assert weg.mapeamento["resultado_financeiro"].startswith("3.06")
+    assert weg.mapeamento["impostos"].startswith("3.08")
 
 
 def test_plano_industrial_nao_dispara_o_aviso(weg):

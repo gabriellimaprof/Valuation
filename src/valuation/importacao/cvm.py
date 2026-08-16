@@ -737,6 +737,32 @@ def detectar_plano(linhas: list[LinhaCVM]) -> str:
     return PLANO_INDUSTRIAL
 
 
+# O plano financeiro nao e uma variacao do industrial: e outra numeracao. 2.07 e
+# patrimonio liquido, e nao 2.03; 1.01 e caixa, e nao ativo circulante; 3.06 e o
+# imposto, e nao o resultado financeiro. Por isso o mapa e proprio, e nao um
+# conjunto de excecoes sobre o outro.
+#
+# Medido nas 19 companhias de 2024 que usam este plano. So o que tem significado
+# equivalente no vocabulario canonico entra: um banco nao tem EBIT nem capital de
+# giro operacional, e inventar equivalencia para eles seria pior que a ausencia.
+CODIGOS_PLANO_FINANCEIRO: dict[str, str] = {
+    "1": "ativo_total",
+    "1.01": "caixa_equivalentes",
+    "1.02": "aplicacoes_financeiras",
+    "1.05": "investimentos",
+    "1.06": "imobilizado",
+    "1.07": "intangivel",
+    "2": "passivo_total",
+    "2.07": "patrimonio_liquido",
+    "3.01": "receita_liquida",
+    "3.02": "custo_produtos_vendidos",
+    "3.03": "lucro_bruto",
+    "3.05": "lucro_antes_impostos",
+    "3.06": "impostos",
+    "3.11": "lucro_liquido",
+}
+
+
 def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     """Reconhece a conta canonica de uma linha da CVM.
 
@@ -753,6 +779,14 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     """
     if plano == PLANO_INDUSTRIAL:
         resultado = reconhecer(linha.descricao, linha.codigo)
+    elif linha.codigo in CODIGOS_PLANO_FINANCEIRO:
+        from .esquema import Reconhecimento
+
+        resultado = Reconhecimento(
+            CODIGOS_PLANO_FINANCEIRO[linha.codigo],
+            1.0,
+            f"codigo {linha.codigo} do plano financeiro",
+        )
     else:
         resultado = reconhecer(linha.descricao, None)
 
