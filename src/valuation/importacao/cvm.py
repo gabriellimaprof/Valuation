@@ -765,6 +765,50 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     return resultado
 
 
+def _ordem_do_codigo(codigo: str) -> tuple[int, ...]:
+    """Chave que ordena codigo como hierarquia, e nao como texto.
+
+    Em ordem alfabetica ``1.01.10`` vem antes de ``1.01.02``, o que embaralha a
+    demonstracao justamente onde ela tem mais linhas.
+    """
+    partes = []
+    for parte in str(codigo).split("."):
+        partes.append(int(parte) if parte.isdigit() else 0)
+    return tuple(partes)
+
+
+def montar_detalhe(linhas: list[LinhaCVM]) -> pd.DataFrame:
+    """A demonstracao publicada inteira, uma linha por conta, anos em colunas.
+
+    Diferente do vocabulario canonico, aqui nada e escolhido: toda linha que a
+    companhia publicou entra, com o nivel que o codigo declara. Quando a mesma
+    conta aparece com grafias diferentes entre anos -- e aparece, "Receita
+    Liquida" e "Receita liquida" no mesmo codigo --, vale a grafia mais recente,
+    para nao duplicar a linha na tela.
+    """
+    if not linhas:
+        return pd.DataFrame()
+
+    por_codigo: dict[tuple[str, str], dict] = {}
+    for linha in sorted(linhas, key=lambda l: l.ano):
+        chave = (linha.demonstracao, linha.codigo)
+        registro = por_codigo.setdefault(
+            chave,
+            {
+                "codigo": linha.codigo,
+                "demonstracao": linha.demonstracao,
+                "nivel": linha.codigo.count(".") + 1,
+                "ordem": _ordem_do_codigo(linha.codigo),
+            },
+        )
+        # O rotulo do ano mais recente prevalece: a iteracao vai do mais antigo
+        # para o mais novo e sobrescreve.
+        registro["rotulo"] = linha.descricao
+        registro[linha.ano] = linha.valor
+
+    return pd.DataFrame(list(por_codigo.values()))
+
+
 def montar_demonstracoes(
     linhas: list[LinhaCVM],
     empresa: str,
@@ -823,16 +867,23 @@ def montar_demonstracoes(
             continue
         resultado = _reconhecer_na_demonstracao(linha, plano)
         if resultado.chave is None or resultado.confianca < CONFIANCA_MINIMA:
-            etiqueta = f"{linha.codigo} - {linha.descricao}"
-            nao_reconhecidas.setdefault(
-                f"{linha.demonstracao}|{etiqueta}",
-                LinhaNaoReconhecida(
-                    rotulo=etiqueta,
-                    aba=rotulo_da_aba[linha.demonstracao],
-                    melhor_palpite=resultado.chave,
-                    confianca=resultado.confianca,
-                ),
-            )
+            # Uma conta filha nao esta "nao reconhecida": ela e a abertura de uma
+            # conta que o app entende. 2.03.02 "Reservas de Capital" explica de
+            # onde vem parte do 2.03; pedir que o usuario a mapeie a mao seria
+            # pedir que ele reclassificasse o plano de contas da CVM. Elas ficam
+            # na arvore, que e onde tem sentido. So sobra aqui o que nao tem pai
+            # -- conta de primeiro nivel que o vocabulario nao alcanca.
+            if "." not in linha.codigo:
+                etiqueta = f"{linha.codigo} - {linha.descricao}"
+                nao_reconhecidas.setdefault(
+                    f"{linha.demonstracao}|{linha.codigo}",
+                    LinhaNaoReconhecida(
+                        rotulo=etiqueta,
+                        aba=rotulo_da_aba[linha.demonstracao],
+                        melhor_palpite=resultado.chave,
+                        confianca=resultado.confianca,
+                    ),
+                )
             continue
 
         chave = resultado.chave
@@ -905,6 +956,7 @@ def montar_demonstracoes(
         ),
         avisos=avisos,
         fonte=dict(fonte or {}),
+        detalhe=montar_detalhe(linhas),
     )
 
 

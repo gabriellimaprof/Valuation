@@ -497,13 +497,7 @@ def _mostrar_importacao_atual() -> None:
     )
     for aba, chave in ((aba_dre, "dre"), (aba_bp, "bp"), (aba_dfc, "dfc")):
         with aba:
-            tabela = dfs.tabela(chave)
-            if tabela.empty:
-                st.info("Nenhuma conta desta demonstração foi encontrada no arquivo.")
-            else:
-                st.dataframe(
-                    tabela_formatada(tabela, "moeda"), width="stretch"
-                )
+            _demonstracao(dfs, chave)
 
     with aba_conferencia:
         _conferencia(dfs)
@@ -600,6 +594,51 @@ def _reimportar_da_cvm(dfs, anos: list[int]) -> None:
         + (f" Exercício(s) novo(s): {', '.join(str(a) for a in ganhos)}." if ganhos else "")
     )
     st.rerun()
+
+
+def _demonstracao(dfs, chave: str) -> None:
+    """Mostra a demonstração publicada inteira, ou as contas do modelo.
+
+    A publicada é uma árvore: `1.01.01` está dentro de `1.01`, que está dentro
+    de `1`. É a quebra que explica de onde vem o total, então ela é o padrão —
+    as contas canônicas são o recorte que o motor consome, útil para conferir o
+    que entrou no modelo, mas menor do que a demonstração.
+    """
+    arvore = dfs.arvore(chave)
+    canonicas = dfs.tabela(chave)
+
+    if arvore.empty and canonicas.empty:
+        st.info("Nenhuma conta desta demonstração foi encontrada no arquivo.")
+        return
+
+    if arvore.empty:
+        st.dataframe(tabela_formatada(canonicas, "moeda"), width="stretch")
+        return
+
+    completa = st.toggle(
+        "Demonstração publicada, com a abertura",
+        value=True,
+        key=f"completa_{chave}",
+        help=(
+            "Ligado: todas as linhas como a companhia publicou, com o recuo "
+            "mostrando a hierarquia. Desligado: só as contas que o modelo usa."
+        ),
+    )
+
+    if completa:
+        st.caption(
+            f"{len(arvore)} linhas. O recuo é o nível do plano de contas — cada "
+            "conta é a soma das que aparecem recuadas abaixo dela."
+        )
+        st.dataframe(
+            tabela_formatada(arvore, "moeda"),
+            width="stretch",
+            height=min(760, 40 + 35 * len(arvore)),
+        )
+    elif canonicas.empty:
+        st.info("Nenhuma conta do modelo veio desta demonstração.")
+    else:
+        st.dataframe(tabela_formatada(canonicas, "moeda"), width="stretch")
 
 
 LIMITE_CONFERENCIA = 40

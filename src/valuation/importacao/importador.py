@@ -31,6 +31,16 @@ from .leitura import Grade, carregar_abas, linhas_da_grade, localizar_grade
 CONFIANCA_MINIMA = 0.6
 
 
+def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFrame | None:
+    """Divide so as colunas de ano da arvore; codigo e nivel nao sao valores."""
+    if detalhe is None or detalhe.empty:
+        return detalhe
+    copia = detalhe.copy()
+    anos = [c for c in copia.columns if isinstance(c, int)]
+    copia[anos] = copia[anos] / divisor
+    return copia
+
+
 @dataclass(frozen=True)
 class LinhaNaoReconhecida:
     """Uma linha da planilha que o importador nao soube classificar."""
@@ -60,6 +70,38 @@ class Demonstracoes:
     # tudo a mao quando sair um exercicio novo. Dicionario simples porque ele
     # atravessa a serializacao em YAML e cada origem descreve o seu jeito.
     fonte: dict = field(default_factory=dict)
+    # A demonstracao como foi publicada, inteira. O vocabulario canonico e o que
+    # o motor consome -- umas dezenas de contas --, mas a DF publicada e uma
+    # arvore: 1.01.01 esta dentro de 1.01, que esta dentro de 1. E a quebra que
+    # explica de onde vem o total, e joga-la fora para ficar so com as contas do
+    # modelo perde exatamente a parte que o analista usa para entender o numero.
+    # Colunas: codigo, rotulo, demonstracao, nivel e uma por ano.
+    detalhe: pd.DataFrame | None = None
+
+    def arvore(self, demonstracao: str | None = None) -> pd.DataFrame:
+        """A demonstracao publicada inteira, na ordem e na hierarquia do plano.
+
+        O recuo do rotulo vem do nivel do codigo, entao a tabela se le como a
+        demonstracao se le: o pai acima, as filhas abaixo dele, somando de volta.
+        """
+        if self.detalhe is None or self.detalhe.empty:
+            return pd.DataFrame()
+
+        tabela = self.detalhe
+        if demonstracao is not None:
+            tabela = tabela[tabela["demonstracao"] == demonstracao]
+        if tabela.empty:
+            return pd.DataFrame()
+
+        tabela = tabela.sort_values("ordem")
+        anos = [c for c in tabela.columns if isinstance(c, int)]
+        rotulos = [
+            " " * 3 * (int(nivel) - 1) + str(rotulo)
+            for nivel, rotulo in zip(tabela["nivel"], tabela["rotulo"])
+        ]
+        saida = tabela[anos].copy()
+        saida.index = pd.Index(rotulos, name="Conta")
+        return saida
 
     @property
     def anos(self) -> list[int]:
@@ -156,6 +198,9 @@ class Demonstracoes:
             # se le como um e pouco em portugues.
             + [f"Valores divididos por {divisor:,.0f}.".replace(",", ".")],
             fonte=dict(self.fonte),
+            # A arvore acompanha a escala: ela mostra os mesmos valores, e uma
+            # DFC em reais ao lado de um balanco em milhoes seria ilegivel.
+            detalhe=_escalar_detalhe(self.detalhe, divisor),
         )
 
 
@@ -437,4 +482,5 @@ def aplicar_mapeamento_manual(
         ],
         avisos=avisos,
         fonte=dict(demonstracoes.fonte),
+        detalhe=demonstracoes.detalhe,
     )

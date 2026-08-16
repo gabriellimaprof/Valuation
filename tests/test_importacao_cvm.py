@@ -290,11 +290,75 @@ def test_linha_da_dfc_nao_invade_conta_do_balanco(weg):
 
 
 def test_nada_e_descartado_em_silencio(weg):
-    """As contas analiticas que o modelo nao usa saem listadas, nao sumidas."""
-    assert len(weg.nao_reconhecidas) > 50
-    rotulos = [linha.rotulo for linha in weg.nao_reconhecidas]
-    assert any(r.startswith("1.01.06") for r in rotulos)  # tributos a recuperar
-    assert all(linha.aba in {"DRE", "Balanço", "DFC"} for linha in weg.nao_reconhecidas)
+    """Toda linha publicada esta na arvore, mapeada ou nao.
+
+    Uma conta filha nao esta "nao reconhecida": ela e a abertura de uma conta
+    que o app entende, e o lugar dela e a arvore. O que sobra na lista de nao
+    reconhecidas e so o que nao tem pai nem conta canonica.
+    """
+    publicadas = set(weg.detalhe["codigo"])
+    assert len(publicadas) > 200
+
+    # As analiticas continuam presentes, agora com hierarquia.
+    assert "1.01.06" in publicadas  # tributos a recuperar
+    assert "2.03.02" in publicadas  # reservas de capital
+    assert "3.04.01" in publicadas  # despesas com vendas
+
+    # Comparar por contagem de linhas, e nao por rotulo: "Outros" e "Outras
+    # Obrigacoes" aparecem em varios pontos do plano e nao sao a mesma conta.
+    assert len(weg.arvore()) == len(publicadas)
+
+
+def test_a_arvore_tem_a_hierarquia_do_plano(weg):
+    """O recuo vem do nivel do codigo, e a ordem e a da demonstracao."""
+    bp = weg.arvore("bp")
+    rotulos = list(bp.index)
+
+    assert rotulos[0].strip().startswith("Ativo Total")
+    assert not rotulos[0].startswith(" "), "conta de primeiro nivel nao tem recuo"
+
+    circulante = next(i for i, r in enumerate(rotulos) if "Ativo Circulante" in r)
+    caixa = next(i for i, r in enumerate(rotulos) if "Caixa e Equivalentes" in r)
+    assert circulante < caixa, "a filha tem que vir depois da mae"
+    assert len(rotulos[caixa]) - len(rotulos[caixa].lstrip()) > (
+        len(rotulos[circulante]) - len(rotulos[circulante].lstrip())
+    ), "a filha tem que ter mais recuo que a mae"
+
+
+def test_a_arvore_ordena_por_hierarquia_e_nao_por_texto(weg):
+    """Em ordem alfabetica 1.01.10 viria antes de 1.01.02."""
+    from valuation.importacao.cvm import _ordem_do_codigo
+
+    assert _ordem_do_codigo("1.01.02") < _ordem_do_codigo("1.01.10")
+    assert _ordem_do_codigo("1.01") < _ordem_do_codigo("1.01.01")
+    assert _ordem_do_codigo("1") < _ordem_do_codigo("2")
+
+
+def test_conta_publicada_com_grafias_diferentes_nao_duplica(weg):
+    """A mesma conta muda de caixa entre anos: "Receita Liquida" e "Receita liquida"."""
+    codigos = list(weg.detalhe["codigo"])
+    assert len(codigos) == len(set(codigos)), "codigo repetido na arvore"
+
+
+def test_a_arvore_soma_de_baixo_para_cima(weg):
+    """A quebra explica o total: 1.01 e a soma das filhas 1.01.x."""
+    valores = dict(zip(weg.detalhe["codigo"], weg.detalhe[2024]))
+    filhas = [
+        v
+        for c, v in valores.items()
+        if c.startswith("1.01.") and c.count(".") == 2 and np.isfinite(v)
+    ]
+    assert filhas
+    assert sum(filhas) == pytest.approx(valores["1.01"], rel=0.005)
+
+
+def test_a_arvore_acompanha_a_escala(weg):
+    milhoes = weg.escalar(1_000_000, "R$ milhões")
+    original = dict(zip(weg.detalhe["codigo"], weg.detalhe[2024]))
+    escalada = dict(zip(milhoes.detalhe["codigo"], milhoes.detalhe[2024]))
+    assert escalada["1"] == pytest.approx(original["1"] / 1_000_000)
+    # Codigo e nivel nao sao valores e nao podem ter sido divididos.
+    assert list(milhoes.detalhe["nivel"]) == list(weg.detalhe["nivel"])
 
 
 # ---------------------------------------------------------------------------
@@ -323,8 +387,8 @@ def test_capex_soma_imobilizado_e_intangivel(weg):
 def test_capex_nao_engole_a_venda_de_imobilizado(weg):
     """6.02.04 e recebimento pela venda de imobilizado -- entrada, nao capex."""
     assert "6.02.04" not in weg.mapeamento["capex"]
-    naos = [linha.rotulo for linha in weg.nao_reconhecidas]
-    assert any(r.startswith("6.02.04") for r in naos)
+    # Continua publicada e visivel na arvore, so nao somada ao capex.
+    assert "6.02.04" in set(weg.detalhe["codigo"])
 
 
 def test_juros_pagos_somados_das_duas_secoes(weg):
@@ -406,6 +470,12 @@ def test_goodwill_esta_dentro_do_intangivel(weg):
 # ---------------------------------------------------------------------------
 
 FATOR_ESCALA = {"MIL": 1_000.0, "UNIDADE": 1.0, "MILHAO": 1_000_000.0}
+
+
+def _rotulo_publicado(dfs, codigo: str) -> str:
+    """Rotulo de uma linha publicada, no formato que a planilha usa."""
+    linha = dfs.detalhe[dfs.detalhe["codigo"] == codigo].iloc[0]
+    return f"{linha['codigo']} - {linha['rotulo']}"
 
 
 def _linhas_publicadas(codigo_cvm: int, escopo: str, ano: int) -> dict:
@@ -933,9 +1003,7 @@ def test_fonte_sobrevive_a_troca_de_unidade(weg):
 def test_fonte_sobrevive_a_correcao_manual(tmp_path):
     destino = tmp_path / "weg.xlsx"
     dfs = importar_cvm(WEG, [2024], cache=DADOS, planilha=destino)
-    alvo = next(
-        l.rotulo for l in dfs.nao_reconhecidas if l.rotulo.startswith("1.02.01")
-    )
+    alvo = _rotulo_publicado(dfs, "1.02.01")
     corrigido = aplicar_mapeamento_manual(dfs, destino, {alvo: "aplicacoes_financeiras"})
     assert corrigido.fonte == dfs.fonte
 
@@ -967,10 +1035,9 @@ def test_planilha_permite_corrigir_um_mapeamento_a_mao(tmp_path):
     destino = tmp_path / "weg.xlsx"
     dfs = importar_cvm(WEG, [2023, 2024], cache=DADOS, planilha=destino)
 
-    # Uma linha do balanco qualquer que o app nao reconheceu. Nao fixa qual: a
-    # lista encolhe a cada melhora do reconhecimento, e o que se testa aqui e o
-    # mecanismo de remapear, nao qual conta sobrou de fora.
-    alvo = next(l.rotulo for l in dfs.nao_reconhecidas if l.aba == "Balanço")
+    # Qualquer linha publicada do balanco serve: o que se testa e o mecanismo de
+    # remapear, e agora o candidato vem da arvore e nao da lista de sobras.
+    alvo = _rotulo_publicado(dfs, "1.02.01")
 
     # O valor esperado vem da propria planilha, pela linha de mesmo rotulo.
     planilha = carregar_abas(destino)["Balanço"]
@@ -981,7 +1048,6 @@ def test_planilha_permite_corrigir_um_mapeamento_a_mao(tmp_path):
 
     assert corrigido.valor("aplicacoes_financeiras", 2024) == pytest.approx(esperado)
     assert "[manual]" in corrigido.mapeamento["aplicacoes_financeiras"]
-    assert len(corrigido.nao_reconhecidas) == len(dfs.nao_reconhecidas) - 1
 
 
 def test_planilha_traz_os_valores_ja_em_reais(tmp_path):
