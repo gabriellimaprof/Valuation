@@ -503,3 +503,111 @@ def ver_ex_ifrs16(analise: AnaliseHistorica) -> VisaoExIFRS16 | None:
         caixa=caixa,
         tem_juros=bool(juros.dropna().any()),
     )
+
+
+def empresa_ex_ifrs16(empresa, visao: VisaoExIFRS16):
+    """Converte um valuation inteiro para a base pre-IFRS 16, coerentemente.
+
+    Nao basta baixar a margem: o aluguel volta a ser custo operacional **e** o
+    passivo de arrendamento sai da ponte. Fazer so metade e o erro que a tela
+    avisa o tempo todo -- margem sem aluguel com divida que inclui arrendamento
+    conta o mesmo compromisso duas vezes.
+
+    O que muda, e por que
+    ---------------------
+
+    * ``margem_ebitda`` cai pelo aluguel sobre receita: ele volta ao resultado.
+    * ``depreciacao_pct_receita`` cai pelo **principal** sobre receita. Sai a
+      depreciacao do direito de uso, que em regime estacionario se aproxima do
+      principal -- e a mesma aproximacao que sustenta ``EBIT_ex = EBIT - juros``.
+    * ``arrendamento_pct_receita`` e **zerado**: antes do IFRS 16 nao ha passivo
+      para crescer, o aluguel ja saiu como despesa.
+    * ``ponte.divida_bruta`` perde o passivo de arrendamento.
+
+    O que **nao** muda, e precisa de olho: ``divida_pl_alvo`` do custo de
+    capital. Tirar arrendamento da divida muda a estrutura de capital de fato, e
+    quem escolheu o D/E alvo escolheu com a divida cheia na cabeca. O ajuste
+    fica com quem tem o julgamento.
+
+    As duas avaliacoes **nao coincidem**, e isso nao e defeito
+    ----------------------------------------------------------
+
+    Escrevi aqui, antes de medir, que elas deveriam ficar proximas -- afinal o
+    IFRS 16 e mudanca de apresentacao. Nao ficam, e a razao e economica.
+
+    O passivo de arrendamento no balanco e o valor presente dos alugueis do
+    **prazo contratado**. Uma rede de lojas nao para de pagar aluguel quando os
+    contratos vencem: renova. Na base pos-IFRS 16 o modelo desconta esse passivo
+    finito e nunca mais cobra aluguel; na base pre-IFRS 16 o aluguel sai do
+    fluxo **para sempre**, inclusive na perpetuidade.
+
+    Medido num caso sem crescimento, aluguel de 10 ao ano e passivo de 37,9
+    (cinco anos a 10%): o valor presente perpetuo do aluguel apos imposto ao
+    WACC e **49,4**. A diferenca de 11,5 e exatamente o que a leitura
+    pos-IFRS 16 ganha por supor que o aluguel acaba.
+
+    A direcao do efeito depende de crescimento e da relacao entre o passivo
+    contratado e o aluguel perpetuo, entao nao ha regra de sinal -- ha duas
+    leituras, e a distancia entre elas mede quanto do valor vem da hipotese de
+    que o aluguel termina.
+    """
+    from dataclasses import replace as _replace
+
+    operacionais = empresa.operacionais
+    if operacionais is None:
+        raise ValueError("Sem premissas operacionais nao ha o que converter.")
+
+    # O deslocamento da margem vem da **mediana das duas series de margem**, e
+    # nao da mediana da razao aluguel/receita. Sao numeros diferentes quando os
+    # anos bons e ruins nao coincidem, e o primeiro e o que de fato se observou.
+    receita = visao.receita.replace(0, np.nan)
+    margens = (visao.margem_ebitda_reportada - visao.margem_ebitda).dropna()
+    aluguel_pct = float(margens.median()) if not margens.empty else float("nan")
+    principal_pct = float((visao.principal / receita).dropna().median())
+    if not np.isfinite(aluguel_pct):
+        raise ValueError("Sem aluguel medido, a conversao nao tem de onde sair.")
+    if not np.isfinite(principal_pct):
+        principal_pct = aluguel_pct
+
+    arrendamento = visao.divida_bruta_reportada - visao.divida_bruta
+    saldo = float(arrendamento.dropna().iloc[-1]) if arrendamento.dropna().any() else 0.0
+
+    novas_margens = [m - aluguel_pct for m in operacionais.margem_ebitda]
+    novas_depreciacoes = [
+        max(d - principal_pct, 0.0) for d in operacionais.depreciacao_pct_receita
+    ]
+
+    return _replace(
+        empresa,
+        operacionais=_replace(
+            operacionais,
+            margem_ebitda=novas_margens,
+            depreciacao_pct_receita=novas_depreciacoes,
+            arrendamento_pct_receita=None,
+            arrendamento_inicial=None,
+        ),
+        ponte=_replace(
+            empresa.ponte,
+            divida_bruta=max(empresa.ponte.divida_bruta - saldo, 0.0),
+        ),
+    )
+
+
+def aluguel_perpetuo(visao: VisaoExIFRS16, wacc: float, aliquota: float = 0.34) -> float:
+    """Valor presente do aluguel apos imposto, cobrado para sempre.
+
+    E o numero que falta na leitura pos-IFRS 16. O balanco traz o passivo do
+    **prazo contratado**; quem aluga ponto comercial renova, e o compromisso
+    economico nao termina com o contrato. Comparar os dois diz quanto de valor
+    o modelo ganha por supor que o aluguel acaba.
+    """
+    aluguel = visao.aluguel.dropna()
+    if aluguel.empty or not np.isfinite(wacc) or wacc <= 0:
+        return float("nan")
+    return float(aluguel.iloc[-1]) * (1 - aliquota) / wacc
+
+
+def passivo_de_arrendamento(visao: VisaoExIFRS16) -> float:
+    """O passivo contratado que o balanco reconhece, no ultimo ano."""
+    diferenca = (visao.divida_bruta_reportada - visao.divida_bruta).dropna()
+    return float(diferenca.iloc[-1]) if not diferenca.empty else float("nan")

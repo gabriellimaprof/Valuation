@@ -60,7 +60,11 @@ PESO_RERATING_ALTO = 0.40
 TSR_IMPLAUSIVEL = 0.40
 # Abaixo disto, a maior parte do EBITDA nao chega ao caixa. Nao e defeito por si
 # -- empresa que cresce rapido prende caixa no giro --, mas precisa de explicacao.
-CONVERSAO_CAIXA_BAIXA = 0.60
+#
+# Era 0,60 e acusava 47,3% das 423 companhias medidas: a mediana brasileira
+# converte 64%, porque o FCO e liquido de imposto e (em dois tercos delas) de
+# juros, e o EBITDA e antes dos dois. O corte agora e o quartil inferior.
+CONVERSAO_CAIXA_BAIXA = 0.30
 # Descolamento entre o juro da DRE e o juro pago que merece o achado.
 #
 # Era 0,02, e disparava em **82,3% das 368 companhias** que publicam os dois

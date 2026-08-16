@@ -151,11 +151,16 @@ def test_os_pares_saem_ordenados_e_o_mais_parecido_vem_primeiro(universo):
 
 
 def test_o_ranking_traz_as_dimensoes_para_conferencia(universo):
-    """Sem elas, o usuario nao tem como discordar do ranking."""
+    """Sem elas, o usuario nao tem como discordar do ranking.
+
+    So as que o universo tem: um universo construido antes de uma dimensao
+    existir continua utilizavel, e a tabela mostra o que de fato foi comparado.
+    """
     perfil = universo.perfis.loc[1, universo.dimensoes].to_dict()
     tabela = pares_proximos(perfil, universo, excluir=1, faixa_de_porte=None)
-    for dimensao in DIMENSOES:
+    for dimensao in universo.dimensoes:
         assert dimensao in tabela.columns
+    assert set(universo.dimensoes) <= set(DIMENSOES)
 
 
 def test_porte_muito_diferente_sai_do_ranking(universo):

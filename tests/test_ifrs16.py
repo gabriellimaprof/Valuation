@@ -273,3 +273,129 @@ def _empresa_rede():
         ponte=PonteValor(divida_bruta=400.0, caixa=50.0),
         unidade="R$ mi",
     )
+
+
+# ---------------------------------------------------------------------------
+# O valuation nas duas bases
+# ---------------------------------------------------------------------------
+
+
+def test_a_conversao_mexe_nas_quatro_pontas():
+    """Meia conversao e o erro que a tela avisa o tempo todo."""
+    from valuation.casos_especiais import empresa_ex_ifrs16
+
+    visao = ver_ex_ifrs16(_rede(arrendamento=300.0))
+    empresa = replace(
+        _empresa_rede(),
+        operacionais=_operacionais(arrendamento_pct_receita=[0.30] * 5),
+    )
+    convertida = empresa_ex_ifrs16(empresa, visao)
+
+    # 1. a margem cai pelo aluguel
+    assert convertida.operacionais.margem_ebitda[0] < empresa.operacionais.margem_ebitda[0]
+    # 2. a depreciacao do direito de uso sai
+    assert (
+        convertida.operacionais.depreciacao_pct_receita[0]
+        < empresa.operacionais.depreciacao_pct_receita[0]
+    )
+    # 3. nao ha passivo para crescer antes do IFRS 16
+    assert convertida.operacionais.arrendamento_pct_receita is None
+    # 4. e o passivo sai da ponte
+    assert convertida.ponte.divida_bruta == pytest.approx(
+        empresa.ponte.divida_bruta - 300.0
+    )
+
+
+def test_as_duas_bases_nao_precisam_coincidir():
+    """O balanco reconhece o aluguel do prazo contratado; quem aluga renova.
+
+    Este teste guarda uma correcao: eu tinha escrito que as duas avaliacoes
+    deveriam ficar proximas por o IFRS 16 ser mudanca de apresentacao. Medido,
+    nao ficam -- e a distancia tem significado, nao e erro de conversao.
+    """
+    from valuation.casos_especiais import (
+        aluguel_perpetuo,
+        empresa_ex_ifrs16,
+        passivo_de_arrendamento,
+    )
+
+    visao = ver_ex_ifrs16(_rede(arrendamento=300.0))
+    empresa = _empresa_rede()
+    reportado = avaliar(empresa)
+    ex = avaliar(empresa_ex_ifrs16(empresa, visao))
+
+    assert reportado.equity_value != pytest.approx(ex.equity_value)
+
+    perpetuo = aluguel_perpetuo(visao, reportado.dcf.taxa_desconto)
+    passivo = passivo_de_arrendamento(visao)
+    assert perpetuo > passivo, (
+        "pagar aluguel para sempre custa mais que o passivo do prazo contratado"
+    )
+
+
+def test_o_aluguel_perpetuo_desconta_o_imposto_e_usa_o_wacc():
+    from valuation.casos_especiais import aluguel_perpetuo
+
+    visao = ver_ex_ifrs16(_rede())
+    aluguel_do_ultimo_ano = float(visao.aluguel.dropna().iloc[-1])
+    assert aluguel_perpetuo(visao, 0.10, aliquota=0.34) == pytest.approx(
+        aluguel_do_ultimo_ano * 0.66 / 0.10
+    )
+    # Sem WACC nao ha perpetuidade que se calcule.
+    import numpy as np
+
+    assert np.isnan(aluguel_perpetuo(visao, 0.0))
+
+
+def test_converter_sem_aluguel_medido_e_recusado():
+    """Sem as duas series de margem nao ha deslocamento que se calcule."""
+    from valuation.casos_especiais import empresa_ex_ifrs16
+
+    visao = ver_ex_ifrs16(_rede())
+    vazia = replace(
+        visao,
+        aluguel=visao.aluguel * float("nan"),
+        ebitda=visao.ebitda * float("nan"),
+        ebitda_reportado=visao.ebitda_reportado * float("nan"),
+    )
+    with pytest.raises(ValueError, match="aluguel"):
+        empresa_ex_ifrs16(_empresa_rede(), vazia)
+
+
+def test_converter_sem_premissas_operacionais_e_recusado(empresa_exemplo):
+    from valuation.casos_especiais import empresa_ex_ifrs16
+
+    vazia = replace(empresa_exemplo, operacionais=None)
+    with pytest.raises(ValueError, match="operacionais"):
+        empresa_ex_ifrs16(vazia, ver_ex_ifrs16(_rede()))
+
+
+def test_farmacia_de_verdade_nas_duas_bases():
+    """Raia Drogasil: o passivo contratado e metade do aluguel perpetuo."""
+    from valuation.casos_especiais import aluguel_perpetuo, passivo_de_arrendamento
+    from valuation.historico import sugerir_premissas
+    from valuation.importacao.cvm import importar_cvm
+    from valuation.premissas import Empresa, PremissasPerpetuidade
+
+    cache = Path.home() / ".cache" / "valuation" / "cvm"
+    if not (cache / "dfp_cia_aberta_2024.zip").exists():
+        pytest.skip("cache da CVM sem o zip de 2024")
+
+    dfs = importar_cvm(5258, [2021, 2022, 2023, 2024], cache=cache).escalar(1e6, "R$ mi")
+    analise = analisar(dfs)
+    sugestao = sugerir_premissas(analise, horizonte=5)
+    empresa = Empresa(
+        nome="Raia Drogasil",
+        macro=PremissasMacro(inflacao_brl=0.05, pib_real=0.015),
+        operacionais=sugestao.operacionais,
+        ponte=sugestao.ponte,
+        custo_capital=replace(sugestao.custo_capital, beta_alavancado_setor=1.0),
+        perpetuidade=PremissasPerpetuidade(ancora="pib_nominal", roic_perpetuidade=0.15),
+        unidade="R$ mi",
+    )
+    visao = ver_ex_ifrs16(analise)
+    wacc = avaliar(empresa).dcf.taxa_desconto
+
+    passivo = passivo_de_arrendamento(visao)
+    perpetuo = aluguel_perpetuo(visao, wacc, 0.34)
+    assert perpetuo > passivo * 1.5, "o aluguel perpetuo tem que superar o contratado"

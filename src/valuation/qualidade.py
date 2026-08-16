@@ -28,14 +28,22 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
-# Medidos em 423 companhias: a mediana brasileira converte 64% do EBITDA em
-# caixa e o P75 fica em 93%. Os cortes continuam absolutos -- 90% e 60% querem
-# dizer a mesma coisa em qualquer pais --, mas agora se sabe onde caem: "boa" e
-# aproximadamente o quartil superior, e "fraca" pega quase metade da base. Por
-# isso o sinal reporta o percentil junto do numero: ler so o absoluto faz o
-# analista estranhar o normal do seu mercado.
+# Medidos em 423 companhias com a D&A ja corrigida: a mediana brasileira
+# converte **64%** do EBITDA em caixa, o P25 fica em 27% e o P75 em 93%.
+#
+# O corte de 90% sobreviveu por coincidencia feliz -- e praticamente o quartil
+# superior da base. O de 60% nao: acusava 47,3% das companhias, e "metade do
+# mercado tem lucro de baixa qualidade" nao e diagnostico, e ruido. Virou 30%,
+# perto do quartil inferior.
+#
+# **Por que 90% nunca foi a barra certa para o Brasil.** O FCO e liquido de
+# imposto pago (316 de 321 companhias classificam imposto como operacional) e,
+# em dois tercos delas, tambem de juros pagos (245 contra 193 no financiamento).
+# O EBITDA e antes dos dois. Com aliquota de 34% e juro brasileiro, a cunha
+# entre os dois numeros e grande **sem que nada tenha acontecido com o lucro**.
+# Esperar 90% era importar uma referencia de mercado de imposto e juro baixos.
 CONVERSAO_BOA = 0.90
-CONVERSAO_FRACA = 0.60
+CONVERSAO_FRACA = 0.30
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 # Diferenca entre juro de competencia e juro pago que sugere capitalizacao.
@@ -125,7 +133,12 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
             "lucro e caixa não pode ser medida.",
         )
 
-    texto = f"A mediana do período converte {conversao:.0%} do EBITDA em caixa."
+    texto = (
+        f"A mediana do período converte {conversao:.0%} do EBITDA em caixa. "
+        "O FCO já é líquido de imposto pago e, em dois terços das companhias "
+        "brasileiras, também de juros — o EBITDA é antes dos dois, então parte "
+        "da distância é estrutural e não fala de qualidade do lucro."
+    )
     onde = referencias.descrever("Conversao de caixa (FCO / EBITDA)", conversao)
     if onde:
         # O corte absoluto diz o que a conta significa; o percentil diz se o

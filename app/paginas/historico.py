@@ -168,6 +168,8 @@ def _ifrs16(visao, dfs) -> None:
     if visao.ressalva:
         st.warning(visao.ressalva)
 
+    _valuation_nas_duas_bases(visao, unidade)
+
     with st.expander("Como cada número é obtido"):
         st.markdown(
             "- **Aluguel** = principal + juros de arrendamento desembolsados no ano, "
@@ -181,6 +183,67 @@ def _ifrs16(visao, dfs) -> None:
             "companhias** a publicam em linha própria — esparsa demais para sustentar "
             "a conta."
         )
+
+
+def _valuation_nas_duas_bases(visao, unidade: str) -> None:
+    """Roda o DCF nas duas bases e mostra de onde vem a diferença.
+
+    A diferença não é erro de conversão: o balanço reconhece o aluguel do
+    **prazo contratado**, e quem aluga ponto comercial renova. A distância entre
+    as duas avaliações mede quanto do valor vem de supor que o aluguel acaba.
+    """
+    from valuation.casos_especiais import (
+        aluguel_perpetuo,
+        empresa_ex_ifrs16,
+        passivo_de_arrendamento,
+    )
+
+    resultado = estado.resultado()
+    if resultado is None:
+        return
+
+    st.markdown("#### O mesmo valuation nas duas bases")
+    try:
+        convertida = empresa_ex_ifrs16(estado.empresa(), visao)
+        ex = __import__("valuation", fromlist=["avaliar"]).avaliar(
+            convertida, **estado.convencoes()
+        )
+    except (ValueError, ZeroDivisionError) as erro:
+        st.info(f"Não consegui converter o modelo para a base ex-IFRS 16: {erro}")
+        return
+
+    wacc = resultado.dcf.taxa_desconto
+    perpetuo = aluguel_perpetuo(visao, wacc, estado.empresa().macro.aliquota_ir)
+    passivo = passivo_de_arrendamento(visao)
+
+    colunas = st.columns(4)
+    with colunas[0]:
+        metrica("Equity — base reportada", resultado.equity_value, "moeda", unidade)
+    with colunas[1]:
+        metrica("Equity — base ex-IFRS 16", ex.equity_value, "moeda", unidade)
+    with colunas[2]:
+        metrica("Passivo de arrendamento (contratado)", passivo, "moeda", unidade)
+    with colunas[3]:
+        metrica("Aluguel perpétuo, a valor presente", perpetuo, "moeda", unidade)
+
+    if np.isfinite(perpetuo) and np.isfinite(passivo):
+        folga = perpetuo - passivo
+        st.caption(
+            f"O balanço reconhece {formatar(passivo, 'moeda', unidade)} de "
+            f"arrendamento — o valor presente dos aluguéis do **prazo contratado**. "
+            f"Pagar aluguel para sempre custa {formatar(perpetuo, 'moeda', unidade)} "
+            f"a valor presente. A diferença de {formatar(folga, 'moeda', unidade)} é o "
+            "que a leitura reportada ganha por supor que o aluguel termina quando o "
+            "contrato vence."
+        )
+
+    st.caption(
+        "A conversão desloca a margem EBITDA pelo aluguel, tira a depreciação do "
+        "direito de uso, zera as adições projetadas de arrendamento e retira o "
+        "passivo da ponte. **O D/E alvo do custo de capital não é convertido** — "
+        "quem o escolheu escolheu com a dívida cheia em mente, e mexer nisso é "
+        "decisão de quem tem o julgamento."
+    )
 
 
 def _qualidade(analise) -> None:

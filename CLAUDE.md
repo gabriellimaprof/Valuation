@@ -143,6 +143,30 @@ ao contrário, esconde. Cobertura: 258 das 467 companhias publicam o principal,
 184 os juros — sem os juros o ajuste é declarado como **piso**. A depreciação do
 direito de uso viria mais direto, mas só 10% a publicam.
 
+**As duas bases não coincidem no valuation, e a diferença tem nome.** Escrevi
+que deveriam, já que IFRS 16 é apresentação. Errado: o balanço reconhece o
+aluguel do **prazo contratado**, e quem aluga ponto renova. Medido num caso sem
+crescimento, aluguel de 10/ano e passivo de 37,9 — o VP perpétuo do aluguel após
+imposto ao WACC é **49,4**. Na Raia Drogasil: passivo de R$ 4,4 bi contra R$ 9,3
+bi de aluguel perpétuo. A distância é quanto do valor vem de supor que o aluguel
+acaba, e a aba IFRS 16 mostra as duas avaliações lado a lado.
+
+`empresa_ex_ifrs16` converte as quatro pontas de uma vez (margem, depreciação,
+adições projetadas, ponte). **O D/E alvo não é convertido** — quem o escolheu
+escolheu com a dívida cheia em mente.
+
+**FCO/EBITDA não é comparável entre companhias, e nem era a barra certa.** O FCO
+é líquido de imposto pago (316 de 321 classificam imposto como operacional) e,
+em **dois terços** delas, também de juros pagos (245 no operacional contra 193
+no financiamento) — o EBITDA é antes dos dois. Com alíquota de 34% e juro
+brasileiro, a cunha é grande sem que nada tenha acontecido com o lucro. E como a
+classificação do juro é escolha de apresentação, duas companhias idênticas com
+classificações diferentes têm conversões diferentes.
+
+Consequência: o corte de "fraca" era 0,60 e acusava **47,3%** das 423 companhias
+medidas. Virou 0,30, perto do quartil inferior. O de 0,90 sobreviveu por
+coincidência feliz — é praticamente o quartil superior da base.
+
 **Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
 2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
 Medido em 368 companhias: **a mediana brasileira descola 8,2 p.p.**, porque a
@@ -224,7 +248,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-693 testes passando. Verificado de verdade: contas financeiras, identidades,
+701 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

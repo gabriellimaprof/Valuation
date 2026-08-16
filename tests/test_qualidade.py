@@ -47,7 +47,7 @@ def test_conversao_baixa_sem_crescimento_e_ruim():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.35,
+                "Conversao de caixa (FCO / EBITDA)": 0.18,
                 "Crescimento da receita": 0.02,
             }
         )
@@ -62,7 +62,7 @@ def test_conversao_baixa_com_crescimento_e_so_atencao():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.35,
+                "Conversao de caixa (FCO / EBITDA)": 0.18,
                 "Crescimento da receita": 0.30,
             }
         )
@@ -136,7 +136,7 @@ def test_o_pior_sinal_manda():
     q = avaliar_qualidade(
         _analise(
             **{
-                "Conversao de caixa (FCO / EBITDA)": 0.30,
+                "Conversao de caixa (FCO / EBITDA)": 0.15,
                 "Crescimento da receita": 0.01,
                 "Custo da divida efetivo": 0.10,
                 "Custo da divida pelo caixa": 0.10,
@@ -187,3 +187,27 @@ def test_weg_tem_lucro_que_vira_caixa():
     assert q.conversao_mediana > 0.7
     codigos = {s.codigo for s in q.sinais}
     assert codigos == {"conversao", "giro", "juros"}
+
+
+def test_o_corte_de_conversao_fraca_nao_pode_acusar_metade_do_mercado():
+    """Calibracao medida: 0,60 acusava 47,3% das 423 companhias da base.
+
+    A mediana brasileira converte 64% do EBITDA em caixa -- nao por falta de
+    qualidade, mas porque o FCO e liquido de imposto e, em dois tercos das
+    companhias, tambem de juros, enquanto o EBITDA e antes dos dois. Um corte
+    que classifica o tipico como fraco gasta a atencao do leitor.
+    """
+    from valuation.qualidade import CONVERSAO_BOA, CONVERSAO_FRACA
+    from valuation import referencias
+
+    mediana_da_base = referencias.BASE["Conversao de caixa (FCO / EBITDA)"][1][3]
+    assert CONVERSAO_FRACA < mediana_da_base, "o corte de 'fraca' pegaria a mediana"
+    # E "boa" continua sendo uma barra alta: o quartil superior da base.
+    assert referencias.posicao("Conversao de caixa (FCO / EBITDA)", CONVERSAO_BOA) > 0.70
+
+
+def test_a_conversao_explica_que_parte_da_distancia_e_estrutural():
+    q = avaliar_qualidade(_analise(**{"Conversao de caixa (FCO / EBITDA)": 0.64}))
+    conversao = next(s for s in q.sinais if s.codigo == "conversao")
+    assert "líquido de imposto" in conversao.detalhe
+    assert "estrutural" in conversao.detalhe

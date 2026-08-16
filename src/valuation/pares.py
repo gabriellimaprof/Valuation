@@ -55,6 +55,12 @@ DIMENSOES: tuple[str, ...] = (
     "Capex / Receita",
     "Crescimento da receita",
     "Divida liquida / EBITDA",
+    # Quanto do EBITDA e aluguel. Sem esta dimensao, o IFRS 16 emparelha errado:
+    # a Smart Fit, com margem EBITDA de 48% inflada por aluguel, caia ao lado de
+    # ferrovia e geradora de energia -- empresas de margem alta que sao donas do
+    # ativo. Com ela, intensidade de aluguel vira eixo proprio e quem aluga fica
+    # perto de quem aluga.
+    "Aluguel / EBITDA",
 )
 
 # Fora desta razao de receita, a comparacao deixa de ser util mesmo com perfil
@@ -107,11 +113,25 @@ def perfil_de(analise) -> dict[str, float]:
     Mediana e nao ultimo ano: um comparavel escolhido pelo ano de uma greve ou
     de uma aquisicao e um comparavel escolhido pelo ruido.
     """
-    return {
+    perfil = {
         dimensao: analise.mediana(dimensao)
         for dimensao in DIMENSOES
         if dimensao in analise.indicadores.index
     }
+
+    # "Sem aluguel" e "aluguel nao publicado" sao coisas diferentes, e so a
+    # primeira e zero. Medido em 2024: 341 companhias tem passivo de
+    # arrendamento no balanco e 308 delas publicam o desembolso na DFC. As 33
+    # que tem o passivo e nao publicam o desembolso ficam sem a dimensao, e nao
+    # com zero -- zero as faria parecer donas do ativo que alugam.
+    if "Aluguel / EBITDA" not in perfil:
+        d = analise.demonstracoes
+        arrendamento = d.serie("arrendamento_curto_prazo").add(
+            d.serie("arrendamento_longo_prazo"), fill_value=0
+        )
+        if not arrendamento.dropna().any():
+            perfil["Aluguel / EBITDA"] = 0.0
+    return perfil
 
 
 def _padronizar(valores: pd.Series, escalas: pd.DataFrame) -> pd.Series:
