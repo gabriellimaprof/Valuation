@@ -199,6 +199,34 @@ companhia, ante 26 antes.
    88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
    e cai na lista de não reconhecidas, para mapeamento manual.
 
+## Fontes de mercado já verificadas em campo (não implementadas)
+
+Três APIs públicas foram confirmadas contra o endpoint real, com formato e
+nomes exatos. Falta o módulo; a parte que costuma custar mais já está feita.
+
+- **Focus / Expectativas de Mercado** (`olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata`):
+  IPCA, Selic, PIB e Câmbio por ano de referência, com mediana, desvio e nº de
+  respondentes. Nomes dos indicadores acentuados: `"PIB Total"`, `"Câmbio"`.
+- **SGS do BCB** (`api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados`):
+  série 432 Selic meta, 13522 IPCA 12 meses. Aceita `/ultimos/N`.
+- **Tesouro Transparente** — preço e taxa diários de todos os títulos, incluindo
+  a curva NTN-B. Latin-1, `;`, decimal com vírgula: **as mesmas convenções da
+  CVM**, então o tratamento existente serve.
+
+**O uso mais valioso da NTN-B não é virar `rf`, é calibrar `risco_pais`.** O Ke
+é montado em USD por decisão documentada acima, e trocar isso pela curva local
+esbarra num ERP local que a série brasileira não sustenta. Mas a curva permite
+medir o parâmetro que hoje é chutado: NTN-B 2035 a 8,0% real, nominalizada pelo
+IPCA longo do Focus (3,5%), dá `rf` BRL de 11,8%; o `rf_usd` de 4,5% convertido
+por diferencial de inflação dá 6,2%. A diferença — perto de 5,5 pontos — é o que
+o mercado cobra de risco Brasil, contra os **2,5% embarcados** como padrão.
+
+Não é risco soberano puro: carrega o descasamento entre a inflação assumida no
+app e a do Focus, mais prêmio de liquidez do título. A ordem de grandeza é
+informativa; o número exige separar essas parcelas. Antes de mudar o padrão,
+medir o efeito nas 467 companhias — taxa de desconto errada só aparece no
+número final.
+
 ## Para onde isto vai
 
 O objetivo declarado pelo dono do projeto é automatizar **a primeira camada da
