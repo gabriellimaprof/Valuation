@@ -464,6 +464,29 @@ def test_companhia_sem_consolidado_cai_para_o_individual(catalogo):
     assert any("individual" in aviso for aviso in dfs.avisos)
 
 
+def test_escopo_e_o_mesmo_em_todas_as_demonstracoes():
+    """DRE do grupo com DFC da empresa isolada seriam duas entidades na tabela.
+
+    O escopo e resolvido uma vez por companhia, antes de ler qualquer
+    demonstracao. Nos arquivos de 2024, nenhuma das 467 companhias com
+    consolidado deixa de publicar alguma demonstracao nesse escopo, entao
+    travar aqui nao custa dado.
+    """
+    from valuation.importacao.cvm import escopo_da_companhia
+
+    zip_2024 = DADOS / "dfp_cia_aberta_2024.zip"
+    assert escopo_da_companhia(zip_2024, 2024, WEG) == "con"
+    assert escopo_da_companhia(zip_2024, 2024, ELEKTRO) == "ind"
+    assert escopo_da_companhia(zip_2024, 2024, 999_999) is None
+
+
+def test_companhia_com_consolidado_nao_mistura_com_individual(weg):
+    """A WEG publica nos dois escopos; nenhuma linha pode vir do individual."""
+    assert not any("individual" in aviso for aviso in weg.avisos)
+    # O ativo total consolidado da WEG em 2024 e maior que o individual.
+    assert weg.valor("ativo_total", 2024) == pytest.approx(41_489_701_000.0)
+
+
 def test_companhia_inexistente_explica_o_que_houve(catalogo):
     with pytest.raises(ErroCVM, match="nao tem DFP desta companhia"):
         importar_cvm(999_999, [2024], cache=DADOS, catalogo=catalogo)

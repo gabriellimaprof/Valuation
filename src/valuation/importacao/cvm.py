@@ -454,51 +454,63 @@ def _filtrar_empresa(dados: pd.DataFrame, codigo_cvm: int) -> pd.DataFrame:
     return recorte
 
 
+def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None:
+    """Consolidado ou individual, decidido uma vez para a companhia inteira.
+
+    Escolher por demonstracao permitiria ler a DRE do grupo economico junto com
+    a DFC da empresa isolada -- duas entidades diferentes na mesma tabela, sem
+    nada indicando qual foi qual. Conferido nos arquivos de 2024: das 467
+    companhias com consolidado, nenhuma deixa de publicar alguma demonstracao
+    nesse escopo, entao travar aqui nao custa dado.
+    """
+    for escopo in ESCOPOS:
+        for grupos in GRUPOS.values():
+            for grupo in grupos:
+                dados = _ler_csv_do_zip(
+                    zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+                )
+                if dados is not None and not _filtrar_empresa(dados, codigo_cvm).empty:
+                    return escopo
+    return None
+
+
 def _linhas_da_demonstracao(
     zip_path: Path,
     ano: int,
     demonstracao: str,
     codigo_cvm: int,
     avisos: list[str],
+    escopo: str,
 ) -> list[LinhaCVM]:
-    """Le uma demonstracao do zip, tentando consolidado antes de individual."""
+    """Le uma demonstracao do zip, no escopo ja decidido para a companhia."""
     coletadas: list[LinhaCVM] = []
-    escopo_usado: str | None = None
 
-    for escopo in ESCOPOS:
-        for grupo in GRUPOS[demonstracao]:
-            dados = _ler_csv_do_zip(
-                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
-            )
-            recorte = _filtrar_empresa(dados, codigo_cvm)
-            if recorte.empty:
+    for grupo in GRUPOS[demonstracao]:
+        dados = _ler_csv_do_zip(zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm)
+        recorte = _filtrar_empresa(dados, codigo_cvm)
+        if recorte.empty:
+            continue
+        for _, linha in recorte.iterrows():
+            valor = pd.to_numeric(linha.get("VL_CONTA"), errors="coerce")
+            if not np.isfinite(valor):
                 continue
-            escopo_usado = escopo
-            for _, linha in recorte.iterrows():
-                valor = pd.to_numeric(linha.get("VL_CONTA"), errors="coerce")
-                if not np.isfinite(valor):
-                    continue
-                fim = _texto(linha.get("DT_FIM_EXERC"))
-                # O exercicio social nem sempre fecha em 31/12 -- Raizen e Sao
-                # Martinho fecham em marco, Camil em fevereiro. O ano do
-                # valuation e o do encerramento, nao o do nome do arquivo.
-                ano_exercicio = int(fim[:4]) if fim[:4].isdigit() else ano
-                coletadas.append(
-                    LinhaCVM(
-                        codigo=_texto(linha.get("CD_CONTA")),
-                        descricao=_texto(linha.get("DS_CONTA")),
-                        valor=float(valor)
-                        * _fator_escala(linha.get("ESCALA_MOEDA"), avisos),
-                        ano=ano_exercicio,
-                        demonstracao=demonstracao,
-                        escala=_texto(linha.get("ESCALA_MOEDA")),
-                        escopo=escopo,
-                    )
+            fim = _texto(linha.get("DT_FIM_EXERC"))
+            # O exercicio social nem sempre fecha em 31/12 -- Raizen e Sao
+            # Martinho fecham em marco, Camil em fevereiro. O ano do valuation
+            # e o do encerramento, nao o do nome do arquivo.
+            ano_exercicio = int(fim[:4]) if fim[:4].isdigit() else ano
+            coletadas.append(
+                LinhaCVM(
+                    codigo=_texto(linha.get("CD_CONTA")),
+                    descricao=_texto(linha.get("DS_CONTA")),
+                    valor=float(valor)
+                    * _fator_escala(linha.get("ESCALA_MOEDA"), avisos),
+                    ano=ano_exercicio,
+                    demonstracao=demonstracao,
+                    escala=_texto(linha.get("ESCALA_MOEDA")),
+                    escopo=escopo,
                 )
-        # So cai para o individual se o consolidado nao trouxe nada: misturar os
-        # dois escopos somaria o grupo economico com a empresa isolada.
-        if escopo_usado:
-            break
+            )
 
     return coletadas
 
@@ -878,10 +890,18 @@ def importar_cvm(
 
     for ano in anos:
         zip_path = baixar_dfp(ano, cache=cache)
+        # O escopo e decidido para a companhia inteira antes de ler qualquer
+        # demonstracao, para que DRE, balanco e DFC descrevam a mesma entidade.
+        escopo = escopo_da_companhia(zip_path, ano, codigo_cvm)
+        if escopo is None:
+            anos_sem_dados.append(ano)
+            continue
         do_ano: list[LinhaCVM] = []
         for demonstracao in GRUPOS:
             do_ano.extend(
-                _linhas_da_demonstracao(zip_path, ano, demonstracao, codigo_cvm, avisos)
+                _linhas_da_demonstracao(
+                    zip_path, ano, demonstracao, codigo_cvm, avisos, escopo
+                )
             )
         if not do_ano:
             anos_sem_dados.append(ano)

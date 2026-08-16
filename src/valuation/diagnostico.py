@@ -63,6 +63,9 @@ TSR_IMPLAUSIVEL = 0.40
 CONVERSAO_CAIXA_BAIXA = 0.60
 # Diferenca entre o juro da DRE e o juro pago que sugere capitalizacao.
 JUROS_CAPITALIZADOS = 0.02
+# A partir daqui o arrendamento deixa de ser detalhe da divida e passa a mudar a
+# leitura do EBITDA e da alavancagem. Em Petrobras chega a metade.
+LEASING_RELEVANTE = 0.20
 
 
 @dataclass(frozen=True)
@@ -685,6 +688,28 @@ def _checar_contra_historico(
                     "margem estável."
                 ),
                 referencia="Koller, Goedhart & Wessels, Valuation, cap. 20",
+            )
+        )
+
+    leasing = analise.ultimo("Arrendamento / Divida bruta")
+    if np.isfinite(leasing) and leasing > LEASING_RELEVANTE:
+        achados.append(
+            Achado(
+                codigo="divida_e_muito_arrendamento",
+                severidade=INFORMACAO,
+                titulo=f"{_pct(leasing, 0)} da dívida bruta é arrendamento (IFRS 16)",
+                detalhe=(
+                    "Desde 2019 o aluguel vira ativo de direito de uso e passivo de "
+                    "arrendamento, e a despesa sai do EBITDA para virar depreciação "
+                    "mais juros. Duas consequências: o EBITDA fica maior do que era "
+                    "antes da norma, e essa dívida já está no balanço."
+                ),
+                acao=(
+                    "Não capitalize o aluguel de novo — contaria a mesma dívida duas "
+                    "vezes. Ao comparar múltiplos, confirme que os pares seguem a "
+                    "mesma norma."
+                ),
+                referencia="CPC 06 (R2) / IFRS 16",
             )
         )
 
