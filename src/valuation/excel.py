@@ -290,11 +290,19 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
         refs["g_perpetuo"] = aba.formula(
             f"Crescimento perpetuo (ancorado em {rotulo})", f"={origem}", PCT
         )
-    refs["roic_perp"] = aba.entrada(
-        "ROIC na perpetuidade (vazio = sem normalizacao)",
-        perp.roic_perpetuidade if perp.roic_perpetuidade is not None else "",
-        PCT,
-    )
+    if perp.roic_real is not None:
+        refs["roic_real"] = aba.entrada("ROIC na perpetuidade (real)", perp.roic_real, PCT)
+        refs["roic_perp"] = aba.formula(
+            "ROIC na perpetuidade (nominal, indexado ao IPCA)",
+            f"=(1+{_celula(refs['roic_real'])})*(1+{_celula(refs['inflacao_brl'])})-1",
+            PCT,
+        )
+    else:
+        refs["roic_perp"] = aba.entrada(
+            "ROIC na perpetuidade (vazio = sem normalizacao)",
+            perp.roic_perpetuidade if perp.roic_perpetuidade is not None else "",
+            PCT,
+        )
     refs["multiplo_saida"] = aba.entrada(
         "Multiplo de saida EV/EBITDA",
         perp.multiplo_saida if perp.multiplo_saida is not None else "",

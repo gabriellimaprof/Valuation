@@ -76,3 +76,37 @@ def test_sem_arvore_a_aba_nao_existe(weg):
     assert "Liquidez e composição" not in rotulos
     # E as demais abas continuam la.
     assert "Resultado" in rotulos and "Tudo" in rotulos
+
+
+# ---------------------------------------------------------------------------
+# Qualidade dos lucros
+# ---------------------------------------------------------------------------
+
+
+def test_a_aba_de_qualidade_aparece_e_da_um_veredito(weg):
+    teste = _rodar(weg)
+    rotulos = [aba.label for aba in teste.tabs if aba.label]
+    assert "Qualidade dos lucros" in rotulos
+
+    qualidade = teste.session_state["qualidade"]
+    assert qualidade.sinais, "o motor rodou mas nao produziu sinal nenhum"
+    assert qualidade.veredito in ("bom", "atencao", "ruim", "sem dados")
+
+
+def test_o_veredito_e_o_pior_sinal_e_a_tela_diz_isso(weg):
+    """Media de sinais e como um alerta some; a tela precisa explicar a regra."""
+    teste = _rodar(weg)
+    texto = " ".join(m.value for m in teste.markdown)
+    assert "Lucro é opinião, caixa é fato" in texto
+
+    qualidade = teste.session_state["qualidade"]
+    vereditos = [s.veredito for s in qualidade.sinais if s.veredito != "sem dados"]
+    if vereditos:
+        pior = min(vereditos, key=lambda v: {"ruim": 0, "atencao": 1, "bom": 2}[v])
+        assert qualidade.veredito == pior
+
+
+def test_os_cortes_sao_apresentados_como_convencao(weg):
+    """Nao calibrados contra a base da CVM -- e a tela nao pode esconder isso."""
+    teste = _rodar(weg)
+    assert any("convenções de leitura" in c.value for c in teste.caption)

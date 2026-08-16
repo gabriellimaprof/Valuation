@@ -150,15 +150,24 @@ def _decompor(resultado, acionista):
     divida_saida = float(acionista.divida_fechamento[-1])
 
     colunas = st.columns(3)
+    guardado = estado.preco()
+    padrao = (
+        float(guardado["valor"])
+        if guardado and not guardado["por_acao"]
+        else float(resultado.equity_value)
+    )
     preco = colunas[0].number_input(
         f"Preço de entrada ({unidade})",
-        value=float(resultado.equity_value),
+        value=padrao,
         step=10.0,
         help=(
             "Por padrão, o valor que o próprio DCF calculou. Troque pelo valor de "
-            "mercado para saber o retorno de comprar ao preço de tela."
+            "mercado para saber o retorno de comprar ao preço de tela. O número é "
+            "compartilhado com a tela de Margem de segurança."
         ),
     )
+    if preco != padrao or guardado is None:
+        estado.definir_preco(preco, por_acao=False)
     escolha_saida = colunas[1].selectbox("Múltiplo de saída", list(SAIDAS))
     modo = SAIDAS[escolha_saida]
 

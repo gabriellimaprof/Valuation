@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation.qualidade import BOM, RUIM, SEM_DADOS, avaliar_qualidade
+
 from .. import estado
 from ..componentes import conceito, etapa, formatar, grafico, metrica, tabela_formatada
 from ..graficos import (
@@ -42,7 +44,13 @@ def render() -> None:
     _cartoes(analise, dfs)
     st.divider()
 
-    rotulos = ["Resultado", "Retorno e decomposição", "Reinvestimento", "Capital de giro"]
+    rotulos = [
+        "Resultado",
+        "Qualidade dos lucros",
+        "Retorno e decomposição",
+        "Reinvestimento",
+        "Capital de giro",
+    ]
     tem_arvore = getattr(dfs, "detalhe", None) is not None and not dfs.detalhe.empty
     if tem_arvore:
         rotulos += ["Liquidez e composição"]
@@ -52,13 +60,15 @@ def render() -> None:
     with abas[0]:
         _resultado(analise, dfs)
     with abas[1]:
-        _retorno(analise)
+        _qualidade(analise)
     with abas[2]:
-        _reinvestimento(analise)
+        _retorno(analise)
     with abas[3]:
+        _reinvestimento(analise)
+    with abas[4]:
         _capital_de_giro(analise)
     if tem_arvore:
-        with abas[4]:
+        with abas[5]:
             _liquidez(analise, dfs)
     with abas[-1]:
         st.dataframe(
@@ -70,6 +80,53 @@ def render() -> None:
             analise.resumo().style.format("{:,.3f}", na_rep="—"),
             width="stretch",
         )
+
+
+def _qualidade(analise) -> None:
+    """A distância entre o lucro contábil e o caixa que ele gerou.
+
+    O veredito é o **pior** sinal, não a média deles: uma boa conversão de caixa
+    não cancela juro que virou ativo. Média de sinais é como um alerta some.
+    """
+    st.markdown(
+        "Lucro é opinião, caixa é fato. Esta aba mede a distância entre os dois nos "
+        "anos importados — não para acusar ninguém de nada, mas porque uma projeção "
+        "ancorada num lucro que não vira caixa herda o problema inteiro."
+    )
+
+    qualidade = avaliar_qualidade(analise)
+    st.session_state["qualidade"] = qualidade
+
+    icone = {BOM: "🟢", RUIM: "🔴"}.get(qualidade.veredito, "🟡")
+    if qualidade.veredito == BOM:
+        st.success(f"{icone} {qualidade.resumo}")
+    elif qualidade.veredito == RUIM:
+        st.error(f"{icone} {qualidade.resumo}")
+    elif qualidade.veredito == SEM_DADOS:
+        st.info(f"⚪ {qualidade.resumo}")
+    else:
+        st.warning(f"{icone} {qualidade.resumo}")
+
+    if np.isfinite(qualidade.conversao_mediana):
+        colunas = st.columns(3)
+        with colunas[0]:
+            metrica("Conversão mediana FCO / EBITDA", qualidade.conversao_mediana, "pct")
+        colunas[1].caption(
+            "Acima de 90% é uma empresa que entrega em caixa o que reporta em lucro; "
+            "abaixo de 60% pede explicação antes de projetar."
+        )
+
+    for sinal in qualidade.por_severidade:
+        with st.expander(f"{sinal.icone} {sinal.titulo}", expanded=sinal.veredito == RUIM):
+            st.markdown(sinal.detalhe)
+            if np.isfinite(sinal.valor):
+                st.caption(f"Medido: {formatar(sinal.valor, 'pct2')}")
+
+    st.caption(
+        "Os cortes (90% e 60% de conversão, 2 p.p. de descolamento no juro) são "
+        "convenções de leitura, calibradas na mão e ainda não medidas contra a base "
+        "inteira da CVM. Servem para dirigir atenção, não para decidir."
+    )
 
 
 COMPOSICOES = (

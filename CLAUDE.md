@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 542 testes
+pytest                        # 621 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -53,6 +53,8 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   casos_especiais.py    P&D, ciclicidade, leasing
   dados_setoriais.py    betas e prêmios por setor e país
   mercado.py            curva de NTN-B e Focus; risco-país implícito
+  margem.py             margem de segurança e DCF reverso
+  relatorio.py          o material todo em um markdown diffável
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
   biblioteca.py         pasta local de valuations, desligada por padrão
@@ -169,7 +171,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-542 testes passando. Verificado de verdade: contas financeiras, identidades,
+621 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -321,14 +323,22 @@ Isso reordena as lacunas. Medido contra esse objetivo:
 - **Atualizar quando sai resultado** — existe, detecta exercício novo.
 - **Comparar com pares** — parcial: `SETOR_ATIV` é classificação de registro e
   não dá peer group econômico.
-- **Qualidade dos lucros** — as peças existem (conversão FCO/EBITDA, juro pago
-  contra competência, giro pelo caixa) mas **espalhadas como indicadores**.
-  Qualidade de earnings é uma tese com veredito, não uma linha de tabela.
-- **Relatório estruturado** — **não existe**. O app são dez telas interativas;
-  o objetivo termina num documento que alguém lê sem abrir o app. É a maior
-  lacuna, e a base para fechá-la já está pronta.
-- **Margem de segurança** — o motor calcula valor; falta a distância até o
-  preço, que é o que fecha a decisão.
+- **Qualidade dos lucros** — feito. `qualidade.py` transforma os indicadores
+  dispersos em veredito, e o veredito é o **pior** sinal, não a média deles:
+  média é como um alerta some. Aba própria em Histórico.
+- **Relatório estruturado** — feito. `relatorio.py` monta em markdown o que a
+  empresa entregou, o que o modelo assume, quanto vale, o que o preço embute e
+  o que pode dar errado. Markdown de propósito: rodar de novo em três meses e
+  comparar com um diff mostra o que mudou no raciocínio; um PDF novo só mostra
+  que mudou alguma coisa. **A seção final lista o que ele não verifica**, e as
+  seções ausentes aparecem escritas — quem lê precisa distinguir "verificado e
+  está bem" de "não foi verificado".
+- **Margem de segurança** — feito, em `margem.py` e tela própria. Junto veio o
+  **DCF reverso**: para cada premissa, o valor que faria o modelo dar exatamente
+  o preço pedido. É o que troca "acho caro" por uma afirmação conferível.
+- **Risco-país observado** — a medição pela curva de NTN-B ganhou tela (aba em
+  Custo de capital). Não busca nada sem o usuário pedir, e o padrão continua sem
+  mudar sozinho.
 
 ## Lacunas conhecidas
 
@@ -348,6 +358,17 @@ Em ordem de valor:
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte
    mostrando o que moveu o valor.
+6. **O ROIC indexado é opcional e nasce desligado.** Marcar a caixa não muda o
+   valor de hoje — só a resposta ao estresse de inflação —, mas ligar por padrão
+   mudaria o resultado de todo estresse já salvo. O diagnóstico avisa quando a
+   combinação que exagera (g ancorado + ROIC nominal fixo) está montada.
+7. **As faixas do DCF reverso são arbitradas** (`REVERSIVEIS` em `margem.py`).
+   Estreitas demais devolvem "sem solução" quando a resposta estava logo além da
+   borda; largas demais aceitam premissa absurda. Nunca foram medidas contra a
+   base da CVM.
+8. **O relatório não tem seção qualitativa.** Porter, vantagem competitiva e
+   gestão estão citados no objetivo do projeto e não entram em conta nenhuma —
+   o relatório diz isso na seção de limites em vez de fingir cobertura.
 
 ## Como trabalhar neste projeto
 

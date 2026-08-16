@@ -331,6 +331,28 @@ def _checar_perpetuidade(
                 )
             )
         elif roic_perp is not None:
+            if perp.ancora != "livre" and perp.roic_real is None:
+                achados.append(
+                    Achado(
+                        codigo="reinvestimento_nao_indexado",
+                        severidade=INFORMACAO,
+                        titulo="ROIC perpétuo fixo com crescimento ancorado na macro",
+                        detalhe=(
+                            f"O crescimento perpétuo é derivado da inflação, mas o ROIC de "
+                            f"{_pct(roic_perp, 1)} fica parado. Como a taxa de reinvestimento "
+                            f"é g/ROIC — hoje {_pct(g / roic_perp, 1)} do NOPAT —, estressar "
+                            "a inflação sobe o numerador e deixa o denominador onde estava. "
+                            "O modelo passa a cobrar capital que a inflação não pediu, e o "
+                            "estresse de inflação sai exagerado."
+                        ),
+                        acao=(
+                            "Informe o ROIC em termos reais (roic_real) para que o nominal "
+                            "acompanhe a inflação. O valor de hoje não muda — muda só a "
+                            "resposta ao estresse macro."
+                        ),
+                        referencia="Damodaran, Investment Valuation, cap. 12 (inflation)",
+                    )
+                )
             if roic_perp <= wacc:
                 achados.append(
                     Achado(

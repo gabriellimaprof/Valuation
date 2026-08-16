@@ -166,6 +166,22 @@ class PremissasPerpetuidade:
 
     Ancorado, ``crescimento_perpetuo`` deixa de ser entrada e passa a ser
     derivado: quem resolve e ``Empresa``, que e quem tem a macro na mao.
+
+    ``roic_real`` existe pelo mesmo motivo, do outro lado da conta. O ROIC do
+    denominador de ``g / ROIC`` e nominal: e retorno nominal sobre capital
+    nominal. Se o ``g`` esta ancorado na macro e sobe com a inflacao enquanto o
+    ROIC fica parado, a taxa de reinvestimento sobe sozinha e o modelo cobra
+    capital que a inflacao nao pediu -- medido, ``g/ROIC`` saltava de 37% para
+    51% do NOPAT com dois pontos de IPCA. Informando ``roic_real``, o nominal
+    passa a ser derivado::
+
+        roic_perpetuidade = (1 + roic_real) x (1 + inflacao_brl) - 1
+
+    Repare no que isso **nao** faz: a taxa de reinvestimento continua subindo
+    com a inflacao, so que menos (44% em vez de 51%, no mesmo caso). Isso esta
+    certo. Sustentar o mesmo crescimento real custa mais reais nominais quando
+    os precos correm mais rapido; o que estava errado era o tamanho, nao o
+    sinal.
     """
 
     metodo: str = "gordon"
@@ -173,6 +189,7 @@ class PremissasPerpetuidade:
     roic_perpetuidade: float | None = None
     multiplo_saida: float | None = None
     ancora: str = "livre"
+    roic_real: float | None = None
 
     def __post_init__(self) -> None:
         if self.metodo not in ("gordon", "multiplo"):
@@ -181,6 +198,8 @@ class PremissasPerpetuidade:
             raise ValueError("metodo 'multiplo' exige multiplo_saida.")
         if self.roic_perpetuidade is not None and self.roic_perpetuidade <= 0:
             raise ValueError("roic_perpetuidade deve ser positivo.")
+        if self.roic_real is not None and self.roic_real <= 0:
+            raise ValueError("roic_real deve ser positivo.")
         if self.ancora not in ANCORAS_PERPETUIDADE:
             raise ValueError(
                 f"ancora de perpetuidade desconhecida: {self.ancora!r}. "
@@ -194,6 +213,12 @@ class PremissasPerpetuidade:
         if self.ancora == "pib_nominal":
             return macro.pib_nominal
         return None
+
+    def roic_indexado(self, macro: PremissasMacro) -> float | None:
+        """O ROIC nominal que ``roic_real`` implica, ou ``None`` se nao ha."""
+        if self.roic_real is None:
+            return None
+        return (1 + self.roic_real) * (1 + macro.inflacao_brl) - 1
 
 
 @dataclass(frozen=True)
@@ -247,10 +272,16 @@ class Empresa:
     unidade: str = "R$ milhoes"
 
     def __post_init__(self) -> None:
-        ancorado = self.perpetuidade.crescimento_ancorado(self.macro)
-        if ancorado is not None and ancorado != self.perpetuidade.crescimento_perpetuo:
-            object.__setattr__(
-                self,
-                "perpetuidade",
-                replace(self.perpetuidade, crescimento_perpetuo=ancorado),
-            )
+        perp = self.perpetuidade
+        derivados = {}
+
+        ancorado = perp.crescimento_ancorado(self.macro)
+        if ancorado is not None and ancorado != perp.crescimento_perpetuo:
+            derivados["crescimento_perpetuo"] = ancorado
+
+        indexado = perp.roic_indexado(self.macro)
+        if indexado is not None and indexado != perp.roic_perpetuidade:
+            derivados["roic_perpetuidade"] = indexado
+
+        if derivados:
+            object.__setattr__(self, "perpetuidade", replace(perp, **derivados))

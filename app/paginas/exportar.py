@@ -91,7 +91,88 @@ def render() -> None:
             )
 
     st.divider()
+    _relatorio(resultado)
+
+    st.divider()
     _salvar_projeto()
+
+
+def _relatorio(resultado) -> None:
+    """O relatorio estruturado: tudo que o app apurou, num documento so."""
+    from valuation.margem import expectativas_implicitas, margem_de_seguranca, valor_de_referencia
+    from valuation.qualidade import avaliar_qualidade
+    from valuation.relatorio import montar, sumario
+
+    st.subheader("Relatório estruturado")
+    st.markdown(
+        "Reúne num documento só o que a empresa entregou, o que o modelo assume, "
+        "quanto vale, o que o preço embute e o que pode dar errado — com a seção "
+        "final dizendo o que **não** foi verificado. É a primeira camada do "
+        "trabalho, a que consome horas e não exige julgamento."
+    )
+    st.caption(
+        "Markdown de propósito: rodar de novo daqui a três meses e comparar com um "
+        "diff mostra exatamente o que mudou no raciocínio. Um PDF novo só mostra "
+        "que mudou alguma coisa."
+    )
+
+    analise = estado.analise()
+    diagnostico = estado.diagnostico()
+    qualidade = None
+    if analise is not None:
+        try:
+            qualidade = avaliar_qualidade(analise)
+        except ValueError:
+            qualidade = None
+
+    margem = expectativas = None
+    guardado = estado.preco()
+    if guardado:
+        try:
+            valor, chave = valor_de_referencia(resultado, bool(guardado["por_acao"]))
+            margem = margem_de_seguranca(valor, float(guardado["valor"]))
+            expectativas = expectativas_implicitas(
+                estado.empresa(), float(guardado["valor"]), metrica=chave,
+                **estado.convencoes(),
+            )
+        except ValueError:
+            margem = expectativas = None
+
+    faltando = []
+    if analise is None:
+        faltando.append("histórico (importe em **Dados**)")
+    if guardado is None:
+        faltando.append("preço de mercado (informe em **Margem de segurança**)")
+    if faltando:
+        st.info(
+            "O relatório sai assim mesmo, dizendo o que faltou. Para ficar completo: "
+            + "; ".join(faltando)
+            + "."
+        )
+
+    with st.spinner("Montando o relatório..."):
+        texto = montar(
+            resultado,
+            analise=analise,
+            qualidade=qualidade,
+            diagnostico=diagnostico,
+            margem=margem,
+            expectativas=expectativas,
+        )
+
+    st.session_state["relatorio"] = texto
+    st.caption(sumario(diagnostico))
+
+    st.download_button(
+        "Baixar o relatório (.md)",
+        data=texto.encode("utf-8"),
+        file_name=f"relatorio_{_slug(estado.empresa().nome)}.md",
+        mime="text/markdown",
+        type="primary",
+    )
+
+    with st.expander("Ver o relatório"):
+        st.markdown(texto)
 
 
 def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> None:

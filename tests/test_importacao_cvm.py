@@ -1136,3 +1136,23 @@ def test_planilha_traz_os_valores_ja_em_reais(tmp_path):
     dre = carregar_abas(destino)["DRE"]
     linha = dre[dre.iloc[:, 0] == "3.01"]
     assert float(linha.iloc[0, 2]) == pytest.approx(2_577_113_417.0)
+
+
+def test_os_fixtures_continuam_sendo_recortes_e_nao_downloads():
+    """Trava para o acidente que ja aconteceu nesta base.
+
+    ``importar_cvm`` grava no diretorio de cache que recebe. Apontar o cache
+    para ``tests/dados/cvm`` num script de exploracao faz o leitor baixar o zip
+    anual inteiro -- 13 MB por ano -- exatamente ao lado dos recortes de 50 KB.
+    Sem esta trava, isso entra num commit sem ninguem notar.
+    """
+    limite = 1_000_000
+    pesados = [
+        (arquivo.name, arquivo.stat().st_size)
+        for arquivo in DADOS.iterdir()
+        if arquivo.is_file() and arquivo.stat().st_size > limite
+    ]
+    assert not pesados, (
+        f"arquivos acima de 1 MB em {DADOS}: {pesados}. Recorte antes de versionar "
+        "-- os fixtures existentes tem ~50 KB."
+    )

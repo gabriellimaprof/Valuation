@@ -25,14 +25,110 @@ def render() -> None:
     empresa = estado.empresa()
     premissas = empresa.custo_capital
 
-    abas = st.tabs(["Montagem", "Como o número se forma", "Referências por setor"])
+    abas = st.tabs(
+        [
+            "Montagem",
+            "Como o número se forma",
+            "Risco-país pela curva",
+            "Referências por setor",
+        ]
+    )
 
     with abas[0]:
         _montagem(empresa, premissas)
     with abas[1]:
         _decomposicao()
     with abas[2]:
+        _risco_pais_de_mercado(empresa)
+    with abas[3]:
         _referencias()
+
+
+@st.cache_data(ttl=60 * 60, show_spinner=False)
+def _medida_de_mercado(rf_usd: float, inflacao_usd: float, anos: int):
+    """Busca curva e Focus. Em cache por uma hora: a curva é diária.
+
+    O cache é por argumento, então trocar o rf refaz a conta sem rebaixar o
+    arquivo de 30 MB do Tesouro de novo.
+    """
+    from valuation.mercado import medir_risco_pais
+
+    return medir_risco_pais(rf_usd=rf_usd, inflacao_usd=inflacao_usd, anos=anos)
+
+
+def _risco_pais_de_mercado(empresa) -> None:
+    """O prêmio de risco-país observado, em vez do valor de referência."""
+    from valuation.mercado import ANOS_REFERENCIA, ErroMercado
+
+    premissas = empresa.custo_capital
+    st.markdown(
+        "O risco-país embarcado no app é um valor de referência. A curva de NTN-B "
+        "permite **observá-lo**: a taxa real longa, nominalizada pela inflação "
+        "esperada, comparada com o Treasury americano convertido para reais pelo "
+        "mesmo diferencial de inflação que o motor já usa."
+    )
+
+    st.info(
+        "**Esta medida é um piso, não um ponto.** A NTN-B é indexada: quem a carrega "
+        "não corre risco de inflação, e quem carrega título nominal corre e cobra por "
+        "isso. Nominalizar só pela inflação esperada omite esse prêmio, então o "
+        "risco-país sai subestimado. A correção — usar a inflação implícita entre "
+        "prefixado e NTN-B de mesmo prazo — está ao alcance e ainda não foi feita."
+    )
+
+    colunas = st.columns(3)
+    anos = colunas[0].number_input(
+        "Prazo de referência (anos)",
+        min_value=3,
+        max_value=30,
+        value=ANOS_REFERENCIA,
+        help="Longo o bastante para não depender do ciclo de juros, curto o bastante "
+        "para ter liquidez.",
+    )
+    colunas[1].metric("Risco-país no modelo", formatar(premissas.risco_pais, "pct2"))
+
+    if not colunas[2].button("Medir agora", type="primary"):
+        st.caption(
+            "A medição baixa a curva do Tesouro Direto e as projeções do Focus. "
+            "Nada é buscado sem você pedir."
+        )
+        return
+
+    try:
+        with st.spinner("Baixando a curva do Tesouro e o Focus..."):
+            medida = _medida_de_mercado(premissas.rf_usd, empresa.macro.inflacao_usd, int(anos))
+    except ErroMercado as erro:
+        st.error(f"Não consegui medir: {erro}")
+        return
+
+    colunas = st.columns(4)
+    with colunas[0]:
+        metrica("NTN-B (taxa real)", medida.taxa_real_ntnb, "pct2")
+    with colunas[1]:
+        metrica("Nominalizada em BRL", medida.rf_brl_nominal, "pct2")
+    with colunas[2]:
+        metrica("Treasury convertido", medida.rf_usd_em_brl, "pct2")
+    with colunas[3]:
+        metrica(
+            "Risco-país implícito",
+            medida.diferenca,
+            "pct2",
+            delta=formatar(medida.diferenca - premissas.risco_pais, "pct2"),
+        )
+
+    st.markdown(medida.explicacao)
+    st.warning(medida.ressalva)
+    st.markdown(
+        "**O padrão do app não muda sozinho.** Medido em 120 companhias, trocar o "
+        "risco-país de referência pelo implícito derrubou a mediana do equity value "
+        "em 35,7%. Reprecificar uma carteira inteira por conta de um número que a "
+        "própria função adverte não ser risco soberano puro é decisão de quem tem o "
+        "julgamento, não do app."
+    )
+
+    if st.button(f"Usar {formatar(medida.diferenca, 'pct2')} no modelo"):
+        estado.atualizar({"custo_capital.risco_pais": float(medida.diferenca)})
+        st.rerun()
 
 
 def _montagem(empresa, premissas) -> None:

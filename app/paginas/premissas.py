@@ -216,6 +216,7 @@ def _perpetuidade(empresa) -> None:
     conceito("perpetuidade", "A parte do modelo que mais pesa no valor")
 
     perpetuidade = empresa.perpetuidade
+    ipca = empresa.macro.inflacao_brl
     colunas = st.columns(4)
 
     metodo = colunas[0].selectbox(
@@ -250,13 +251,43 @@ def _perpetuidade(empresa) -> None:
         disabled=not usar_gordon,
         help="Desconta do fluxo perpétuo a taxa de reinvestimento g/ROIC.",
     )
+    roic_real = colunas[2].checkbox(
+        "ROIC em termos reais",
+        value=perpetuidade.roic_real is not None,
+        disabled=not (usar_gordon and normalizar),
+        help=(
+            "O ROIC de g/ROIC é nominal. Com o g ancorado na macro, deixar o ROIC "
+            "parado faz a taxa de reinvestimento subir sozinha quando a inflação "
+            "sobe — e o estresse de inflação sai exagerado. Marcando aqui, o "
+            "número abaixo é lido como real e o nominal acompanha o IPCA. **O "
+            "valor de hoje não muda**; muda a resposta ao estresse."
+        ),
+    )
+    # Marcar a caixa nao pode mudar o valuation: o padrao do campo passa a ser o
+    # equivalente real do nominal que ja estava la. Deixar 15% virar 15% real
+    # seria subir o ROIC efetivo para 20,75% sem ninguem pedir.
+    nominal_atual = perpetuidade.roic_perpetuidade or 0.15
+    if roic_real:
+        padrao = (
+            perpetuidade.roic_real
+            if perpetuidade.roic_real is not None
+            else (1 + nominal_atual) / (1 + ipca) - 1
+        )
+    else:
+        padrao = nominal_atual
+
     roic = colunas[2].number_input(
-        "ROIC perpétuo (%)",
-        value=float((perpetuidade.roic_perpetuidade or 0.15) * 100),
+        "ROIC perpétuo real (%)" if roic_real else "ROIC perpétuo (%)",
+        value=float(padrao * 100),
         step=0.5,
         format="%.2f",
         disabled=not (usar_gordon and normalizar),
     )
+    if roic_real:
+        colunas[2].caption(
+            f"Nominal a {formatar(ipca, 'pct')} de IPCA: "
+            f"**{formatar((1 + roic / 100) * (1 + ipca) - 1, 'pct')}**"
+        )
 
     multiplo = colunas[3].number_input(
         "Múltiplo de saída (EV/EBITDA)",
@@ -268,7 +299,6 @@ def _perpetuidade(empresa) -> None:
     st.markdown("**Economia de longo prazo** — os dois números que formam o teto do g")
     colunas = st.columns(4)
 
-    ipca = empresa.macro.inflacao_brl
     colunas[0].metric("IPCA de longo prazo", formatar(ipca, "pct"))
     colunas[0].caption("Editável em **Custo de capital** — de lá ele também entra no WACC.")
 
@@ -307,11 +337,16 @@ def _perpetuidade(empresa) -> None:
         if usar_gordon:
             alteracoes["perpetuidade.metodo"] = "gordon"
             alteracoes["perpetuidade.ancora"] = ancora
-            alteracoes["perpetuidade.roic_perpetuidade"] = (roic / 100) if normalizar else None
-            # Ancorado, quem escreve o g e a macro. Mandar o numero da tela
-            # junto soltaria a ancora na hora de aplicar.
+            # Campos derivados nao viajam: mandar o numero da tela junto soltaria
+            # a origem dele na hora de aplicar.
             if ancora == "livre":
                 alteracoes["perpetuidade.crescimento_perpetuo"] = crescimento / 100
+            if normalizar and roic_real:
+                alteracoes["perpetuidade.roic_real"] = roic / 100
+            else:
+                alteracoes["perpetuidade.roic_perpetuidade"] = (
+                    (roic / 100) if normalizar else None
+                )
         else:
             alteracoes["perpetuidade.metodo"] = "multiplo"
             alteracoes["perpetuidade.multiplo_saida"] = multiplo

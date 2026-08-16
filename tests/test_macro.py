@@ -260,3 +260,91 @@ def test_ancora_e_pib_real_sobrevivem_ao_arquivo_salvo(empresa_exemplo):
     assert voltou.perpetuidade.crescimento_perpetuo == pytest.approx(
         ancorada.perpetuidade.crescimento_perpetuo
     )
+
+
+# ---------------------------------------------------------------------------
+# O ROIC do outro lado da conta
+# ---------------------------------------------------------------------------
+
+
+def test_roic_real_deriva_o_nominal_pela_inflacao(empresa_exemplo):
+    real = (1 + 0.15) / (1 + empresa_exemplo.macro.inflacao_brl) - 1
+    empresa = substituir(empresa_exemplo, "perpetuidade.roic_real", real)
+    assert empresa.perpetuidade.roic_perpetuidade == pytest.approx(0.15)
+
+
+def test_indexar_o_roic_nao_muda_o_valor_de_hoje(empresa_exemplo):
+    """A promessa que a tela faz e que precisa ser verdade.
+
+    Se marcar a caixa reprecificasse a empresa, ninguem marcaria -- e com razao.
+    """
+    nominal = empresa_exemplo.perpetuidade.roic_perpetuidade
+    real = (1 + nominal) / (1 + empresa_exemplo.macro.inflacao_brl) - 1
+    indexada = substituir(empresa_exemplo, "perpetuidade.roic_real", real)
+
+    assert avaliar(indexada).equity_value == pytest.approx(
+        avaliar(empresa_exemplo).equity_value
+    )
+
+
+def test_roic_indexado_segura_o_reinvestimento_sem_zera_lo(empresa_exemplo):
+    """Indexar corrige o exagero, nao o efeito.
+
+    Sustentar o mesmo crescimento real custa mais reais nominais quando os
+    precos correm mais rapido. O reinvestimento tem que continuar subindo com a
+    inflacao -- so que menos.
+    """
+    ancorada = substituir(empresa_exemplo, "perpetuidade.ancora", "pib_nominal")
+    real = (1 + ancorada.perpetuidade.roic_perpetuidade) / (
+        1 + ancorada.macro.inflacao_brl
+    ) - 1
+    indexada = substituir(ancorada, "perpetuidade.roic_real", real)
+
+    def reinvestimento(empresa, ipca=None):
+        if ipca is not None:
+            empresa = substituir(empresa, "macro.inflacao_brl", ipca)
+        perp = empresa.perpetuidade
+        return perp.crescimento_perpetuo / perp.roic_perpetuidade
+
+    ipca_alto = ancorada.macro.inflacao_brl + 0.02
+    fixo = reinvestimento(ancorada, ipca_alto)
+    indexado = reinvestimento(indexada, ipca_alto)
+    base = reinvestimento(ancorada)
+
+    assert base < indexado < fixo
+    assert _efeito_da_inflacao(indexada) > _efeito_da_inflacao(ancorada)
+
+
+def test_mexer_no_roic_nominal_na_mao_solta_a_indexacao(empresa_exemplo):
+    indexada = substituir(empresa_exemplo, "perpetuidade.roic_real", 0.10)
+    solta = substituir(indexada, "perpetuidade.roic_perpetuidade", 0.18)
+
+    assert solta.perpetuidade.roic_real is None
+    assert solta.perpetuidade.roic_perpetuidade == pytest.approx(0.18)
+
+
+def test_desligar_a_normalizacao_leva_a_indexacao_junto(empresa_exemplo):
+    indexada = substituir(empresa_exemplo, "perpetuidade.roic_real", 0.10)
+    desligada = substituir(indexada, "perpetuidade.roic_perpetuidade", None)
+
+    assert desligada.perpetuidade.roic_real is None
+    assert desligada.perpetuidade.roic_perpetuidade is None
+
+
+def test_o_diagnostico_avisa_quando_a_combinacao_exagera(empresa_exemplo):
+    ancorada = substituir(empresa_exemplo, "perpetuidade.ancora", "pib_nominal")
+    codigos = {a.codigo for a in diagnosticar(avaliar(ancorada)).achados}
+    assert "reinvestimento_nao_indexado" in codigos
+
+    real = (1 + ancorada.perpetuidade.roic_perpetuidade) / (
+        1 + ancorada.macro.inflacao_brl
+    ) - 1
+    indexada = substituir(ancorada, "perpetuidade.roic_real", real)
+    codigos = {a.codigo for a in diagnosticar(avaliar(indexada)).achados}
+    assert "reinvestimento_nao_indexado" not in codigos
+
+
+def test_sem_ancora_o_aviso_de_indexacao_nao_aparece(empresa_exemplo):
+    """Quem nao ancorou nao tem o problema, e nao precisa do recado."""
+    codigos = {a.codigo for a in diagnosticar(avaliar(empresa_exemplo)).achados}
+    assert "reinvestimento_nao_indexado" not in codigos

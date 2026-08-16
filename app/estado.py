@@ -38,6 +38,7 @@ CHAVE_COMPARAVEIS = "comparaveis"
 CHAVE_ALVO = "alvo"
 CHAVE_CONFIG = "config"
 CHAVE_PASTA = "pasta_temporaria"
+CHAVE_PRECO = "preco_pedido"
 
 
 def pasta_temporaria() -> Path:
@@ -177,6 +178,26 @@ def analise() -> AnaliseHistorica | None:
         return analisar(dfs)
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Preco pedido
+# ---------------------------------------------------------------------------
+
+
+def preco() -> dict[str, float | bool] | None:
+    """O preco em avaliacao, compartilhado entre as telas que precisam dele.
+
+    Retorno esperado, Margem de seguranca e o relatorio fazem a mesma pergunta a
+    partir do mesmo numero. Guardar em cada tela faria as tres discordarem entre
+    si sem que nada acusasse, que e o pior tipo de divergencia num material que
+    vai para o cliente.
+    """
+    return st.session_state.get(CHAVE_PRECO)
+
+
+def definir_preco(valor: float, por_acao: bool) -> None:
+    st.session_state[CHAVE_PRECO] = {"valor": float(valor), "por_acao": bool(por_acao)}
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ from app.paginas import (  # noqa: E402
     exportar,
     historico,
     inicio,
+    margem,
     multiplos,
     premissas,
     retorno,
@@ -116,6 +117,9 @@ def main() -> None:
         ),
         st.Page(valor.render, title="Valor", icon="💰", url_path="valor"),
         st.Page(retorno.render, title="Retorno esperado", icon="📊", url_path="retorno"),
+        st.Page(
+            margem.render, title="Margem de segurança", icon="🛡️", url_path="margem"
+        ),
         st.Page(
             sensibilidade.render,
             title="Sensibilidade",

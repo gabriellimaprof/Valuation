@@ -1,0 +1,213 @@
+"""Tela de margem de seguranca: a distancia entre o valor e o preco."""
+
+from __future__ import annotations
+
+import numpy as np
+import streamlit as st
+
+from valuation.erros import CombinacaoInviavel
+from valuation.margem import (
+    CARO,
+    COM_MARGEM,
+    MARGEM_EXIGIDA,
+    expectativas_implicitas,
+    margem_de_seguranca,
+    valor_de_referencia,
+)
+
+from .. import estado
+from ..componentes import aviso_sem_modelo, etapa, formatar, metrica
+
+
+def render() -> None:
+    etapa(
+        "Passo 8",
+        "Margem de segurança",
+        "O valuation só vira decisão quando encontra um preço",
+    )
+
+    resultado = estado.resultado()
+    if resultado is None:
+        aviso_sem_modelo(estado.erro_do_modelo())
+        return
+
+    empresa = estado.empresa()
+    st.markdown(
+        "Um DCF entrega um número, e nenhum número decide nada sozinho. A decisão "
+        "está na **distância** entre o valor e o preço pedido — e no tamanho do erro "
+        "que essa distância aguenta antes de a tese virar prejuízo."
+    )
+
+    preco, por_acao = _entrada_do_preco(resultado, empresa)
+    if preco is None:
+        return
+
+    try:
+        valor, metrica_chave = valor_de_referencia(resultado, por_acao)
+    except CombinacaoInviavel as erro:
+        st.warning(str(erro))
+        return
+
+    exigida = (
+        st.slider(
+            "Margem exigida (%)",
+            min_value=0,
+            max_value=60,
+            value=int(MARGEM_EXIGIDA * 100),
+            step=5,
+            help=(
+                "Quanto de desconto sobre o valor você exige para comprar. Graham "
+                "falava em um terço; é convenção, não lei — o número certo depende "
+                "de quanta confiança as premissas merecem."
+            ),
+        )
+        / 100
+    )
+
+    m = margem_de_seguranca(valor, preco, exigida=exigida)
+    unidade = "" if por_acao else empresa.unidade
+    formato = "numero" if por_acao else "moeda"
+
+    _placar(m, unidade, formato)
+    st.divider()
+    _expectativas(empresa, preco, metrica_chave, m)
+
+
+def _entrada_do_preco(resultado, empresa):
+    guardado = estado.preco()
+    colunas = st.columns([2, 3])
+
+    base = colunas[0].radio(
+        "Comparar em",
+        ["Valor total do equity", "Valor por ação"],
+        index=1 if (guardado and guardado["por_acao"]) else 0,
+        horizontal=True,
+    )
+    por_acao = base == "Valor por ação"
+
+    if por_acao and resultado.valor_por_acao is None:
+        colunas[1].warning(
+            "A ponte não tem número de ações em circulação, então não há valor por "
+            "ação. Informe as ações em **Dados** ou compare pelo equity total."
+        )
+        return None, por_acao
+
+    referencia = (
+        float(resultado.valor_por_acao) if por_acao else float(resultado.equity_value)
+    )
+    padrao = (
+        float(guardado["valor"])
+        if guardado and guardado["por_acao"] == por_acao
+        else referencia
+    )
+
+    preco = colunas[1].number_input(
+        "Preço pedido pelo mercado" + ("" if por_acao else f" ({empresa.unidade})"),
+        value=padrao,
+        step=1.0 if por_acao else 10.0,
+        min_value=0.0,
+        help=(
+            "A cotação, ou o valor de mercado total. Começa igual ao valor "
+            "calculado — o que dá margem zero, de propósito: o número tem que vir "
+            "de fora."
+        ),
+    )
+    if preco <= 0:
+        st.info("Informe um preço positivo para comparar.")
+        return None, por_acao
+
+    estado.definir_preco(preco, por_acao=por_acao)
+    return preco, por_acao
+
+
+def _placar(m, unidade: str, formato: str) -> None:
+    colunas = st.columns(4)
+    with colunas[0]:
+        metrica("Valor calculado", m.valor, formato, unidade)
+    with colunas[1]:
+        metrica("Preço pedido", m.preco, formato, unidade)
+    with colunas[2]:
+        metrica("Margem sobre o valor", m.margem, "pct")
+    with colunas[3]:
+        metrica("Potencial sobre o preço", m.potencial, "pct")
+
+    st.caption(
+        "Os dois últimos medem a mesma distância com denominadores diferentes: "
+        "comprar a 70 o que vale 100 é **30% de margem** e **42,9% de potencial**. "
+        "Quem exige “30% de margem” quase sempre quer dizer o primeiro."
+    )
+
+    if m.veredito == COM_MARGEM:
+        st.success(m.resumo())
+    elif m.veredito == CARO:
+        st.error(m.resumo())
+    else:
+        st.warning(m.resumo())
+
+    st.caption(
+        f"Preço máximo para manter {formatar(m.exigida, 'pct')} de margem: "
+        f"**{formatar(m.preco_maximo, formato, unidade)}**."
+    )
+
+
+def _expectativas(empresa, preco, metrica_chave, m) -> None:
+    st.subheader("O que o mercado precisa acreditar")
+    st.markdown(
+        "O DCF ao contrário: para cada premissa, qual valor faria o modelo dar "
+        "exatamente o preço pedido. É o que desarma a discussão improdutiva sobre "
+        "quem tem o modelo certo — *“a este preço o mercado embute margem de 16,4%, "
+        "contra os 20,1% que a empresa entregou”* é uma afirmação que dá para checar."
+    )
+
+    with st.spinner("Invertendo o modelo, uma premissa de cada vez..."):
+        tabela = expectativas_implicitas(
+            empresa, preco, metrica=metrica_chave, **estado.convencoes()
+        )
+
+    st.session_state["expectativas_implicitas"] = tabela
+
+    visivel = tabela.drop(columns=["caminho"])
+    st.dataframe(
+        visivel.style.format(lambda v: formatar(v, "pct2") if np.isfinite(v) else "—"),
+        width="stretch",
+    )
+
+    faltando = visivel["Implícita no preço"].isna()
+    if faltando.any():
+        nomes = ", ".join(visivel.index[faltando])
+        st.info(
+            f"Sem solução dentro da faixa plausível para: **{nomes}**. Isso é uma "
+            "resposta, não uma falha — significa que nenhum valor razoável dessa "
+            "premissa, sozinho, justifica o preço."
+        )
+
+    validos = visivel.dropna(subset=["Diferença"])
+    if validos.empty:
+        return
+
+    if abs(m.margem) < 1e-6:
+        st.markdown(
+            "O preço é o próprio valor calculado, então nada precisa mudar — por isso "
+            "a coluna **Diferença** está zerada. Troque o preço pela cotação de "
+            "mercado para a tabela dizer alguma coisa."
+        )
+        return
+
+    apertada = validos["Diferença"].abs().idxmin()
+    linha = validos.loc[apertada]
+    direcao = "abaixo" if linha["Diferença"] < 0 else "acima"
+    if m.veredito == CARO:
+        leitura = (
+            f"O preço já está acima do valor, então estas são as premissas que "
+            f"teriam de **melhorar** para justificá-lo. A mais próxima é "
+            f"**{apertada}**: {formatar(abs(linha['Diferença']), 'pct2')} {direcao} "
+            "do que está no modelo."
+        )
+    else:
+        leitura = (
+            f"A premissa com menos folga é **{apertada}**: bastam "
+            f"{formatar(abs(linha['Diferença']), 'pct2')} {direcao} do que está no "
+            "modelo para o valor encostar no preço. É de lá que vem o risco desta "
+            "tese, e é ela que merece a próxima hora de trabalho."
+        )
+    st.markdown(leitura)

@@ -170,13 +170,16 @@ def substituir_varios(objeto: Any, alteracoes: dict[str, Any]) -> Any:
             valor = [valor] * len(atual)
         mudancas[campo] = valor
 
-    # Mexer no crescimento perpetuo na mao solta a ancora. Sem esta regra, o
-    # valor informado seria reescrito pela ancora ao remontar a Empresa, e uma
-    # tabela de sensibilidade sobre o g sairia inteira igual -- sem erro, sem
-    # aviso, sem nada na tela que explicasse por que. Quem passa 'ancora'
-    # explicitamente junto continua mandando.
-    if isinstance(objeto, PremissasPerpetuidade) and "crescimento_perpetuo" in folhas:
-        mudancas.setdefault("ancora", "livre")
+    # Mexer num campo derivado na mao solta o que o derivava. Sem esta regra, o
+    # valor informado seria reescrito ao remontar a Empresa, e uma tabela de
+    # sensibilidade sobre o g sairia inteira igual -- sem erro, sem aviso, sem
+    # nada na tela que explicasse por que. Quem passa a origem explicitamente
+    # junto continua mandando.
+    if isinstance(objeto, PremissasPerpetuidade):
+        if "crescimento_perpetuo" in folhas:
+            mudancas.setdefault("ancora", "livre")
+        if "roic_perpetuidade" in folhas:
+            mudancas.setdefault("roic_real", None)
 
     for campo, sub in ramos.items():
         atual = getattr(objeto, campo)

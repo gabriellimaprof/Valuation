@@ -145,3 +145,43 @@ def test_os_eixos_macro_existem_e_avisam_quando_nao_movem_nada():
     assert any("não altera o valuation" in a for a in avisos), (
         "sem âncora em PIB nominal, o eixo sai achatado e a tela precisa dizer"
     )
+
+
+# ---------------------------------------------------------------------------
+# Risco-pais medido pela curva
+# ---------------------------------------------------------------------------
+
+TELA_CUSTO = CABECALHO + """
+from app.paginas import custo_capital
+custo_capital.render()
+"""
+
+
+def test_a_aba_de_risco_pais_existe_e_nao_toca_a_rede_sozinha():
+    """Buscar dado externo sem o usuario pedir e o tipo de surpresa que nao cabe.
+
+    Se a tela buscasse ao abrir, cada rerun do Streamlit -- e sao muitos --
+    baixaria a curva do Tesouro de novo.
+    """
+    teste = _rodar(TELA_CUSTO)
+    rotulos = [aba.label for aba in teste.tabs if aba.label]
+    assert "Risco-país pela curva" in rotulos
+
+    assert any(b.label == "Medir agora" for b in teste.button)
+    assert any("Nada é buscado sem você pedir" in c.value for c in teste.caption)
+
+
+def test_a_tela_avisa_que_a_medida_e_piso():
+    """A NTN-B e indexada: nominalizar so pela inflacao esperada subestima."""
+    teste = _rodar(TELA_CUSTO)
+    avisos = " ".join(i.value for i in teste.info)
+    assert "piso, não um ponto" in avisos
+
+
+def test_a_ancora_do_g_aparece_onde_o_ipca_e_editado():
+    """Quem mexe na inflacao aqui precisa saber que esta mexendo no g tambem."""
+    limpo = _rodar(TELA_CUSTO)
+    assert not any("ancorado em" in c.value for c in limpo.caption)
+
+    ancorado = _rodar(TELA_CUSTO, {"perpetuidade.ancora": "ipca"})
+    assert any("ancorado em **IPCA**" in c.value for c in ancorado.caption)
