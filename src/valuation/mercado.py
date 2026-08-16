@@ -23,13 +23,28 @@ motor ja usa::
 
 A diferenca entre os dois e o que o mercado cobra a mais para financiar o Brasil.
 
-O que essa diferenca **nao** e
-------------------------------
+O que essa diferenca e, e o que ela nao e
+----------------------------------------
 
-Nao e risco soberano puro. Ela carrega tambem o premio de liquidez da NTN-B e
-qualquer descasamento entre a inflacao usada aqui e a que o mercado precifica.
-Por isso a funcao devolve as parcelas junto do resultado: quem le decide quanto
-atribuir a risco-pais, e o app nao troca o padrao sozinho.
+O termo que **domina** e o premio de risco de carregar o Brasil -- e ele que se
+quer medir. Liquidez da NTN-B e ruido de inflacao sao de segunda ordem, mas
+existem, e por isso a funcao devolve as parcelas junto do resultado: quem le
+decide quanto atribuir a risco-pais, e o app nao troca o padrao sozinho.
+
+**A medida atual e um piso, nao um ponto.** A NTN-B e indexada: quem a carrega
+nao corre risco de inflacao. Quem carrega titulo nominal corre, e cobra por
+isso -- o premio de risco de inflacao::
+
+    titulo nominal = juro real + inflacao esperada + premio de risco de inflacao
+    NTN-B          = juro real                                       (indexada)
+
+Nominalizar a NTN-B so com a inflacao esperada, como se faz aqui, omite esse
+premio e produz um ``rf_brl_nominal`` baixo demais -- logo, um risco-pais
+subestimado.
+
+A correcao esta ao alcance e nao foi feita: usar a **inflacao implicita**
+(prefixado menos NTN-B de prazo equivalente) no lugar do IPCA do Focus. Ela ja
+embute o premio, e os dois titulos vem do mesmo arquivo que ``curva_ntnb`` le.
 """
 
 from __future__ import annotations
