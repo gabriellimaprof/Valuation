@@ -42,9 +42,13 @@ def render() -> None:
     _cartoes(analise, dfs)
     st.divider()
 
-    abas = st.tabs(
-        ["Resultado", "Retorno e decomposição", "Reinvestimento", "Capital de giro", "Tudo"]
-    )
+    rotulos = ["Resultado", "Retorno e decomposição", "Reinvestimento", "Capital de giro"]
+    tem_arvore = getattr(dfs, "detalhe", None) is not None and not dfs.detalhe.empty
+    if tem_arvore:
+        rotulos += ["Liquidez e composição"]
+    rotulos += ["Tudo"]
+    abas = st.tabs(rotulos)
+
     with abas[0]:
         _resultado(analise, dfs)
     with abas[1]:
@@ -53,7 +57,10 @@ def render() -> None:
         _reinvestimento(analise)
     with abas[3]:
         _capital_de_giro(analise)
-    with abas[4]:
+    if tem_arvore:
+        with abas[4]:
+            _liquidez(analise, dfs)
+    with abas[-1]:
         st.dataframe(
             analise.indicadores.style.format("{:,.3f}", na_rep="—"),
             width="stretch",
@@ -63,6 +70,65 @@ def render() -> None:
             analise.resumo().style.format("{:,.3f}", na_rep="—"),
             width="stretch",
         )
+
+
+COMPOSICOES = (
+    ("1.01", "Ativo circulante", "O circulante é caixa ou estoque parado?"),
+    ("2.01", "Passivo circulante", "O que vence no ano, e para quem."),
+    ("2.01.04", "Dívida de curto prazo", "Empréstimo, debênture ou arrendamento."),
+    ("2.02.01", "Dívida de longo prazo", "A mesma abertura, no prazo longo."),
+)
+
+LIQUIDEZ = [
+    "Liquidez corrente",
+    "Liquidez seca",
+    "Liquidez imediata",
+    "FCO / Passivo circulante",
+    "Caixa / Divida de curto prazo",
+    "Divida de curto prazo / Divida bruta",
+]
+
+
+def _liquidez(analise, dfs) -> None:
+    """Liquidez, e a composição das contas que a explicam.
+
+    Um índice de liquidez é um quociente entre dois totais, e dois totais
+    iguais podem esconder situações opostas: circulante cheio de caixa não é o
+    mesmo que circulante cheio de estoque. A composição vem ao lado por isso.
+    """
+    presentes = [i for i in LIQUIDEZ if i in analise.indicadores.index]
+    if presentes:
+        st.markdown("**Liquidez**")
+        st.caption(
+            "Não entram no fluxo descontado — o DCF não pergunta se a empresa "
+            "paga a conta do mês que vem. Decidem se o valuation faz sentido: "
+            "quem não atravessa o curto prazo não chega à perpetuidade."
+        )
+        st.dataframe(
+            analise.indicadores.loc[presentes].style.format("{:,.2f}", na_rep="—"),
+            width="stretch",
+        )
+        st.caption(
+            "**FCO / Passivo circulante** mede solvência sem depender de estoque "
+            "virar caixa no prazo. Quando ele é alto e a liquidez corrente é "
+            "baixa, as duas estão certas: a operação paga o que o balanço não cobre."
+        )
+
+    st.divider()
+    st.markdown("**De que cada conta é feita**")
+    ano = dfs.ano_base
+    st.caption(f"Saldos de {ano}, em {dfs.unidade}. Só as subcontas diretas.")
+
+    for codigo, titulo, explicacao in COMPOSICOES:
+        composicao = dfs.composicao(codigo, ano)
+        if composicao.empty:
+            continue
+        with st.expander(f"{titulo} ({codigo})"):
+            st.caption(explicacao)
+            exibida = composicao.copy()
+            exibida["Valor"] = [formatar(v, "moeda") for v in exibida["Valor"]]
+            exibida["% do total"] = [formatar(v, "pct") for v in exibida["% do total"]]
+            st.dataframe(exibida, width="stretch")
 
 
 def _cartoes(analise, dfs) -> None:
