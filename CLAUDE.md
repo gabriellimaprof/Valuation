@@ -198,6 +198,30 @@ companhia, ante 26 antes.
    88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
    e cai na lista de não reconhecidas, para mapeamento manual.
 
+## Para onde isto vai
+
+O objetivo declarado pelo dono do projeto é automatizar **a primeira camada da
+análise de empresas** — a parte braçal: do dado bruto da CVM a um **relatório
+estruturado**, aplicando os frameworks de sempre (Porter, Damodaran, qualidade
+de earnings, margem de segurança), e que se atualiza quando sai balanço novo.
+A decisão de investir continua humana; o que sai da mão é a transcrição.
+
+Isso reordena as lacunas. Medido contra esse objetivo:
+
+- **Ler a CVM** — feito, e conferido conta a conta contra a linha publicada.
+- **Montar valuation** — o motor já fazia.
+- **Atualizar quando sai resultado** — existe, detecta exercício novo.
+- **Comparar com pares** — parcial: `SETOR_ATIV` é classificação de registro e
+  não dá peer group econômico.
+- **Qualidade dos lucros** — as peças existem (conversão FCO/EBITDA, juro pago
+  contra competência, giro pelo caixa) mas **espalhadas como indicadores**.
+  Qualidade de earnings é uma tese com veredito, não uma linha de tabela.
+- **Relatório estruturado** — **não existe**. O app são dez telas interativas;
+  o objetivo termina num documento que alguém lê sem abrir o app. É a maior
+  lacuna, e a base para fechá-la já está pronta.
+- **Margem de segurança** — o motor calcula valor; falta a distância até o
+  preço, que é o que fecha a decisão.
+
 ## Lacunas conhecidas
 
 Em ordem de valor:
