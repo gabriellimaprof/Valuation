@@ -54,6 +54,9 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   dados_setoriais.py    betas e prêmios por setor e país
   mercado.py            curva de NTN-B e Focus; risco-país implícito
   margem.py             margem de segurança e DCF reverso
+  pares.py              peer group por perfil econômico, e não por rótulo
+  referencias.py        onde cada indicador cai na base brasileira, medido
+  qualitativo.py        evidência para as perguntas de framework, sem respondê-las
   relatorio.py          o material todo em um markdown diffável
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
@@ -109,6 +112,15 @@ código muda de conta entre eles: `3.06` é "Resultado Financeiro" em 450
 companhias e "IR e CSLL" em 17. O plano é detectado uma vez por companhia pelo
 topo da DRE; fora do industrial o reconhecimento passa a ser só pelo rótulo e a
 tela avisa. Confiar no código sem isso põe número errado na conta certa, calado.
+
+**Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
+2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
+Medido em 368 companhias: **a mediana brasileira descola 8,2 p.p.**, porque a
+linha `3.06.02` junta variação cambial e monetária de todo o passivo. O corte
+antigo acusava **82,3% da base** — sinal que dispara em quatro de cada cinco não
+dirige atenção, gasta. Os cortes agora são o P75 (16,9 p.p.) e o P90 (34,5 p.p.),
+e acima de `KD_MAXIMO_PLAUSIVEL` o sinal se recusa a medir: com pouca dívida, a
+razão deixa de ser custo de dívida (WEG dá 45%). Ver `referencias.py`.
 
 **O arrendamento não fica onde o plano diz que fica.** A CVM reserva
 `2.01.04.03` e `2.02.01.03` para "Financiamento por Arrendamento", dentro da
@@ -182,7 +194,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-629 testes passando. Verificado de verdade: contas financeiras, identidades,
+671 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -332,8 +344,18 @@ Isso reordena as lacunas. Medido contra esse objetivo:
 - **Ler a CVM** — feito, e conferido conta a conta contra a linha publicada.
 - **Montar valuation** — o motor já fazia.
 - **Atualizar quando sai resultado** — existe, detecta exercício novo.
-- **Comparar com pares** — parcial: `SETOR_ATIV` é classificação de registro e
-  não dá peer group econômico.
+- **Comparar com pares** — feito em `pares.py`. `SETOR_ATIV` é classificação de
+  registro; o critério agora é o do Damodaran — comparável é a empresa com
+  risco, crescimento e fluxo de caixa parecidos —, medido em seis dimensões com
+  z-score robusto (mediana e IQR, não média e desvio: a base tem margem de 300%
+  e um único extremo definiria a escala inteira). Exige 4 das 6 dimensões, senão
+  companhia sem dado aparece no topo por falta de dado. Universo de 447
+  companhias em `~/.cache/valuation/universo`, construído por
+  `python -m valuation.pares`.
+
+  Medido: os pares da WEG passaram a ser Intelbras (0,28), Mahle Metal Leve
+  (0,34) e Solar Bebidas (0,41) — indústrias com ROIC alto. Intelbras está
+  registrada como "Comércio" e o filtro por setor nunca a encontraria.
 - **Qualidade dos lucros** — feito. `qualidade.py` transforma os indicadores
   dispersos em veredito, e o veredito é o **pior** sinal, não a média deles:
   média é como um alerta some. Aba própria em Histórico.
@@ -377,13 +399,20 @@ Em ordem de valor:
    valor de hoje — só a resposta ao estresse de inflação —, mas ligar por padrão
    mudaria o resultado de todo estresse já salvo. O diagnóstico avisa quando a
    combinação que exagera (g ancorado + ROIC nominal fixo) está montada.
-7. **As faixas do DCF reverso são arbitradas** (`REVERSIVEIS` em `margem.py`).
-   Estreitas demais devolvem "sem solução" quando a resposta estava logo além da
-   borda; largas demais aceitam premissa absurda. Nunca foram medidas contra a
-   base da CVM.
-8. **O relatório não tem seção qualitativa.** Porter, vantagem competitiva e
-   gestão estão citados no objetivo do projeto e não entram em conta nenhuma —
-   o relatório diz isso na seção de limites em vez de fingir cobertura.
+7. **Os cortes de leitura agora têm as duas leituras** — absoluta e percentil.
+   `referencias.py` guarda a distribuição medida em 447 companhias, e a
+   qualidade dos lucros cita onde o número cai. Falta estender aos demais
+   cortes: `ALAVANCAGEM_ALTA = 3.5` fica entre o P50 (2,83) e o P75 (5,35) da
+   base, ou seja, dispara em ~40% das companhias, e ninguém verificou se isso é
+   o pretendido.
+8. **A seção qualitativa reúne evidência, não responde.** `qualitativo.py` traz
+   as cinco forças mais a pergunta do fosso, cada uma com o que foi medido, o
+   que os dados não alcançam e o campo do analista em branco. Ameaça de
+   substitutos aparece **sem nenhum número** — omiti-la faria parecer que a
+   pergunta não existe.
+9. **A projeção não modela adições de arrendamento** (ver acima), e o universo
+   de pares precisa ser reconstruído quando sai DFP nova — não há detecção
+   automática.
 
 ## Como trabalhar neste projeto
 

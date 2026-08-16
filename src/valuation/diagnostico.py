@@ -61,8 +61,14 @@ TSR_IMPLAUSIVEL = 0.40
 # Abaixo disto, a maior parte do EBITDA nao chega ao caixa. Nao e defeito por si
 # -- empresa que cresce rapido prende caixa no giro --, mas precisa de explicacao.
 CONVERSAO_CAIXA_BAIXA = 0.60
-# Diferenca entre o juro da DRE e o juro pago que sugere capitalizacao.
-JUROS_CAPITALIZADOS = 0.02
+# Descolamento entre o juro da DRE e o juro pago que merece o achado.
+#
+# Era 0,02, e disparava em **82,3% das 368 companhias** que publicam os dois
+# numeros: a linha 3.06.02 da CVM junta variacao cambial e monetaria de todo o
+# passivo, entao a mediana brasileira ja descola 8,2 p.p. sem nada de anormal.
+# O corte agora e o P75 observado (16,9 p.p.), o que reserva o achado para o
+# quartil que de fato destoa. Ver ``referencias.DESCOLAMENTO_DO_JURO``.
+JUROS_CAPITALIZADOS = 0.169
 # A partir daqui o arrendamento deixa de ser detalhe da divida e passa a mudar a
 # leitura do EBITDA e da alavancagem. Em Petrobras chega a metade.
 LEASING_RELEVANTE = 0.20
@@ -755,9 +761,11 @@ def _checar_contra_historico(
                     f"o juro efetivamente pago ({_pct(kd_caixa, 1)})"
                 ),
                 detalhe=(
-                    "Parte do custo da dívida nao saiu do caixa no período: pode ter "
+                    "Parte do custo da dívida não saiu do caixa no período: pode ter "
                     "sido capitalizada em obra, acumulada para pagar depois ou ser "
-                    "variação monetária sem desembolso."
+                    "variação cambial e monetária sem desembolso. Descolar é o "
+                    "normal — a mediana brasileira descola 8,2 p.p. —, mas esta "
+                    "companhia está no quartil que mais descola."
                 ),
                 acao=(
                     "Para o Kd do WACC, o custo contratado importa mais que o pago no "

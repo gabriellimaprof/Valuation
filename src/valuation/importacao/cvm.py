@@ -301,6 +301,30 @@ def carregar_cadastro(
     return sorted(companhias.values(), key=lambda c: c.nome)
 
 
+def listar_companhias_do_ano(
+    ano: int, cache: Path | None = None, escopo: str = "con"
+) -> list[int]:
+    """Codigos CVM que publicaram DFP no exercicio, lidos do proprio zip.
+
+    O cadastro lista 2.566 companhias abertas; **quem de fato publicou** DFP
+    consolidada de 2024 sao 467. Percorrer o cadastro para montar um universo
+    seria gastar cinco vezes mais tempo em companhias que nao tem o que ler.
+    """
+    caminho = baixar_dfp(ano, cache)
+    with zipfile.ZipFile(caminho) as arquivo:
+        bruto = arquivo.read(_nome_no_zip("DRE", escopo, ano))
+
+    codigos: set[int] = set()
+    for linha in bruto.split(b"\r\n")[1:]:
+        campos = linha.split(SEPARADOR.encode(), COLUNA_CD_CVM + 1)
+        if len(campos) <= COLUNA_CD_CVM:
+            continue
+        valor = campos[COLUNA_CD_CVM].lstrip(b"0")
+        if valor.isdigit():
+            codigos.add(int(valor))
+    return sorted(codigos)
+
+
 def buscar_companhias(
     termo: str, catalogo: list[Companhia], limite: int = 30
 ) -> list[Companhia]:

@@ -209,3 +209,62 @@ def test_relatorio_completo_de_uma_companhia_de_verdade():
     # Nenhuma secao pode ter ficado sem conteudo.
     assert "**Não avaliado" not in texto
     assert len(texto) > 3000
+
+
+def test_o_relatorio_completo_traz_a_secao_qualitativa():
+    """Ponta a ponta com todas as pecas, inclusive as perguntas em branco."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from valuation.historico import analisar, sugerir_premissas
+    from valuation.importacao.cvm import importar_cvm
+    from valuation.premissas import Empresa, PremissasMacro, PremissasPerpetuidade
+    from valuation.qualidade import avaliar_qualidade
+    from valuation.qualitativo import reunir_evidencias
+
+    dados = Path(__file__).parent / "dados" / "cvm"
+    dfs = importar_cvm(5410, [2023, 2024], cache=dados).escalar(1e6, "R$ milhões")
+    analise = analisar(dfs)
+    sugestao = sugerir_premissas(analise, horizonte=5)
+
+    empresa = Empresa(
+        nome="WEG S.A.",
+        macro=PremissasMacro(inflacao_brl=0.05, pib_real=0.015),
+        operacionais=sugestao.operacionais,
+        ponte=sugestao.ponte,
+        custo_capital=replace(sugestao.custo_capital, beta_alavancado_setor=1.0),
+        perpetuidade=PremissasPerpetuidade(ancora="pib_nominal", roic_perpetuidade=0.15),
+        unidade="R$ milhões",
+    )
+    resultado = avaliar(empresa)
+    preco = resultado.equity_value * 0.8
+
+    texto = montar(
+        resultado,
+        analise=analise,
+        qualidade=avaliar_qualidade(analise),
+        diagnostico=diagnosticar(resultado, analise=analise),
+        margem=margem_de_seguranca(resultado.equity_value, preco),
+        expectativas=expectativas_implicitas(empresa, preco),
+        evidencias=reunir_evidencias(analise, resultado),
+    )
+
+    # As oito secoes, na ordem em que se lem.
+    ordem = [
+        "# WEG S.A.",
+        "## Resumo",
+        "## O que a empresa entregou",
+        "## Qualidade dos lucros",
+        "## O que o modelo assume",
+        "## Do Enterprise Value ao Equity Value",
+        "## O que o preço embute",
+        "## As perguntas que os números não respondem",
+        "## O que pode dar errado",
+        "## O que este relatório não faz",
+    ]
+    posicoes = [texto.index(secao) for secao in ordem]
+    assert posicoes == sorted(posicoes), "as seções sairam fora de ordem"
+
+    # A secao qualitativa reune evidencia e nao conclui.
+    assert texto.count("**Leitura do analista:**") == 6
+    assert "Nenhuma evidência quantitativa" in texto

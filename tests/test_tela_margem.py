@@ -32,6 +32,8 @@ if st.session_state.get("alteracoes"):
     )
 if st.session_state.get("preco"):
     estado.definir_preco(*st.session_state["preco"])
+if st.session_state.get("dfs") is not None:
+    estado.definir_demonstracoes(st.session_state["dfs"])
 """
 
 TELA_MARGEM = CABECALHO + """
@@ -132,3 +134,64 @@ def test_com_preco_o_relatorio_traz_a_margem():
     assert "O que o preço embute" in texto
     assert "Implícita no preço" in texto
     assert "**Não avaliado** — nenhum preço" not in texto
+
+
+# ---------------------------------------------------------------------------
+# Pares por perfil economico
+# ---------------------------------------------------------------------------
+
+TELA_MULTIPLOS = CABECALHO + """
+from app.paginas import multiplos
+if st.session_state.get("dfs") is not None:
+    estado.definir_demonstracoes(st.session_state["dfs"])
+multiplos.render()
+"""
+
+
+def test_sem_universo_construido_a_tela_ensina_o_comando(monkeypatch, tmp_path):
+    """Construir custa minutos: nao pode acontecer por abrir uma aba."""
+    from valuation.importacao.cvm import importar_cvm
+    from valuation import pares
+
+    monkeypatch.setattr(pares, "diretorio_cache", lambda: tmp_path / "vazio")
+    dfs = importar_cvm(5410, [2023, 2024], cache=Path(__file__).parent / "dados" / "cvm")
+
+    teste = _rodar(TELA_MULTIPLOS, dfs=dfs)
+    avisos = " ".join(i.value for i in teste.info)
+    assert "universo de perfis ainda não foi construído" in avisos
+    assert any("python -m valuation.pares" in c.value for c in teste.code)
+
+
+def test_a_tela_avisa_que_perfil_parecido_nao_e_negocio_parecido(monkeypatch, tmp_path):
+    """Uma concessionária de rodovia e um gasoduto sao gemeos no perfil."""
+    import pandas as pd
+
+    from valuation.importacao.cvm import importar_cvm
+    from valuation import pares
+
+    pasta = tmp_path / "universo"
+    pasta.mkdir()
+    perfis = pd.DataFrame(
+        {
+            "Margem EBITDA": [0.20, 0.19, 0.45],
+            "ROIC": [0.30, 0.28, 0.09],
+            "Giro do capital investido": [1.2, 1.3, 0.4],
+            "Capex / Receita": [0.05, 0.06, 0.22],
+            "Crescimento da receita": [0.15, 0.14, 0.04],
+            "Divida liquida / EBITDA": [-0.5, -0.4, 3.4],
+            "nome": ["Par A", "Par B", "Par C"],
+            "receita": [3.5e10, 3.0e10, 2.8e10],
+            "setor": ["Indústria"] * 3,
+        },
+        index=[101, 102, 103],
+    )
+    perfis.index.name = "codigo"
+    perfis.to_csv(pasta / "perfis_2023_2024.csv", encoding="utf-8")
+    monkeypatch.setattr(pares, "diretorio_cache", lambda: pasta)
+
+    dfs = importar_cvm(5410, [2023, 2024], cache=Path(__file__).parent / "dados" / "cvm")
+    teste = _rodar(TELA_MULTIPLOS, dfs=dfs)
+
+    avisos = " ".join(w.value for w in teste.warning)
+    assert "Perfil parecido não é negócio parecido" in avisos
+    assert any("Dimensões" in list(d.value.columns) for d in teste.dataframe)

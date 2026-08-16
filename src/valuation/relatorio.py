@@ -362,6 +362,49 @@ def _expectativas(
     return linhas
 
 
+def _qualitativo(evidencias) -> list[str]:
+    """As perguntas de framework, com a evidencia medida e o campo em branco.
+
+    A secao existe para nao fazer o oposto do que o projeto se propoe. Escrever
+    "vantagem competitiva solida" a partir de um ROIC alto seria inventar; nao
+    ter a secao faria o relatorio parecer que a pergunta nao importa. Entao a
+    maquina traz o que mediu e para onde o julgamento comeca.
+    """
+    if not evidencias:
+        return [
+            "## As perguntas que os números não respondem",
+            "",
+            "**Sem histórico importado**, não há evidência quantitativa para "
+            "sustentar nenhuma das perguntas de framework.",
+        ]
+
+    linhas = [
+        "## As perguntas que os números não respondem",
+        "",
+        "Cada bloco traz a pergunta, o que foi **medido** sobre ela e o que os "
+        "dados não alcançam. A resposta fica em branco de propósito: é a parte "
+        "que exige julgamento, e nenhuma conta deste relatório a substitui.",
+        "",
+    ]
+    for evidencia in evidencias:
+        linhas.append(f"### {evidencia.tema}")
+        linhas.append("")
+        linhas.append(f"*{evidencia.pergunta}*")
+        linhas.append("")
+        for item in evidencia.medido:
+            linhas.append(f"- {item}")
+        if evidencia.medido:
+            linhas.append("")
+        if evidencia.limite:
+            linhas.append(f"**O que os dados não dizem:** {evidencia.limite}")
+            linhas.append("")
+        linhas.append("**Leitura do analista:**")
+        linhas.append("")
+        linhas.append("> ")
+        linhas.append("")
+    return linhas
+
+
 def _riscos(diagnostico: Diagnostico | None) -> list[str]:
     if diagnostico is None:
         return ["## O que pode dar errado", "", "**Diagnóstico não executado.**"]
@@ -449,12 +492,17 @@ def montar(
     diagnostico: Diagnostico | None = None,
     margem: MargemDeSeguranca | None = None,
     expectativas: pd.DataFrame | None = None,
+    evidencias=None,
     data: str = "",
 ) -> str:
     """Monta o relatorio completo em markdown.
 
     Tudo alem de ``resultado`` e opcional, e a ausencia de cada peca aparece no
     texto em vez de sumir dele.
+
+    ``evidencias`` vem de ``qualitativo.reunir_evidencias``. Elas nao respondem
+    as perguntas de framework -- reunem o que os numeros dizem sobre cada uma e
+    deixam a resposta para quem le.
     """
     blocos = [
         _cabecalho(resultado, data),
@@ -464,6 +512,7 @@ def montar(
         _premissas(resultado),
         _ponte(resultado),
         _expectativas(expectativas, margem),
+        _qualitativo(evidencias),
         _riscos(diagnostico),
         _limites(resultado, analise, qualidade),
     ]

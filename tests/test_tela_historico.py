@@ -99,10 +99,12 @@ def test_o_veredito_e_o_pior_sinal_e_a_tela_diz_isso(weg):
     texto = " ".join(m.value for m in teste.markdown)
     assert "Lucro é opinião, caixa é fato" in texto
 
+    from valuation.qualidade import ATENCAO, BOM, RUIM, SEM_DADOS
+
     qualidade = teste.session_state["qualidade"]
-    vereditos = [s.veredito for s in qualidade.sinais if s.veredito != "sem dados"]
+    vereditos = [s.veredito for s in qualidade.sinais if s.veredito != SEM_DADOS]
     if vereditos:
-        pior = min(vereditos, key=lambda v: {"ruim": 0, "atencao": 1, "bom": 2}[v])
+        pior = min(vereditos, key=lambda v: {RUIM: 0, ATENCAO: 1, BOM: 2}[v])
         assert qualidade.veredito == pior
 
 

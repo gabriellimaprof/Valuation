@@ -101,6 +101,7 @@ def _relatorio(resultado) -> None:
     """O relatorio estruturado: tudo que o app apurou, num documento so."""
     from valuation.margem import expectativas_implicitas, margem_de_seguranca, valor_de_referencia
     from valuation.qualidade import avaliar_qualidade
+    from valuation.qualitativo import reunir_evidencias
     from valuation.relatorio import montar, sumario
 
     st.subheader("Relatório estruturado")
@@ -158,6 +159,7 @@ def _relatorio(resultado) -> None:
             diagnostico=diagnostico,
             margem=margem,
             expectativas=expectativas,
+            evidencias=reunir_evidencias(analise, resultado),
         )
 
     st.session_state["relatorio"] = texto

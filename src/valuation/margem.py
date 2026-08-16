@@ -50,13 +50,21 @@ CARO = "acima do valor"
 # mercado, nao lei: Graham falava em um terco, Damodaran nao usa o conceito.
 MARGEM_EXIGIDA = 0.30
 
-# Premissas que valem inverter, com a faixa em que a busca procura. As faixas
-# sao generosas de proposito: estreitar demais faz a busca dizer "impossivel"
-# quando a resposta so estava um pouco alem da borda.
+# Premissas que valem inverter, com a faixa em que a busca procura.
+#
+# As faixas nao sao chutes: cobrem com folga o que a base brasileira de fato
+# apresenta (ver ``referencias.BASE``, 447 companhias). O P95 de margem EBITDA e
+# 60,1% e o P99 passa de 100%; o P95 de crescimento e 71,8%; o de capex sobre
+# receita, 48,7%. Estreitar ate o P95 faria a busca responder "impossivel"
+# justamente para as companhias atipicas, que sao as que mais precisam da
+# resposta.
+#
+# ``crescimento_perpetuo`` e ``risco_pais`` nao vem da base: o primeiro e
+# limitado por cima pelo desconto, e o segundo e premio de mercado.
 REVERSIVEIS: dict[str, tuple[str, tuple[float, float]]] = {
-    "operacionais.margem_ebitda": ("Margem EBITDA", (0.005, 0.80)),
-    "operacionais.crescimento_receita": ("Crescimento da receita", (-0.30, 0.60)),
-    "operacionais.capex_pct_receita": ("Capex / receita", (0.0, 0.60)),
+    "operacionais.margem_ebitda": ("Margem EBITDA", (0.005, 1.10)),
+    "operacionais.crescimento_receita": ("Crescimento da receita", (-0.30, 0.80)),
+    "operacionais.capex_pct_receita": ("Capex / receita", (0.0, 1.20)),
     "perpetuidade.crescimento_perpetuo": ("Crescimento perpétuo", (-0.05, 0.12)),
     "custo_capital.risco_pais": ("Prêmio de risco-país", (0.0, 0.30)),
 }

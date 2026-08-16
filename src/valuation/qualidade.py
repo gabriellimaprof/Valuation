@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .historico import AnaliseHistorica
+from . import referencias
+from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
@@ -32,7 +33,17 @@ CONVERSAO_FRACA = 0.60
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 # Diferenca entre juro de competencia e juro pago que sugere capitalizacao.
-JURO_DESCOLADO = 0.02
+# Descolamento entre o juro da DRE e o juro pago que merece atencao.
+#
+# Era 0,02, e **acusava 82,3% da base** -- a linha 3.06.02 da CVM junta variacao
+# cambial e monetaria de todo o passivo, entao a mediana brasileira ja descola
+# 8,2 p.p. sem que nada de errado tenha acontecido. Sinal que dispara em quatro
+# de cada cinco companhias nao dirige atencao: gasta ela.
+#
+# Os cortes agora sao o P75 (16,9 p.p.) e o P90 (34,5 p.p.) medidos em 368
+# companhias -- ver ``referencias.DESCOLAMENTO_DO_JURO``.
+JURO_DESCOLADO = 0.169
+JURO_MUITO_DESCOLADO = 0.345
 # Acima disto, o resultado depende demais de coligada que nao gera caixa aqui.
 EQUIVALENCIA_RELEVANTE = 0.20
 
@@ -109,6 +120,12 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
         )
 
     texto = f"A mediana do período converte {conversao:.0%} do EBITDA em caixa."
+    onde = referencias.descrever("Conversao de caixa (FCO / EBITDA)", conversao)
+    if onde:
+        # O corte absoluto diz o que a conta significa; o percentil diz se o
+        # numero e incomum aqui. Faltando um dos dois, o leitor ou estranha o
+        # normal do mercado ou aceita o pior quartil por ele existir.
+        texto += f" Isso a coloca {onde}."
     if conversao >= CONVERSAO_BOA:
         return Sinal("conversao", BOM, "O EBITDA vira caixa", texto, conversao)
 
@@ -147,19 +164,50 @@ def _juros(analise: AnaliseHistorica) -> Sinal:
             "A DFC não trouxe o juro efetivamente pago.",
         )
 
+    # Acima de KD_MAXIMO_PLAUSIVEL a razao deixou de medir custo de divida: e o
+    # caso da WEG, que tem caixa liquido e cujo denominador minusculo faz a
+    # despesa financeira -- cambio incluso -- dar 45% "da divida". Comparar isso
+    # com o juro pago produz um descolamento de 40 p.p. que nao fala de credito
+    # nenhum, e acusar a companhia por um artefato de denominador seria pior do
+    # que nao medir. Mesmo criterio que ``historico.py`` usa para descartar o Kd.
+    if competencia > KD_MAXIMO_PLAUSIVEL:
+        return Sinal(
+            "juros", SEM_DADOS, "Despesa financeira grande demais para ser custo de dívida",
+            f"A despesa financeira equivale a {competencia:.1%} da dívida média, o "
+            "que não é custo de dívida: a companhia tem pouca dívida e a linha "
+            "carrega variação cambial de todo o passivo. Sem denominador que "
+            "signifique alguma coisa, o descolamento não é medível.",
+        )
+
     diferenca = competencia - caixa
+    medida = (
+        f"A despesa financeira equivale a {competencia:.1%} da dívida média e o "
+        f"juro pago a {caixa:.1%} — um descolamento de {diferenca:.1%}."
+    )
+    # A mediana brasileira descola 8,2 p.p., entao a frase precisa dizer isso:
+    # sem a referencia, o leitor toma o normal do mercado por irregularidade.
+    normal = (
+        " A mediana de 368 companhias brasileiras descola 8,2 p.p., porque a linha "
+        "de despesa financeira da CVM junta variação cambial e monetária de todo o "
+        "passivo — descolar não é, por si, sinal de nada."
+    )
+
     if diferenca <= JURO_DESCOLADO:
         return Sinal(
-            "juros", BOM, "O juro da DRE sai do caixa",
-            f"Despesa financeira de {competencia:.1%} da dívida contra "
-            f"{caixa:.1%} pagos: o custo aparece no caixa no mesmo período.",
-            diferenca,
+            "juros", BOM, "O descolamento do juro está dentro do normal",
+            medida + normal, diferenca,
         )
+
+    severidade = RUIM if diferenca > JURO_MUITO_DESCOLADO else ATENCAO
+    onde = "10% maiores" if diferenca > JURO_MUITO_DESCOLADO else "25% maiores"
     return Sinal(
-        "juros", ATENCAO, "Parte do juro não saiu do caixa",
-        f"A despesa financeira equivale a {competencia:.1%} da dívida média e o "
-        f"juro pago a {caixa:.1%}. A diferença pode ser variação monetária, juro "
-        "capitalizado em obra ou acúmulo para pagar depois — as três adiam caixa.",
+        "juros", severidade, "Descolamento incomum entre o juro devido e o pago",
+        medida
+        + f" Isso põe a companhia entre os {onde} da base."
+        + " Pode ser exposição cambial da dívida, juro capitalizado em obra ou "
+        "acúmulo para pagar depois. As três adiam caixa, e as três mudam o Kd que "
+        "deve entrar no WACC — vale abrir a nota de despesa financeira antes de "
+        "projetar.",
         diferenca,
     )
 

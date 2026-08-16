@@ -73,19 +73,63 @@ def test_conversao_baixa_com_crescimento_e_so_atencao():
 
 
 def test_juro_que_nao_sai_do_caixa_e_atencao():
+    """Descolamento acima do P75 da base, com Kd ainda plausivel."""
     q = avaliar_qualidade(
         _analise(
             **{
                 "Conversao de caixa (FCO / EBITDA)": 1.0,
-                "Custo da divida efetivo": 0.40,
-                "Custo da divida pelo caixa": 0.05,
+                "Custo da divida efetivo": 0.22,
+                "Custo da divida pelo caixa": 0.03,
             }
         )
     )
     juros = next(s for s in q.sinais if s.codigo == "juros")
     assert juros.veredito == ATENCAO
+    assert "25% maiores" in juros.detalhe
     # E o veredito geral nao pode ser "bom" so porque a conversao esta boa.
     assert q.veredito == ATENCAO
+
+
+def test_descolamento_normal_do_mercado_nao_vira_acusacao():
+    """A mediana brasileira descola 8,2 p.p.; isso nao pode acusar ninguem.
+
+    O corte anterior era 2 p.p. e disparava em 82,3% das 368 companhias que
+    publicam os dois numeros. Sinal que dispara em quatro de cada cinco nao
+    dirige atencao: gasta ela.
+    """
+    q = avaliar_qualidade(
+        _analise(
+            **{
+                "Conversao de caixa (FCO / EBITDA)": 1.0,
+                "Custo da divida efetivo": 0.14,
+                "Custo da divida pelo caixa": 0.06,
+            }
+        )
+    )
+    juros = next(s for s in q.sinais if s.codigo == "juros")
+    assert juros.veredito == BOM
+    assert "8,2 p.p." in juros.detalhe
+
+
+def test_despesa_financeira_alta_demais_nao_e_medivel():
+    """Denominador minusculo faz a razao deixar de ser custo de divida.
+
+    E o caso da WEG: caixa liquido, pouca divida, e uma linha de despesa
+    financeira que carrega cambio de todo o passivo. Acusar por artefato de
+    denominador e pior do que dizer que nao da para medir.
+    """
+    q = avaliar_qualidade(
+        _analise(
+            **{
+                "Conversao de caixa (FCO / EBITDA)": 1.0,
+                "Custo da divida efetivo": 0.45,
+                "Custo da divida pelo caixa": 0.04,
+            }
+        )
+    )
+    juros = next(s for s in q.sinais if s.codigo == "juros")
+    assert juros.veredito == SEM_DADOS
+    assert "não é custo de dívida" in juros.detalhe
 
 
 def test_o_pior_sinal_manda():

@@ -34,6 +34,7 @@ def render() -> None:
     etapa("Passo 8", "Múltiplos", "O que o mercado paga por empresas parecidas")
     conceito("multiplos", "Avaliação relativa")
 
+    _pares_por_perfil()
     _peers_da_cvm()
     _editor_peers()
 
@@ -55,6 +56,135 @@ def render() -> None:
         _implicito(alvo, comparaveis)
     with abas[2]:
         _comparar(alvo, comparaveis)
+
+
+def _pares_por_perfil() -> None:
+    """Sugere comparáveis por **perfil econômico**, e não por rótulo de setor.
+
+    O critério é o do Damodaran: comparável é a empresa com risco, crescimento e
+    fluxo de caixa parecidos. Isso se mede — e medir evita o emparelhamento por
+    registro, que põe a WEG ao lado da Plascar porque as duas se cadastraram na
+    mesma linha do formulário.
+    """
+    from valuation.pares import (
+        UniversoVazio,
+        explicar,
+        pares_proximos,
+        perfil_de,
+        universo_mais_proximo,
+    )
+
+    analise = estado.analise()
+    if analise is None:
+        return
+
+    with st.expander("Sugerir comparáveis pelo perfil econômico", expanded=False):
+        st.markdown(
+            "Seis dimensões medidas — margem, ROIC, giro do capital, capex, "
+            "crescimento e alavancagem — e a distância entre a companhia e cada "
+            "outra da base da CVM. **Não há preço aqui**: comparável se escolhe "
+            "pelo negócio, e o preço é o que se vai comparar depois."
+        )
+
+        dfs = estado.demonstracoes()
+        anos = sorted(int(a) for a in dfs.anos) if dfs is not None else []
+        if not anos:
+            return
+
+        encontrado = universo_mais_proximo(anos)
+        if encontrado is None:
+            st.info(
+                "O universo de perfis ainda não foi construído. Ele importa as ~470 "
+                "companhias com DFP consolidada e mede o perfil de cada uma — leva "
+                "alguns minutos e depois fica em cache."
+            )
+            st.code(
+                f"python -m valuation.pares --anos {anos[0]}-{anos[-1]}", language="bash"
+            )
+            return
+
+        universo, anos_do_universo = encontrado
+        if anos_do_universo[-1] != anos[-1]:
+            st.warning(
+                f"O universo em cache cobre {anos_do_universo[0]}–{anos_do_universo[-1]} "
+                f"e a companhia foi importada até {anos[-1]}. A comparação continua "
+                "válida, mas os perfis não são do mesmo período."
+            )
+        perfil = perfil_de(analise)
+        codigo = (getattr(dfs, "fonte", None) or {}).get("codigo_cvm")
+
+        # A receita tem que sair do **proprio universo**, e nao das demonstracoes
+        # da sessao: elas podem ter sido escaladas para milhoes, e o universo esta
+        # sempre em reais. Comparar as duas faria toda companhia parecer mil vezes
+        # maior e o filtro de porte descartaria a base inteira -- deixando no topo
+        # exatamente as companhias estranhas que ele existe para tirar.
+        receita = (
+            float(universo.perfis.loc[codigo, "receita"])
+            if codigo in universo.perfis.index
+            else float("nan")
+        )
+
+        colunas = st.columns(3)
+        quantos = colunas[0].number_input("Quantos pares", 3, 30, 10, step=1)
+        limitar_porte = colunas[1].checkbox(
+            "Filtrar por porte",
+            value=np.isfinite(receita),
+            disabled=not np.isfinite(receita),
+            help=None if np.isfinite(receita) else
+            "A companhia não está no universo, então não há receita comparável "
+            "para medir porte.",
+        )
+        faixa = colunas[2].number_input(
+            "Faixa de porte (x receita)", 2.0, 50.0, 10.0, step=1.0,
+            disabled=not limitar_porte,
+        )
+
+        try:
+            tabela = pares_proximos(
+                perfil,
+                universo,
+                quantos=int(quantos),
+                receita=receita if (limitar_porte and np.isfinite(receita)) else None,
+                faixa_de_porte=float(faixa) if limitar_porte else None,
+                excluir=codigo,
+            )
+        except UniversoVazio as erro:
+            st.warning(str(erro))
+            return
+
+        st.caption(
+            f"Universo de {len(universo)} companhias, exercícios "
+            f"{anos_do_universo[0]}–{anos_do_universo[-1]}."
+        )
+        st.dataframe(
+            tabela.drop(columns=["codigo"]).style.format(
+                {
+                    "Distância": "{:.2f}",
+                    "Receita": "{:,.0f}",
+                    **{d: "{:.1%}" for d in universo.dimensoes if "EBITDA" not in d},
+                    "Divida liquida / EBITDA": "{:.2f}",
+                },
+                na_rep="—",
+            ),
+            width="stretch",
+        )
+
+        escolhido = st.selectbox(
+            "Ver por que este par apareceu", list(tabela.index), index=0
+        )
+        st.dataframe(
+            explicar(perfil, universo.perfis.loc[tabela.loc[escolhido, "codigo"]], universo)
+            .style.format("{:.3f}", na_rep="—"),
+            width="stretch",
+        )
+
+        st.warning(
+            "**Perfil parecido não é negócio parecido.** Uma concessionária de "
+            "rodovia e um gasoduto têm margem alta, capex pesado, dívida longa e "
+            "crescimento vegetativo — perfis gêmeos, riscos e regulações "
+            "diferentes. Isto é ponto de partida para escolher comparáveis, não o "
+            "critério final: confira cada nome antes de usar."
+        )
 
 
 def _peers_da_cvm() -> None:
