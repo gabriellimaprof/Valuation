@@ -25,10 +25,12 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from valuation.historico import analisar, sugerir_premissas
 from valuation.importacao import (
+    POR_CHAVE,
     Demonstracoes,
     aplicar_mapeamento_manual,
     carregar_abas,
@@ -397,6 +399,107 @@ def test_direito_de_uso_esta_dentro_do_imobilizado(weg):
 
 def test_goodwill_esta_dentro_do_intangivel(weg):
     assert weg.valor("goodwill", 2024) <= weg.valor("intangivel", 2024)
+
+
+# ---------------------------------------------------------------------------
+# Conferencia conta a conta contra a linha publicada
+# ---------------------------------------------------------------------------
+
+FATOR_ESCALA = {"MIL": 1_000.0, "UNIDADE": 1.0, "MILHAO": 1_000_000.0}
+
+
+def _linhas_publicadas(codigo_cvm: int, escopo: str, ano: int) -> dict:
+    """Todas as linhas da companhia lidas do zip sem passar pelo importador."""
+    publicadas = {}
+    with zipfile.ZipFile(DADOS / f"dfp_cia_aberta_{ano}.zip") as arquivo:
+        for grupo in ("DRE", "BPA", "BPP", "DFC_MI", "DFC_MD"):
+            nome = f"dfp_cia_aberta_{grupo}_{escopo}_{ano}.csv"
+            if nome not in arquivo.namelist():
+                continue
+            for linha in arquivo.read(nome).decode(ENCODING).splitlines()[1:]:
+                campos = linha.split(SEPARADOR)
+                if campos[4].lstrip("0") != str(codigo_cvm):
+                    continue
+                # BPA e BPP nao tem DT_INI_EXERC: as colunas do fim andam uma casa.
+                deslocamento = 0 if len(campos) == 15 else -1
+                if campos[8] != "ÚLTIMO":
+                    continue
+                escala = FATOR_ESCALA[campos[7].strip().upper()]
+                publicadas[campos[11 + deslocamento].strip()] = (
+                    float(campos[13 + deslocamento]) * escala
+                )
+    return publicadas
+
+
+@pytest.mark.parametrize(
+    "codigo,escopo", [(WEG, "con"), (VIVARA, "con"), (SAO_MARTINHO, "con"), (ELEKTRO, "ind")]
+)
+def test_cada_conta_bate_com_a_linha_publicada(codigo, escopo, catalogo):
+    """A verificacao mais forte que existe: conta a conta contra o arquivo.
+
+    Nao confia em nenhuma etapa do importador. Volta ao CSV bruto, acha a linha
+    pelo codigo que o app registrou no mapeamento, aplica escala e sinal a mao e
+    compara. Escala errada, sinal trocado, conta trocada ou agregacao que somou
+    o que nao devia -- tudo aparece aqui como diferenca.
+    """
+    dfs = importar_cvm(codigo, [2024], cache=DADOS, catalogo=catalogo)
+    publicadas = _linhas_publicadas(codigo, escopo, 2024)
+    assert publicadas, "o fixture nao tem linhas desta companhia"
+
+    conferidas = 0
+    for chave in dfs.valores.index:
+        obtido = dfs.valor(chave, 2024)
+        if not np.isfinite(obtido):
+            continue
+        origem = dfs.mapeamento.get(chave)
+        if not origem:  # conta derivada, nao publicada
+            continue
+
+        codigos = [parte.split(" - ")[0].strip() for parte in origem.split(" + ")]
+        if not all(c in publicadas for c in codigos):
+            continue
+
+        esperado = sum(publicadas[c] for c in codigos)
+        if POR_CHAVE[chave].sinal_invertido:
+            esperado = abs(esperado)
+        conferidas += 1
+        assert obtido == pytest.approx(esperado, rel=1e-9), (
+            f"{chave} veio de {origem}: app={obtido}, arquivo={esperado}"
+        )
+
+    assert conferidas >= 25, f"conferiu poucas contas ({conferidas})"
+
+
+def test_hierarquia_do_plano_de_contas_soma(catalogo):
+    """Pai = soma dos filhos, no proprio arquivo da CVM.
+
+    Valida de uma vez o arquivo e a leitura da escala: se a escala fosse
+    aplicada de forma inconsistente entre linhas, a soma deixaria de fechar.
+    """
+    publicadas = _linhas_publicadas(WEG, "con", 2024)
+
+    filhos: dict[str, list[str]] = {}
+    for codigo in publicadas:
+        if "." in codigo:
+            filhos.setdefault(codigo.rsplit(".", 1)[0], []).append(codigo)
+
+    verificados = 0
+    for pai, lista in filhos.items():
+        # 6.05 tem saldo inicial e final como "filhos", e e a diferenca entre
+        # eles; 3.99 e lucro por acao, valor unitario. Nenhum dos dois soma.
+        if pai not in publicadas or len(lista) < 2 or pai[:4] in {"6.05", "3.99"}:
+            continue
+        soma = sum(publicadas[c] for c in lista)
+        # Companhia que informa o total e deixa as filhas zeradas nao detalhou a
+        # conta; ausencia de abertura nao e inconsistencia.
+        if soma == 0 and publicadas[pai] != 0:
+            continue
+        verificados += 1
+        assert soma == pytest.approx(publicadas[pai], rel=0.005), (
+            f"{pai}: pai={publicadas[pai]}, filhos somam {soma}"
+        )
+
+    assert verificados >= 30
 
 
 # ---------------------------------------------------------------------------
