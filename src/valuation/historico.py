@@ -33,6 +33,11 @@ from .premissas import (
 
 DIAS_NO_ANO = 365
 
+# Teto do que se pode chamar de custo de divida corporativa no Brasil. A Selic
+# oscilou entre 10% e 14% no periodo coberto pelos dados; um Kd acima disto quase
+# sempre indica que o numerador nao e juro, e nao que a empresa paga tanto.
+KD_MAXIMO_PLAUSIVEL = 0.25
+
 
 def _media_movel_de_saldo(serie: pd.Series) -> pd.Series:
     """Saldo medio do ano: media entre abertura e fechamento.
@@ -225,6 +230,43 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         "Custo da divida efetivo": _divisao_segura(despesas_financeiras, divida_media),
     }
 
+    # Contraprova de caixa. As linhas acima descrevem o regime de competencia;
+    # as de baixo, quando a origem traz a DFC aberta, descrevem o mesmo fato
+    # pelo caixa. Elas nao substituem nada -- a divergencia entre as duas e que
+    # e a informacao: juro que aparece na DRE e nao no caixa foi capitalizado,
+    # e lucro que nao vira caixa costuma estar preso no giro.
+    fluxo_operacional = d.serie("fluxo_operacional")
+    juros_pagos = d.serie("juros_pagos")
+    giro_dfc = d.serie("variacao_capital_giro")
+    dividendos = d.serie("dividendos_pagos")
+    arrendamento = d.serie("arrendamento_curto_prazo").add(
+        d.serie("arrendamento_longo_prazo"), fill_value=0
+    )
+
+    if fluxo_operacional.notna().any():
+        indicadores["Conversao de caixa (FCO / EBITDA)"] = _divisao_segura(
+            fluxo_operacional, ebitda
+        )
+        indicadores["Capex / FCO"] = _divisao_segura(capex, fluxo_operacional)
+        indicadores["Fluxo de caixa livre (FCO - capex)"] = fluxo_operacional.sub(
+            capex, fill_value=0
+        )
+    if juros_pagos.notna().any():
+        indicadores["Custo da divida pelo caixa"] = _divisao_segura(
+            juros_pagos, divida_media
+        )
+    if giro_dfc.notna().any():
+        # Sinal invertido para ler como as demais: positivo = giro consumiu caixa.
+        indicadores["Investimento em giro (DFC) / Receita"] = _divisao_segura(
+            -giro_dfc, receita
+        )
+    if dividendos.notna().any():
+        indicadores["Payout (dividendos / lucro)"] = _divisao_segura(dividendos, lucro)
+    if arrendamento.notna().any() and divida_bruta.notna().any():
+        indicadores["Arrendamento / Divida bruta"] = _divisao_segura(
+            arrendamento, divida_bruta
+        )
+
     indicadores["Ciclo de conversao de caixa (dias)"] = (
         indicadores["Prazo medio de recebimento (dias)"]
         .add(indicadores["Prazo medio de estoque (dias)"], fill_value=0)
@@ -400,7 +442,22 @@ def sugerir_premissas(
     divida_pl = analise.ultimo("Divida bruta / Patrimonio liquido")
     if not np.isfinite(divida_pl):
         divida_pl = 0.0
-    kd = analise.mediana("Custo da divida efetivo")
+    # O Kd vem do juro efetivamente pago quando a DFC esta disponivel, e nao da
+    # despesa financeira da DRE.
+    #
+    # A linha 3.06.02 da CVM chama-se "Despesas Financeiras", mas nao e juro de
+    # divida: junta variacao cambial, variacao monetaria e ajuste a valor
+    # presente de todo o passivo. Na WEG de 2024 ela da R$ 1,72 bi contra R$ 3,6
+    # bi de divida -- 48% ao ano --, enquanto o juro que saiu do caixa foi R$ 160
+    # mi, ou 4,5%. Medido nas 467 companhias de 2024, a conta pela DRE produzia
+    # Kd acima de 25% em 28% delas, com a Selic entre 10% e 14%: um WACC inflado
+    # que derrubava o valor sem que nada avisasse.
+    kd = analise.mediana("Custo da divida pelo caixa")
+    kd_origem = "juros pagos na DFC sobre a divida media"
+    if not np.isfinite(kd):
+        kd = analise.mediana("Custo da divida efetivo")
+        kd_origem = "despesas financeiras sobre a divida media"
+
     aliquota_hist = analise.mediana("Aliquota efetiva de IR")
     if np.isfinite(aliquota_hist) and abs(aliquota_hist - aliquota_ir) > 0.05:
         alertas.append(
@@ -408,17 +465,28 @@ def sugerir_premissas(
             f"nominal ({aliquota_ir:.1%}). Considere usar a efetiva na projecao."
         )
 
+    # Acima de KD_MAXIMO_PLAUSIVEL a serie nao esta medindo custo de divida --
+    # sobra de variacao cambial, divida media quase zero, ou os dois. Montar o Kd
+    # sinteticamente e mais honesto que propagar o numero.
+    kd_utilizavel = bool(np.isfinite(kd) and 0 < kd < KD_MAXIMO_PLAUSIVEL)
+    if np.isfinite(kd) and not kd_utilizavel:
+        alertas.append(
+            f"O custo da divida calculado do historico deu {kd:.1%}, fora do que "
+            "se paga por credito corporativo. Deixei o Kd para ser montado "
+            "sinteticamente; confira a divida media e o resultado financeiro."
+        )
+
     custo_capital = PremissasCustoCapital(
         beta_alavancado_setor=1.0,
         divida_pl_setor=divida_pl,
         divida_pl_alvo=divida_pl,
-        custo_divida_brl=float(kd) if np.isfinite(kd) and 0 < kd < 0.5 else None,
+        custo_divida_brl=float(kd) if kd_utilizavel else None,
     )
     justificativas["custo_capital"] = (
         f"D/E de {divida_pl:.2f} vem do balanco do ultimo ano. "
         + (
-            f"Kd de {kd:.1%} vem das despesas financeiras sobre a divida media."
-            if np.isfinite(kd) and 0 < kd < 0.5
+            f"Kd de {kd:.1%} vem de {kd_origem}."
+            if kd_utilizavel
             else "Kd sera montado sinteticamente (rf + risco-pais + spread)."
         )
         + " O beta precisa vir do setor: 1,0 e apenas um marcador."

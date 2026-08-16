@@ -146,6 +146,13 @@ duas vezes, já que ambos estão na ponte de valor.
 fiscal acumulado abate lucro futuro respeitando a **trava dos 30%** da
 legislação brasileira.
 
+**O custo da dívida sai do juro pago, não da despesa financeira.** A linha
+"Despesas Financeiras" da CVM não é juro de dívida: junta variação cambial e
+monetária de todo o passivo. Na WEG de 2024 ela dá 48% da dívida bruta, contra
+4,5% de juro efetivamente pago no caixa. Calculado pela DRE, 28% das companhias
+recebiam um Kd acima de 25% com a Selic entre 10% e 14% — um WACC inflado que
+derrubava o valor em silêncio. Pelo juro pago, nenhuma.
+
 **Um valuation não se faz em uma sentada.** O arquivo salvo guarda tudo —
 premissas, demonstrações importadas, comparáveis e convenções de cálculo — em
 YAML de propósito: dá para abrir num editor, versionar em Git, revisar em pull
@@ -217,7 +224,7 @@ claro, e o guia exige rótulo visível ou visão tabular nesse caso.
 pytest
 ```
 
-438 testes cobrindo identidades contábeis, casos de borda econômicos, a
+441 testes cobrindo identidades contábeis, casos de borda econômicos, a
 equivalência Excel/Python, as origens de importação e as regras de
 visualização. A validação das fórmulas do Excel depende do pacote `formulas`;
 sem ele esses testes são pulados em vez de dar falso positivo.

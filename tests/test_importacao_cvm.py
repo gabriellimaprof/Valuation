@@ -661,6 +661,53 @@ def test_demonstracoes_da_cvm_alimentam_a_analise_historica(weg):
     )
 
 
+def test_custo_da_divida_vem_do_juro_pago_e_nao_da_despesa_financeira(weg):
+    """A linha 3.06.02 da CVM nao e juro de divida.
+
+    Ela junta variacao cambial e monetaria de todo o passivo. Na WEG de 2024 da
+    R$ 1,72 bi sobre R$ 3,6 bi de divida -- 48% ao ano --, enquanto o juro que
+    saiu do caixa foi R$ 160 mi. Usar a primeira inflava o WACC e derrubava o
+    valor sem avisar; medido na base de 2024, em 28% das companhias.
+    """
+    analise = analisar(weg)
+    pela_dre = analise.mediana("Custo da divida efetivo")
+    pelo_caixa = analise.mediana("Custo da divida pelo caixa")
+
+    assert pela_dre > 0.30, "o problema que motivou a correcao sumiu do fixture"
+    assert 0 < pelo_caixa < 0.15
+
+    sugestao = sugerir_premissas(analise, horizonte=5)
+    assert sugestao.custo_capital.custo_divida_brl == pytest.approx(pelo_caixa)
+    assert "juros pagos" in sugestao.justificativas["custo_capital"]
+
+
+def test_kd_implausivel_nao_e_propagado(weg):
+    """Sem juros pagos, um Kd absurdo vira Kd sintetico e um alerta."""
+    from dataclasses import replace
+
+    sem_juros = type(weg)(
+        **{
+            **weg.__dict__,
+            "valores": weg.valores.drop(index=["juros_pagos"]),
+        }
+    )
+    sugestao = sugerir_premissas(analisar(sem_juros), horizonte=5)
+    assert sugestao.custo_capital.custo_divida_brl is None
+    assert any("custo da divida" in alerta.lower() for alerta in sugestao.alertas)
+
+
+def test_indicadores_de_caixa_aparecem_quando_ha_dfc(weg):
+    analise = analisar(weg)
+    for indicador in (
+        "Conversao de caixa (FCO / EBITDA)",
+        "Capex / FCO",
+        "Custo da divida pelo caixa",
+        "Investimento em giro (DFC) / Receita",
+        "Payout (dividendos / lucro)",
+    ):
+        assert indicador in analise.indicadores.index, indicador
+
+
 def test_valores_saem_em_reais_e_a_escala_e_do_app(weg):
     assert weg.unidade == "R$"
     assert weg.moeda == "BRL"

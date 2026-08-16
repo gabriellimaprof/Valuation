@@ -58,6 +58,11 @@ MARGEM_ROIC_WACC_EXCEPCIONAL = 0.10
 # Acima disto, o retorno passa a depender mais do mercado do que da empresa.
 PESO_RERATING_ALTO = 0.40
 TSR_IMPLAUSIVEL = 0.40
+# Abaixo disto, a maior parte do EBITDA nao chega ao caixa. Nao e defeito por si
+# -- empresa que cresce rapido prende caixa no giro --, mas precisa de explicacao.
+CONVERSAO_CAIXA_BAIXA = 0.60
+# Diferenca entre o juro da DRE e o juro pago que sugere capitalizacao.
+JUROS_CAPITALIZADOS = 0.02
 
 
 @dataclass(frozen=True)
@@ -657,6 +662,59 @@ def _checar_contra_historico(
                     referencia="Damodaran, Investment Valuation, cap. 11",
                 )
             )
+
+    # --- contraprovas de caixa, quando a origem trouxe a DFC aberta ---------
+
+    conversao = analise.mediana("Conversao de caixa (FCO / EBITDA)")
+    if np.isfinite(conversao) and conversao < CONVERSAO_CAIXA_BAIXA:
+        achados.append(
+            Achado(
+                codigo="ebitda_nao_vira_caixa",
+                severidade=ALERTA,
+                titulo=(
+                    f"Só {_pct(conversao, 0)} do EBITDA virou caixa operacional"
+                ),
+                detalhe=(
+                    "O EBITDA e o ponto de partida do valor, mas quem paga dívida e "
+                    "dividendo e o caixa. Conversao baixa e persistente costuma "
+                    "significar lucro preso no capital de giro ou receita "
+                    "reconhecida antes de ser recebida."
+                ),
+                acao=(
+                    "Olhe o investimento em giro no histórico antes de projetar "
+                    "margem estável."
+                ),
+                referencia="Koller, Goedhart & Wessels, Valuation, cap. 20",
+            )
+        )
+
+    kd_competencia = analise.mediana("Custo da divida efetivo")
+    kd_caixa = analise.mediana("Custo da divida pelo caixa")
+    if (
+        np.isfinite(kd_competencia)
+        and np.isfinite(kd_caixa)
+        and kd_competencia > kd_caixa + JUROS_CAPITALIZADOS
+    ):
+        achados.append(
+            Achado(
+                codigo="juros_capitalizados",
+                severidade=INFORMACAO,
+                titulo=(
+                    f"A despesa financeira ({_pct(kd_competencia, 1)} da dívida) supera "
+                    f"o juro efetivamente pago ({_pct(kd_caixa, 1)})"
+                ),
+                detalhe=(
+                    "Parte do custo da dívida nao saiu do caixa no período: pode ter "
+                    "sido capitalizada em obra, acumulada para pagar depois ou ser "
+                    "variação monetária sem desembolso."
+                ),
+                acao=(
+                    "Para o Kd do WACC, o custo contratado importa mais que o pago no "
+                    "ano; para o fluxo do acionista, o pago."
+                ),
+                referencia="",
+            )
+        )
 
     roic_hist = analise.mediana("ROIC")
     roic_perp = resultado.empresa.perpetuidade.roic_perpetuidade

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 406 testes
+pytest                        # 441 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -124,6 +124,12 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   fornecedores — caixa e dívida já estão na ponte.
 - **Imposto sobre o EBIT**, porque o FCFF é desalavancado. Prejuízo fiscal segue
   a **trava dos 30%** brasileira.
+- **Kd vem do juro pago na DFC, não da despesa financeira da DRE.** A linha
+  `3.06.02` da CVM chama-se "Despesas Financeiras" mas junta variação cambial e
+  monetária de todo o passivo: na WEG de 2024 dá 48% da dívida, contra 4,5% de
+  juro efetivamente pago. Pela DRE, 28% das 467 companhias de 2024 recebiam Kd
+  acima de 25% — WACC inflado, valor derrubado, sem aviso. Com o juro pago, zero.
+  Acima de `KD_MAXIMO_PLAUSIVEL` o Kd é descartado e montado sinteticamente.
 - **Múltiplos de EV e de equity não se misturam** na ponte da dívida.
 - **TSR decomposto pela identidade exata**, com o termo cruzado explícito:
   `g_lucro + g_múltiplo + (g_lucro × g_múltiplo) + dividendos`. A regra de bolso
@@ -150,7 +156,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-438 testes passando. Verificado de verdade: contas financeiras, identidades,
+441 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -191,10 +197,10 @@ Em ordem de valor:
    de uso também (`1.02.03.02`), a tela tem de onde partir.
 2. **FCFE sem editor de cronograma de dívida** — o motor suporta, a tela de Valor
    oferece a opção, mas não há onde informar a dívida ano a ano.
-3. **O motor ainda não usa as contas novas.** Arrendamento, juros pagos e a
-   variação de giro da DFC são lidos e exibidos, mas `historico.py` e a ponte de
-   valor continuam derivando giro do balanço e custo da dívida da DRE. Usar o
-   dado da DFC seria mais fiel ao caixa.
+3. **A ponte de valor ainda ignora o arrendamento.** Ele é lido do balanço e
+   entra na dívida bruta (é filho de `2.01.04`), mas não há tela para tratá-lo à
+   parte — e em Petrobras ele é 49% da dívida. `casos_especiais.py` já sabe
+   capitalizar leasing; falta ligar as duas pontas.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte
