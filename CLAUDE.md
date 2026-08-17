@@ -176,6 +176,43 @@ aparecer, é o pior tipo de correção.
 Efeito medido: o impacto sobre o FCO das 121 companhias afetadas tem mediana de
 **28%**, e passa de 30% em quase metade delas.
 
+**Dentro do FCO também há coisa no lugar errado.** A seção `6.01.02` é
+"variações nos ativos e passivos" — capital de giro. Muita companhia lança ali o
+que não é movimento de saldo: medido em 2024, **127 companhias põem imposto de
+renda pago dentro do giro (R$ 44,7 bi) e 69 põem juros pagos (R$ 23,4 bi)**. O
+FCO não muda com isso, mas o *investimento em giro* que se lê da DFC vira outra
+coisa — e ele é premissa de projeção. Na WEG o giro aparentava consumir
+R$ 2.310 mi e consome **R$ 774 mi**.
+
+A separação que importa é entre **pagamento e saldo**: "Impostos a recuperar" e
+"Tributos a recolher" são giro de verdade e ficam; "Imposto de renda e
+contribuição social pagos" desce para junto do juro. Em amostra de 200
+companhias, 69 tiveram pagamentos retirados do giro.
+
+**Outorga de concessão é capex e vai para o investimento** — mas o padrão é
+estreito **de propósito**. Na DFC a palavra "outorga" aparece sobretudo em
+"Opções outorgadas" e "Instrumentos patrimoniais outorgados", que são
+remuneração em ações: com padrão largo são 38 companhias e a maioria é plano de
+opções; com o padrão de `poder concedente|ônus da outorga|outorga fixa|...`, são
+**9 companhias e R$ 3,4 bilhões**, todas concessão. A identidade da DFC se
+preserva: o que sai do operacional entra no investimento.
+
+**Três coisas que pareciam juro pago e não eram**, achadas ao examinar as 13
+companhias que classificam juro nas duas seções:
+
+- `exceto juros` — "Pagamento de empréstimos e arrendamentos (exceto juros)" é
+  amortização de principal. Contava R$ 2,2 bi na Porto Seguro e R$ 2,7 bi na
+  Ambev como juro.
+- `principal e juros` — linha que mistura os dois não dá para separar, e
+  contá-la inteira infla o Kd. São 18 linhas e **R$ 21,5 bi**, com R$ 12,4 bi só
+  na Motiva.
+- JCP com grafia variante — "Juros sobre capital **prório**" escapava. O padrão
+  agora casa por "juros sobre … capital" e não pela grafia de "próprio", para
+  não excluir "Juros de instrumento elegível a capital principal", que é juro.
+
+As duas leituras do juro (a conta somada que alimenta o Kd e a reclassificação)
+usam **o mesmo padrão de exclusão**, e há teste que quebra se alguém separá-los.
+
 **Os cortes de conversão são os quartis medidos, não convenção.** Com a D&A
 corrigida e o juro padronizado: P25 = 14,3%, mediana = **53,9%**, P75 = 83,3%.
 Os cortes são 0,15 e 0,85. O 90%/60% de convenção não transfere: o FCO
@@ -288,7 +325,7 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Estado atual
 
-723 testes passando. Verificado de verdade: contas financeiras, identidades,
+742 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

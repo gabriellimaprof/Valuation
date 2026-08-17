@@ -52,6 +52,20 @@ DADOS = Path(__file__).parent / "dados" / "cvm"
 
 WEG, VIVARA, SAO_MARTINHO, ELEKTRO, BANCO_BRASIL = 5410, 24805, 20516, 17485, 1023
 
+# Contas cujo valor o app move de lugar de proposito: elas nao batem com a linha
+# publicada, e ha teste especifico para cada reclassificacao.
+_RECLASSIFICADAS = {
+    "variacao_capital_giro",
+    "fluxo_operacional",
+    "fluxo_investimento",
+    "fluxo_financiamento",
+    "capex",
+    "arrendamento_curto_prazo",
+    "arrendamento_longo_prazo",
+    "divida_curto_prazo",
+    "divida_longo_prazo",
+}
+
 
 @pytest.fixture(scope="module")
 def catalogo() -> list[Companhia]:
@@ -270,7 +284,8 @@ def test_identidade_do_balanco_fecha(weg):
     # A WEG so gera o aviso de arrendamento: ela reporta o passivo de
     # arrendamento fora da subarvore de emprestimos, como 190 das 467
     # companhias de 2024. Qualquer outro aviso seria problema de leitura.
-    outros = [a for a in weg.avisos if "arrendamento" not in a]
+    esperados = ("arrendamento", "capital de giro", "financiamento")
+    outros = [a for a in weg.avisos if not any(e in a for e in esperados)]
     assert not outros, f"aviso inesperado na WEG: {outros}"
 
 
@@ -472,19 +487,36 @@ def test_dividendos_pagos_separado_dos_recebidos(weg):
 
 
 def test_investimento_em_capital_de_giro_vem_da_dfc(weg):
-    """6.01.02 e o giro medido pelo caixa, nao pela diferenca de saldos."""
-    assert weg.valor("variacao_capital_giro", 2024) == pytest.approx(-2_310_041_000.0)
-    # Negativo: o giro consumiu caixa no ano.
-    assert weg.valor("variacao_capital_giro", 2024) < 0
+    """6.01.02 e o giro medido pelo caixa, **sem** o que nao e giro.
+
+    A WEG lanca juros e impostos pagos dentro de 6.01.02. Lido cru, o giro dela
+    consome R$ 2.310 mi; tirados os pagamentos, consome R$ 774 mi. O primeiro
+    numero nao e investimento em giro -- e giro mais desembolso de juro e de
+    imposto --, e ele alimentava premissa de projecao.
+    """
+    publicado = -2_310_041_000.0
+    reclassificado = weg.valor("pagamentos_reclassificados_do_giro", 2024)
+    assert reclassificado == pytest.approx(1_535_663_000.0)
+
+    giro = weg.valor("variacao_capital_giro", 2024)
+    assert giro == pytest.approx(publicado + reclassificado)
+    # Negativo: o giro consumiu caixa no ano, so que menos do que parecia.
+    assert giro < 0
 
 
 def test_fco_se_abre_em_geracao_e_giro(weg):
-    """Caixa gerado nas operacoes + variacao do giro + outros = caixa operacional."""
+    """Geracao + giro - pagamentos reclassificados = caixa operacional.
+
+    A decomposicao ganhou um termo: o que foi tirado do giro continua dentro do
+    FCO, so que abaixo dele. Sem o termo, a soma nao fecha -- e nao fechar aqui
+    seria sinal de que a reclassificacao vazou caixa para fora do operacional.
+    """
     soma = (
         weg.valor("caixa_das_operacoes", 2024)
         + weg.valor("variacao_capital_giro", 2024)
+        - weg.valor("pagamentos_reclassificados_do_giro", 2024)
     )
-    # "Outros" (6.01.03) fecha a diferenca; a geracao tem que explicar a maior parte.
+    # "Outros" (6.01.03) fecha a diferenca; a geracao explica a maior parte.
     assert soma == pytest.approx(weg.valor("fluxo_operacional", 2024), rel=0.01)
 
 
@@ -585,6 +617,10 @@ def test_cada_conta_bate_com_a_linha_publicada(codigo, escopo, catalogo):
             continue
         origem = dfs.mapeamento.get(chave)
         if not origem:  # conta derivada, nao publicada
+            continue
+        # Contas que o app **reclassifica de proposito** nao batem com a linha
+        # publicada, e e esse o ponto delas. Cada uma tem teste proprio.
+        if "(" in origem or chave in _RECLASSIFICADAS:
             continue
 
         codigos = [parte.split(" - ")[0].strip() for parte in origem.split(" + ")]
@@ -1434,3 +1470,206 @@ def test_a_reclassificacao_aparece_como_conta_e_como_aviso():
     assert tabela["juros_pagos_no_financiamento"][2024] == pytest.approx(150.0)
     assert "reclassificados" in mapeamento["fluxo_operacional"]
     assert "capital de giro" in avisos[0]
+
+
+# ---------------------------------------------------------------------------
+# Pagamento dentro do capital de giro, e outorga dentro da operacao
+# ---------------------------------------------------------------------------
+
+
+def test_pagamento_de_imposto_e_de_juro_sai_do_giro():
+    """6.01.02 e "variacoes nos ativos e passivos" -- desembolso nao e variacao.
+
+    Medido em 2024: 127 companhias lancam imposto de renda pago dentro do giro
+    (R$ 44,7 bi) e 69 lancam juros pagos (R$ 23,4 bi). O FCO nao muda com isso,
+    mas o investimento em giro que se le da DFC vira outra coisa -- e ele e
+    premissa de projecao.
+    """
+    from valuation.importacao.cvm import pagamentos_dentro_do_giro
+
+    total = pagamentos_dentro_do_giro(
+        [
+            _linha_dfc("6.01.02.03", "Imposto de renda e contribuição social pagos", -400.0),
+            _linha_dfc("6.01.02.04", "Juros pagos", -150.0),
+        ]
+    )
+    assert total == {2024: pytest.approx(550.0)}
+
+
+def test_saldo_a_recuperar_e_a_recolher_continua_sendo_giro():
+    """A separacao que importa e entre pagamento e movimento de saldo."""
+    from valuation.importacao.cvm import pagamentos_dentro_do_giro
+
+    total = pagamentos_dentro_do_giro(
+        [
+            _linha_dfc("6.01.02.05", "Impostos a recuperar", -120.0),
+            _linha_dfc("6.01.02.06", "Tributos a recolher", 90.0),
+            _linha_dfc("6.01.02.07", "Obrigações tributárias", 40.0),
+        ]
+    )
+    assert total == {}
+
+
+def test_tirar_pagamento_do_giro_nao_muda_o_fco():
+    """Eles ja estavam dentro do FCO; so mudaram de linha."""
+    from valuation.importacao.cvm import _reorganizar_o_fco
+
+    tabela = {
+        "variacao_capital_giro": {2024: -900.0},
+        "fluxo_operacional": {2024: 1500.0},
+        "fluxo_investimento": {2024: -400.0},
+        "fluxo_financiamento": {2024: -200.0},
+    }
+    avisos: list[str] = []
+    _reorganizar_o_fco(
+        [_linha_dfc("6.01.02.03", "Imposto de renda e contribuição social pagos", -400.0)],
+        tabela,
+        {},
+        avisos,
+    )
+
+    assert tabela["fluxo_operacional"][2024] == pytest.approx(1500.0), "o FCO mudou"
+    assert tabela["variacao_capital_giro"][2024] == pytest.approx(-500.0)
+    assert tabela["pagamentos_reclassificados_do_giro"][2024] == pytest.approx(400.0)
+    assert avisos and "capital de giro" in avisos[0]
+
+
+def test_outorga_sai_da_operacao_e_entra_no_investimento():
+    """Comprar o direito de explorar e investimento, nao custo de operar."""
+    from valuation.importacao.cvm import _reorganizar_o_fco
+
+    tabela = {
+        "fluxo_operacional": {2024: 1000.0},
+        "fluxo_investimento": {2024: -500.0},
+        "fluxo_financiamento": {2024: -300.0},
+        "capex": {2024: 450.0},
+    }
+    soma_antes = 1000.0 - 500.0 - 300.0
+    avisos: list[str] = []
+    _reorganizar_o_fco(
+        [_linha_dfc("6.01.03.04", "Pagamento de Obrigações com poder concedente", -145.0)],
+        tabela,
+        {},
+        avisos,
+    )
+
+    assert tabela["fluxo_operacional"][2024] == pytest.approx(1145.0)
+    assert tabela["fluxo_investimento"][2024] == pytest.approx(-645.0)
+    # A identidade da DFC nao pode se mover.
+    soma = (
+        tabela["fluxo_operacional"][2024]
+        + tabela["fluxo_investimento"][2024]
+        + tabela["fluxo_financiamento"][2024]
+    )
+    assert soma == pytest.approx(soma_antes)
+    # E a outorga vira capex, que e o que ela e.
+    assert tabela["capex"][2024] == pytest.approx(595.0)
+    assert tabela["outorga_paga"][2024] == pytest.approx(145.0)
+
+
+def test_outorga_no_financiamento_tambem_vai_para_investimento():
+    from valuation.importacao.cvm import _reorganizar_o_fco
+
+    tabela = {
+        "fluxo_operacional": {2024: 1000.0},
+        "fluxo_investimento": {2024: -500.0},
+        "fluxo_financiamento": {2024: -300.0},
+    }
+    _reorganizar_o_fco(
+        [_linha_dfc("6.03.05", "Pagamento de Obrigações com poder concedente", -108.0)],
+        tabela,
+        {},
+        [],
+    )
+    assert tabela["fluxo_financiamento"][2024] == pytest.approx(-192.0)
+    assert tabela["fluxo_investimento"][2024] == pytest.approx(-608.0)
+
+
+def test_opcoes_outorgadas_nao_sao_outorga_de_concessao():
+    """O maior risco desta regra: "outorga" na DFC e quase sempre plano de opcoes.
+
+    Medido: com padrao largo em "outorga" sao 38 companhias, e a maioria e
+    remuneracao em acoes. Com o padrao estreito, 9 -- e todas sao concessao.
+    """
+    from valuation.importacao.cvm import outorgas_pagas
+
+    fora = outorgas_pagas(
+        [
+            _linha_dfc("6.01.01.12", "Opções outorgadas reconhecidas", 30.0),
+            _linha_dfc("6.01.01.13", "Despesa com outorga de opções", 12.0),
+            _linha_dfc("6.01.01.14", "Instrumentos patrimoniais outorgados", 8.0),
+            _linha_dfc("6.01.01.15", "Ações restritas outorgadas", 5.0),
+        ]
+    )
+    assert fora == {"operacional": {}, "financiamento": {}}
+
+
+def test_recebimento_do_poder_concedente_nao_e_pagamento_de_outorga():
+    from valuation.importacao.cvm import outorgas_pagas
+
+    fora = outorgas_pagas(
+        [
+            _linha_dfc("6.01.02.08", "Recebimento de Contas a Receber com o Poder Concedente", 448.0),
+            _linha_dfc("6.01.01.10", "Obrigações e variação monetária com poder concedente", 275.0),
+        ]
+    )
+    assert fora == {"operacional": {}, "financiamento": {}}
+
+
+def test_a_weg_tem_pagamentos_dentro_do_giro(weg):
+    """Caso real: o giro dela caiu de R$ 2.310 mi para R$ 774 mi consumidos."""
+    movido = weg.valor("pagamentos_reclassificados_do_giro", 2024)
+    assert movido == pytest.approx(1_535_663_000.0)
+    assert any("capital de giro" in aviso for aviso in weg.avisos)
+
+
+# ---------------------------------------------------------------------------
+# O que parece juro pago e nao e
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rotulo",
+    [
+        # Amortizacao de principal disfarcada: R$ 2,2 bi na Porto Seguro.
+        "Pagamento de empréstimos e arrendamentos (exceto juros)",
+        "Caixa líquido de custos financeiros, exceto juros",
+        # Linha que mistura os dois: 18 linhas e R$ 21,5 bi na base.
+        "Arrendamento - pagamentos de principal e juros",
+        "Pagamento de juros e principal sobre passivo de arrendamento",
+        # JCP e remuneracao ao acionista -- inclusive com a grafia errada que a
+        # Dexxos publica.
+        "Dividendos e Juros sobre capital prório pago a acionistas",
+        "Juros sobre capital próprio pagos",
+    ],
+)
+def test_o_que_nao_e_juro_pago_fica_de_fora(rotulo):
+    from valuation.importacao.cvm import _NAO_E_JURO_PAGO
+
+    assert _NAO_E_JURO_PAGO.search(rotulo), f"deveria excluir: {rotulo}"
+
+
+@pytest.mark.parametrize(
+    "rotulo",
+    [
+        "Juros pagos",
+        "Juros pagos sobre empréstimos",
+        "Juros sobre arrendamentos pagos",
+        # AT1 de banco: e juro de verdade, e "capital principal" nao pode
+        # confundi-lo com JCP.
+        "Juros de instrumento elegível a capital principal pagos",
+    ],
+)
+def test_juro_de_verdade_continua_contando(rotulo):
+    from valuation.importacao.cvm import _MARCA_JUROS_PAGOS, _NAO_E_JURO_PAGO
+
+    assert _MARCA_JUROS_PAGOS.search(rotulo)
+    assert not _NAO_E_JURO_PAGO.search(rotulo), f"nao deveria excluir: {rotulo}"
+
+
+def test_as_duas_leituras_do_juro_usam_o_mesmo_criterio():
+    """A regra somada e a reclassificacao tem que concordar sobre o que e juro."""
+    from valuation.importacao.cvm import _NAO_E_JURO_PAGO, REGRAS_SOMADAS
+
+    regra = next(r for r in REGRAS_SOMADAS if r.chave == "juros_pagos")
+    assert regra.exclui is _NAO_E_JURO_PAGO

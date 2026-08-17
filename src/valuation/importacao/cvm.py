@@ -882,6 +882,29 @@ def _somar_arrendamento_no_caixa(
         mapeamento[destinos[chave]] = "linhas de arrendamento da DFC"
 
 
+_MARCA_JUROS_PAGOS = re.compile(r"juros", re.I)
+
+# O que **parece** juro pago e nao e. Cada item saiu de uma linha real da base:
+#
+# * ``exceto juros`` -- "Pagamento de emprestimos e arrendamentos (exceto
+#   juros)" e amortizacao de principal. Contava R$ 2,2 bi na Porto Seguro e
+#   R$ 2,7 bi na Ambev como se fosse juro.
+# * ``principal e juros`` -- linha que mistura os dois nao da para separar, e
+#   conta-la inteira infla o Kd. Sao 18 linhas e R$ 21,5 bi na base, com
+#   R$ 12,4 bi so na Motiva.
+# * JCP com grafia variante -- "Juros sobre capital prorio" (sem o segundo p)
+#   escapava do padrao antigo. Agora o casamento e por "juros sobre ... capital"
+#   e nao pela grafia de "proprio" -- de proposito, para nao excluir "Juros de
+#   instrumento elegivel a capital principal", que e juro de verdade.
+_NAO_E_JURO_PAGO = re.compile(
+    r"recebid|exceto juros|sem juros|excluindo juros|"
+    r"principal e juros|juros e principal|"
+    r"juros sobre.{0,8}capital|capital pr[óo]prio|\bjcp\b|"
+    r"receita|capitaliz|a pagar|n[aã]o realizad|provis[aã]o",
+    re.I,
+)
+
+
 REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
     RegraSomada(
         chave="capex",
@@ -905,13 +928,10 @@ REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
     ),
     RegraSomada(
         chave="juros_pagos",
-        inclui=re.compile(r"juros", re.I),
-        # JCP e remuneracao ao acionista, nao custo da divida: vai em dividendos.
-        exclui=re.compile(
-            r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar|"
-            r"n[aã]o realizad|provis[aã]o",
-            re.I,
-        ),
+        inclui=_MARCA_JUROS_PAGOS,
+        # Mesmo padrao que a reclassificacao usa, e de proposito: as duas
+        # leituras do juro pago precisam concordar sobre o que e juro.
+        exclui=_NAO_E_JURO_PAGO,
         confirma=re.compile(r"pag|liquida[cç]", re.I),
         secao_dispensa_verbo="6.03",
     ),
@@ -1164,6 +1184,7 @@ def montar_demonstracoes(
     _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
     _somar_arrendamento_no_caixa(linhas, tabela, mapeamento)
     _padronizar_juros_no_fco(linhas, tabela, mapeamento, avisos)
+    _reorganizar_o_fco(linhas, tabela, mapeamento, avisos)
 
     if not tabela:
         raise ErroCVM(
@@ -1706,12 +1727,6 @@ def importar_ltm(
 #
 # A identidade da DFC sobrevive por construcao: o que sai do financiamento entra
 # no operacional, e a soma das secoes nao muda.
-_MARCA_JUROS_PAGOS = re.compile(r"juros", re.I)
-_NAO_E_JURO_PAGO = re.compile(
-    r"recebid|capital pr[óo]prio|\bjcp\b|receita|capitaliz|a pagar|"
-    r"n[aã]o realizad|provis[aã]o",
-    re.I,
-)
 
 
 def juros_pagos_no_financiamento(linhas: list[LinhaCVM]) -> dict[int, float]:
@@ -1789,4 +1804,188 @@ def _padronizar_juros_no_fco(
         "giro e junto dos impostos pagos, para que o FCO signifique o mesmo que o "
         "das companhias que já os classificam ali. A soma das seções não muda; a "
         "linha reclassificada aparece como 'Juros pagos reclassificados para o FCO'."
+    )
+
+
+# ---------------------------------------------------------------------------
+# O que esta no lugar errado dentro do proprio FCO
+# ---------------------------------------------------------------------------
+#
+# A secao 6.01.02 e "variacoes nos ativos e passivos" -- capital de giro. Muita
+# companhia lanca ali coisas que nao sao movimento de saldo: medido em 2024,
+# **127 companhias poem imposto de renda pago dentro do giro (R$ 44,7 bi) e 69
+# poem juros pagos (R$ 23,4 bi)**. O FCO nao muda com isso, mas o "investimento
+# em giro" que se le da DFC vira outra coisa -- e ele e premissa de projecao.
+#
+# A separacao que importa e entre **pagamento** e **saldo**: "Impostos a
+# recuperar" e "Tributos a recolher" sao giro de verdade e ficam; "Imposto de
+# renda e contribuicao social pagos" nao e giro e desce para junto do juro.
+_E_PAGAMENTO = re.compile(r"pago|pagos|pagamento|desembols|quita", re.I)
+_E_MOVIMENTO_DE_SALDO = re.compile(
+    r"a recuperar|a recolher|a pagar|a receber|obriga[cç]|cr[ée]dito|varia[cç]|"
+    r"ativo|passivo",
+    re.I,
+)
+_MARCA_IMPOSTO = re.compile(r"imposto|tribut|irpj|csll", re.I)
+
+# Outorga de concessao. O padrao e **estreito de proposito**: na DFC a palavra
+# "outorga" aparece sobretudo em "Opcoes outorgadas" e "Instrumentos
+# patrimoniais outorgados", que sao remuneracao em acoes e nao concessao. Uma
+# regra larga jogaria despesa com opcoes no capex. Medido: com este padrao sao
+# 9 companhias e R$ 3,4 bilhoes; com "outorga" solto, 38 companhias, e a maioria
+# delas e plano de opcoes.
+_MARCA_OUTORGA = re.compile(
+    r"poder concedente|onus da outorga|[oô]nus da outorga|outorga fixa|"
+    r"outorga vari[aá]vel|direito de outorga|concess[aã]o a pagar|espectro|"
+    r"radiofrequ",
+    re.I,
+)
+_NAO_E_OUTORGA = re.compile(r"op[cç][oõ]es|instrumento|restrita", re.I)
+_E_RECEBIMENTO = re.compile(r"recebiment|recebid", re.I)
+
+
+def _mais_externas(linhas: list[LinhaCVM]) -> list[LinhaCVM]:
+    """Descarta as linhas que sao filhas de outra ja presente na lista."""
+    por_ano: dict[int, list[LinhaCVM]] = {}
+    for linha in linhas:
+        por_ano.setdefault(linha.ano, []).append(linha)
+    resultado: list[LinhaCVM] = []
+    for do_ano in por_ano.values():
+        codigos = {linha.codigo for linha in do_ano}
+        for linha in do_ano:
+            if not any(
+                linha.codigo != outro and linha.codigo.startswith(outro + ".")
+                for outro in codigos
+            ):
+                resultado.append(linha)
+    return resultado
+
+
+def pagamentos_dentro_do_giro(linhas: list[LinhaCVM]) -> dict[int, float]:
+    """Juro e imposto **pagos** lancados dentro da variacao do capital de giro."""
+    candidatas = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "dfc"
+        and linha.codigo.startswith("6.01.02")
+        and linha.codigo != "6.01.02"
+        and linha.valor
+        and (
+            _MARCA_JUROS_PAGOS.search(linha.descricao)
+            or _MARCA_IMPOSTO.search(linha.descricao)
+        )
+        and _E_PAGAMENTO.search(linha.descricao)
+        and not _E_MOVIMENTO_DE_SALDO.search(linha.descricao)
+        and not _NAO_E_JURO_PAGO.search(linha.descricao)
+    ]
+    total: dict[int, float] = {}
+    for linha in _mais_externas(candidatas):
+        total[linha.ano] = total.get(linha.ano, 0.0) + abs(linha.valor)
+    return total
+
+
+def outorgas_pagas(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
+    """Pagamento de outorga, separado pela secao em que a companhia o lancou."""
+    fora: dict[str, dict[int, float]] = {"operacional": {}, "financiamento": {}}
+    candidatas = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "dfc"
+        and linha.codigo.startswith(("6.01", "6.03"))
+        and linha.valor
+        and _MARCA_OUTORGA.search(linha.descricao)
+        and not _NAO_E_OUTORGA.search(linha.descricao)
+        and _E_PAGAMENTO.search(linha.descricao)
+        and not _E_RECEBIMENTO.search(linha.descricao)
+    ]
+    for linha in _mais_externas(candidatas):
+        chave = "operacional" if linha.codigo.startswith("6.01") else "financiamento"
+        fora[chave][linha.ano] = fora[chave].get(linha.ano, 0.0) + abs(linha.valor)
+    return fora
+
+
+def _reorganizar_o_fco(
+    linhas: list[LinhaCVM],
+    tabela: dict[str, dict[int, float]],
+    mapeamento: dict[str, str],
+    avisos: list[str],
+) -> None:
+    """Tira do giro o que e pagamento, e da operacao o que e investimento.
+
+    Duas correcoes de lugar, com efeitos diferentes:
+
+    * **Juro e imposto pagos dentro do capital de giro** descem para junto dos
+      demais pagamentos. O FCO nao muda -- eles ja estavam dentro dele --, mas o
+      investimento em giro deixa de carregar desembolso que nao e giro.
+    * **Outorga de concessao** sai do operacional (ou do financiamento) e entra
+      no investimento. E direito de explorar comprado a prazo: economicamente,
+      capex. Aqui o FCO **muda**, e a identidade da DFC se preserva porque o
+      mesmo valor entra no investimento.
+    """
+    giro = tabela.get("variacao_capital_giro")
+    pagamentos = pagamentos_dentro_do_giro(linhas)
+    movidos: dict[int, float] = {}
+    if giro and pagamentos:
+        for ano, valor in pagamentos.items():
+            if ano not in giro:
+                continue
+            # O pagamento entrou no giro com sinal negativo; tira-lo e soma-lo
+            # de volta, e o FCO continua exatamente o mesmo.
+            giro[ano] += valor
+            movidos[ano] = valor
+
+    if movidos:
+        tabela["pagamentos_reclassificados_do_giro"] = movidos
+        mapeamento["pagamentos_reclassificados_do_giro"] = (
+            "juros e impostos pagos lancados em 6.01.02"
+        )
+        nota = "(pagamentos retirados)"
+        if nota not in mapeamento.get("variacao_capital_giro", ""):
+            mapeamento["variacao_capital_giro"] = (
+                f"{mapeamento.get('variacao_capital_giro', '')} {nota}".strip()
+            )
+        avisos.append(
+            "Esta companhia lança juros e/ou impostos **pagos** dentro da variação "
+            "de ativos e passivos. Tirei esses desembolsos do capital de giro e os "
+            "deixei abaixo dele, ainda dentro do FCO. O caixa operacional não muda; "
+            "muda o investimento em giro que se lê da DFC, que é premissa de projeção."
+        )
+
+    investimento = tabela.get("fluxo_investimento")
+    if investimento is None:
+        return
+
+    outorga = outorgas_pagas(linhas)
+    total_outorga: dict[int, float] = {}
+    secoes = (
+        ("operacional", tabela.get("fluxo_operacional")),
+        ("financiamento", tabela.get("fluxo_financiamento")),
+    )
+    for secao, serie in secoes:
+        valores = outorga[secao]
+        if not valores or serie is None:
+            continue
+        for ano, valor in valores.items():
+            if ano not in serie or ano not in investimento:
+                continue
+            serie[ano] += valor
+            investimento[ano] -= valor
+            total_outorga[ano] = total_outorga.get(ano, 0.0) + valor
+            if giro is not None and secao == "operacional" and ano in giro:
+                # Quando a outorga estava dentro do giro, ela tambem sai de la --
+                # do contrario o giro ficaria com um buraco do tamanho dela.
+                giro[ano] += valor
+
+    if not total_outorga:
+        return
+
+    tabela["outorga_paga"] = total_outorga
+    mapeamento["outorga_paga"] = "pagamentos ao poder concedente"
+    capex = tabela.setdefault("capex", {})
+    for ano, valor in total_outorga.items():
+        capex[ano] = capex.get(ano, 0.0) + valor
+    avisos.append(
+        "Esta companhia paga outorga de concessão. Movi esses pagamentos para o "
+        "fluxo de investimento e somei ao capex: comprar o direito de explorar é "
+        "investimento, não custo de operar. A soma das seções não muda."
     )

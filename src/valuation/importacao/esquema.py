@@ -750,6 +750,47 @@ CONTAS_DFC: tuple[Conta, ...] = (
         ordem="6.01.50",  # dentro do operacional, junto dos ajustes
     ),
     Conta(
+        chave="impostos_pagos",
+        rotulo="Impostos pagos",
+        demonstracao="dfc",
+        ordem="6.01.94",
+        sinonimos=(
+            "imposto de renda e contribuicao social pagos",
+            "pagamento de imposto de renda e contribuicao social",
+            "impostos pagos",
+            "income taxes paid",
+        ),
+        sinal_invertido=True,
+        ajuda=(
+            "Imposto efetivamente desembolsado no ano. Fica abaixo da variacao do "
+            "capital de giro, e nao dentro dela: pagamento nao e movimento de saldo."
+        ),
+    ),
+    Conta(
+        chave="pagamentos_reclassificados_do_giro",
+        rotulo="Juros e impostos tirados do capital de giro",
+        demonstracao="dfc",
+        ordem="6.01.96",
+        sinonimos=(),
+        ajuda=(
+            "Quanto de juro e imposto **pago** a companhia lancou dentro da "
+            "variacao de ativos e passivos, e o app moveu para baixo dela. Nao "
+            "muda o FCO; muda o que se le como investimento em giro."
+        ),
+    ),
+    Conta(
+        chave="outorga_paga",
+        rotulo="Outorga de concessao paga",
+        demonstracao="dfc",
+        ordem="6.02.95",
+        sinonimos=(),
+        ajuda=(
+            "Pagamento ao poder concedente pelo direito de explorar a concessao. "
+            "Economicamente e capex, entao sai do operacional e entra no "
+            "investimento."
+        ),
+    ),
+    Conta(
         chave="juros_pagos_no_financiamento",
         rotulo="Juros pagos reclassificados para o FCO",
         demonstracao="dfc",
