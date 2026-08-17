@@ -1707,3 +1707,51 @@ def test_arrendamento_so_longo_nao_vaza_para_a_conta_de_curto():
 
     assert "arrendamento_curto_prazo" not in tabela
     assert tabela["arrendamento_longo_prazo"][2024] == pytest.approx(800.0)
+
+
+# ---------------------------------------------------------------------------
+# O app abre todas as demonstracoes, e nao so as do modelo
+# ---------------------------------------------------------------------------
+
+
+def test_a_arvore_traz_as_seis_demonstracoes(weg):
+    """Nada do que a companhia publica fica de fora da arvore.
+
+    O vocabulario canonico nomeia umas dezenas de contas porque e delas que o
+    motor precisa. O resto **nao e descartado**: fica na arvore publicada, e
+    quem usa escolhe o nivel de abertura. Antes de abrir DVA, DMPL e DRA, mais
+    da metade do que a WEG publica ficava fora -- 298 de 574 linhas.
+    """
+    presentes = set(weg.detalhe["demonstracao"])
+    assert {"dre", "bp", "dfc", "dva", "dra", "dmpl"} <= presentes
+
+
+def test_a_dva_responde_o_que_a_dre_nao_abre(weg):
+    """Receita bruta, folha e impostos totais nao existem na DRE padronizada."""
+    bruta = weg.valor("receita_bruta", 2024)
+    liquida = weg.valor("receita_liquida", 2024)
+
+    assert bruta > liquida, "a receita bruta tem que superar a liquida"
+    # A diferenca sao impostos sobre vendas e devolucoes.
+    assert 0.03 < (bruta - liquida) / bruta < 0.35
+    assert weg.valor("pessoal", 2024) > 0
+    assert weg.valor("impostos_taxas_contribuicoes", 2024) > 0
+
+
+def test_a_dmpl_entra_somada_pelas_colunas_do_patrimonio():
+    """A mesma conta aparece uma vez por componente do PL; a arvore soma.
+
+    Sem somar, a arvore teria o mesmo codigo repetido cinco ou seis vezes e
+    ninguem conseguiria ler. Quem precisa da abertura por componente vai ao
+    arquivo -- e o vocabulario nao promete tê-la.
+    """
+    from valuation.importacao.cvm import _DEMONSTRACOES_COM_COLUNA
+
+    assert "dmpl" in _DEMONSTRACOES_COM_COLUNA
+
+
+def test_nenhuma_demonstracao_nova_atrapalha_o_reconhecimento(weg):
+    """Codigos da DVA (7.x) e da DRA (4.x) nao podem invadir contas da DRE."""
+    for chave in ("receita_liquida", "ebit", "lucro_liquido"):
+        origem = weg.mapeamento.get(chave, "")
+        assert origem.startswith("3."), f"{chave} veio de {origem}"

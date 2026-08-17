@@ -1051,7 +1051,112 @@ CONTAS_CAPITAL: tuple[Conta, ...] = (
 )
 
 
-CONTAS: tuple[Conta, ...] = CONTAS_DRE + CONTAS_BP + CONTAS_DFC + CONTAS_CAPITAL
+
+# ---------------------------------------------------------------------------
+# Demonstracao do valor adicionado
+# ---------------------------------------------------------------------------
+#
+# A DVA nao entra em nenhuma conta do valuation, e mesmo assim e a demonstracao
+# que responde perguntas que a DRE padronizada nao responde. Ela existe porque a
+# lei brasileira obriga (Lei 11.638/2007), e em 450 das 467 companhias esta
+# preenchida com a mesma estrutura de codigos.
+#
+# O que so ela tem:
+#
+# * ``7.01.01`` **receita bruta**. Contra a receita liquida do ``3.01``, a
+#   diferenca sao impostos sobre vendas e devolucoes -- que a DRE padronizada
+#   nao abre em lugar nenhum.
+# * ``7.08.03.02`` **aluguel pago** -- que **nao** e o aluguel total, e sim o
+#   que sobrou fora do IFRS 16. Medido, vale 0,19x o desembolso da DFC na
+#   mediana. Serve para saber quanto de aluguel continua sendo despesa, nao para
+#   substituir a leitura ex-IFRS 16.
+# * ``7.08.01`` **folha**, e ``7.08.02`` o total de impostos, taxas e
+#   contribuicoes -- nao so o IR.
+
+CONTAS_DVA: tuple[Conta, ...] = (
+    Conta(
+        chave="receita_bruta",
+        rotulo="Receita bruta (vendas de mercadorias, produtos e servicos)",
+        demonstracao="dva",
+        sinonimos=("vendas de mercadorias produtos e servicos",),
+        codigos_cvm=("7.01.01",),
+        ordem="7.01.01",
+        ajuda=(
+            "Faturamento antes dos impostos sobre vendas e das devolucoes. A "
+            "diferenca para a receita liquida e exatamente o que sai no caminho."
+        ),
+    ),
+    Conta(
+        chave="valor_adicionado_receitas",
+        rotulo="Receitas (DVA)",
+        demonstracao="dva",
+        sinonimos=("receitas",),
+        codigos_cvm=("7.01",),
+        ordem="7.01",
+    ),
+    Conta(
+        chave="insumos_de_terceiros",
+        rotulo="Insumos adquiridos de terceiros",
+        demonstracao="dva",
+        sinonimos=("insumos adquiridos de terceiros",),
+        codigos_cvm=("7.02",),
+        ordem="7.02",
+        ajuda="Quanto do faturamento sai direto para fornecedores.",
+    ),
+    Conta(
+        chave="pessoal",
+        rotulo="Pessoal (folha e beneficios)",
+        demonstracao="dva",
+        sinonimos=("pessoal",),
+        codigos_cvm=("7.08.01",),
+        ordem="7.08.01",
+        ajuda=(
+            "Custo total de pessoal, incluindo beneficios e encargos. Nao aparece "
+            "em nenhuma linha da DRE padronizada."
+        ),
+    ),
+    Conta(
+        chave="impostos_taxas_contribuicoes",
+        rotulo="Impostos, taxas e contribuicoes (total)",
+        demonstracao="dva",
+        sinonimos=("impostos taxas e contribuicoes",),
+        codigos_cvm=("7.08.02",),
+        ordem="7.08.02",
+        ajuda=(
+            "Tudo que foi para o governo -- nao so IR e CSLL, mas tambem ICMS, "
+            "PIS, COFINS, ISS e encargos."
+        ),
+    ),
+    Conta(
+        chave="aluguel_dva",
+        rotulo="Alugueis pagos (DVA)",
+        demonstracao="dva",
+        sinonimos=("alugueis",),
+        codigos_cvm=("7.08.03.02",),
+        ordem="7.08.03.02",
+        ajuda=(
+            "**Nao e o aluguel total.** Depois do IFRS 16 quase tudo saiu desta "
+            "linha e virou depreciacao mais juros; sobra aqui o arrendamento de "
+            "curto prazo e de baixo valor, que a norma dispensa. Medido em 81 "
+            "companhias, a linha vale **0,19x** o desembolso de arrendamento da "
+            "DFC na mediana -- usa-la para a leitura ex-IFRS 16 subestimaria o "
+            "aluguel em cerca de 80%."
+        ),
+    ),
+    Conta(
+        chave="juros_dva",
+        rotulo="Juros (remuneracao de capital de terceiros)",
+        demonstracao="dva",
+        sinonimos=("juros",),
+        codigos_cvm=("7.08.03.01",),
+        ordem="7.08.03.01",
+    ),
+)
+
+
+CONTAS: tuple[Conta, ...] = (
+    CONTAS_DRE + CONTAS_BP + CONTAS_DFC + CONTAS_DVA + CONTAS_CAPITAL
+)
 POR_CHAVE: dict[str, Conta] = {c.chave: c for c in CONTAS}
 CHAVES_OBRIGATORIAS: tuple[str, ...] = tuple(c.chave for c in CONTAS if c.obrigatoria)
 

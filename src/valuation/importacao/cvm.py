@@ -98,11 +98,33 @@ ESCOPOS = ("con", "ind")
 
 # A DFC vem separada por metodo e os dois conjuntos sao disjuntos: em 2024, 451
 # companhias no indireto e 16 no direto, nenhuma nos dois.
+# Todas as demonstracoes que o zip traz, e nao so as quatro do modelo. A regra
+# e simples: **o app le tudo, e quem escolhe o nivel de abertura e quem usa**.
+# O vocabulario canonico nomeia umas dezenas de contas porque e delas que o
+# motor precisa; o resto fica na arvore publicada, disponivel.
+#
+# Medido na WEG de 2024: o zip traz 574 linhas consolidadas. DRE, BP e DFC somam
+# 276 -- as outras 298 estavam em DMPL, DVA e DRA, que nao eram abertas. Mais da
+# metade do que a companhia publica.
+#
+# A DVA e a que mais devolve: ``7.01.01`` e a **receita bruta** (contra a
+# liquida do 3.01, a diferenca sao impostos sobre vendas e devolucoes),
+# ``7.08.03.02`` e o **aluguel** pago, ``7.08.01`` a folha e ``7.08.02`` o total
+# de impostos. Nada disso aparece na DRE padronizada.
 GRUPOS = {
     "dre": ("DRE",),
     "bp": ("BPA", "BPP"),
     "dfc": ("DFC_MI", "DFC_MD"),
+    "dva": ("DVA",),
+    "dra": ("DRA",),
+    "dmpl": ("DMPL",),
 }
+
+# A DMPL tem uma dimensao a mais -- ``COLUNA_DF``, o componente do patrimonio --
+# entao a mesma conta aparece uma vez por coluna. Na arvore ela entra somada,
+# porque o que interessa ali e o movimento total; quem precisa da abertura por
+# componente vai ao arquivo.
+_DEMONSTRACOES_COM_COLUNA = ("dmpl",)
 
 
 class ErroCVM(Exception):
@@ -614,6 +636,20 @@ def _linhas_da_demonstracao(
         recorte = _filtrar_empresa(dados, codigo_cvm)
         if recorte.empty:
             continue
+        if demonstracao in _DEMONSTRACOES_COM_COLUNA and "COLUNA_DF" in recorte.columns:
+            # A mesma conta aparece uma vez por componente do patrimonio. Somar
+            # devolve o movimento total, que e o que a arvore mostra; manter as
+            # linhas separadas encheria a arvore de repeticoes do mesmo codigo.
+            recorte = recorte.assign(
+                VL_CONTA=pd.to_numeric(recorte["VL_CONTA"], errors="coerce")
+            )
+            recorte = (
+                recorte.groupby(
+                    ["CD_CONTA", "DS_CONTA", "DT_FIM_EXERC", "ESCALA_MOEDA"],
+                    as_index=False,
+                )["VL_CONTA"]
+                .sum()
+            )
         for _, linha in recorte.iterrows():
             valor = pd.to_numeric(linha.get("VL_CONTA"), errors="coerce")
             if not np.isfinite(valor):
@@ -1148,6 +1184,9 @@ def montar_demonstracoes(
         "dre": "DRE",
         "bp": "Balanço",
         "dfc": "DFC",
+        "dva": "DVA",
+        "dra": "Resultado abrangente",
+        "dmpl": "Mutações do PL",
         "capital": "Capital",
     }
 

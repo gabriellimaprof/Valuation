@@ -353,6 +353,34 @@ D&A virou **regra somada** sobre `6.01.01` — na seção de ajustes ao lucro, l
 que fala de depreciação **é** depreciação, sem precisar de verbo. Cobertura de
 `depreciacao_amortizacao` foi de 366 para 434 companhias.
 
+**O app abre todas as demonstrações, e o vocabulário é uma camada de nomes.**
+Medido na WEG de 2024, o zip traz **574 linhas consolidadas**; DRE, BP e DFC
+somam 276. As outras 298 estavam em **DMPL, DVA e DRA**, que não eram abertas —
+mais da metade do que a companhia publica. Das que eram abertas, nada se perdia:
+a árvore (`detalhe`) tinha as 276, e as ~70 contas canônicas são a camada que o
+motor consome, não um filtro.
+
+Agora as seis entram. A DMPL tem uma dimensão a mais (`COLUNA_DF`, o componente
+do patrimônio) e entra **somada pelas colunas**: sem isso a árvore repetiria o
+mesmo código cinco vezes. Quem precisa da abertura por componente vai ao arquivo,
+e o vocabulário não promete tê-la.
+
+**A DVA responde o que a DRE padronizada não abre**, em 450 das 467 companhias:
+
+| Código | O que é | Por que importa |
+|---|---|---|
+| `7.01.01` | Receita **bruta** | Contra a líquida do `3.01`, a diferença são impostos sobre vendas e devoluções — 9,0% na WEG, 21,2% na Vivara, 5,5% na Raia |
+| `7.08.01` | Pessoal | Folha e benefícios; não existe em linha nenhuma da DRE |
+| `7.08.02` | Impostos, taxas e contribuições | Tudo que foi ao governo, não só IR e CSLL |
+| `7.08.03.02` | Aluguéis | **Não é o aluguel total** — ver abaixo |
+
+**Cuidado com `7.08.03.02`.** Escrevi no vocabulário que ela seria a medida
+direta do aluguel, melhor que a aproximação pelo desembolso da DFC. Medi: vale
+**0,19x** o desembolso na mediana de 81 companhias. Depois do IFRS 16 quase todo
+aluguel saiu dessa linha e virou depreciação mais juros; sobra ali o
+arrendamento de curto prazo e de baixo valor, que a norma dispensa. Usá-la na
+leitura ex-IFRS 16 subestimaria o aluguel em cerca de 80%. Há teste travando.
+
 **Lucro líquido acima do lucro bruto é contábil, e é um sinal.** Reversão de
 impairment, venda de ativo, ganho tributário e ganho judicial entram na DRE **do
 SG&A para baixo** e podem levar EBIT, LAIR e lucro líquido acima do lucro bruto.
@@ -398,7 +426,7 @@ companhia publicou, não defeito do app. Um caso do de-para que parece erro e n�
 
 ## Estado atual
 
-774 testes passando. Verificado de verdade: contas financeiras, identidades,
+779 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

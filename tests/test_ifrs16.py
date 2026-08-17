@@ -399,3 +399,32 @@ def test_farmacia_de_verdade_nas_duas_bases():
     passivo = passivo_de_arrendamento(visao)
     perpetuo = aluguel_perpetuo(visao, wacc, 0.34)
     assert perpetuo > passivo * 1.5, "o aluguel perpetuo tem que superar o contratado"
+
+
+def test_o_aluguel_da_dva_nao_substitui_o_desembolso_da_dfc():
+    """A linha "Alugueis" da DVA e o residuo que ficou fora do IFRS 16.
+
+    Depois da norma, quase todo aluguel saiu dessa linha e virou depreciacao
+    mais juros; sobra o arrendamento de curto prazo e de baixo valor, que a
+    norma dispensa. Medido em 81 companhias, a linha vale **0,19x** o desembolso
+    de arrendamento da DFC na mediana -- usa-la na leitura ex-IFRS 16
+    subestimaria o aluguel em cerca de 80%.
+
+    Este teste existe porque eu escrevi o contrario no vocabulario antes de
+    medir, e alguem (inclusive eu) tenderia a alcancar essa linha de novo.
+    """
+    from pathlib import Path
+
+    from valuation.importacao.cvm import importar_cvm
+
+    cache = Path.home() / ".cache" / "valuation" / "cvm"
+    if not (cache / "dfp_cia_aberta_2024.zip").exists():
+        pytest.skip("cache da CVM sem o zip de 2024")
+
+    dfs = importar_cvm(5258, [2024], cache=cache)  # Raia Drogasil
+    dva = dfs.valor("aluguel_dva")
+    desembolso = (dfs.valor("arrendamento_principal_pago") or 0) + (
+        dfs.valor("arrendamento_juros_pagos") or 0
+    )
+    assert dva is not None and desembolso > 0
+    assert dva < desembolso / 3, "a DVA nao pode estar medindo o aluguel inteiro"
