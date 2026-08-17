@@ -260,6 +260,50 @@ CONTAS_DRE: tuple[Conta, ...] = (
         sinal_invertido=True,
         ajuda="A parcela mais fixa da estrutura: nao cai junto com a receita.",
     ),
+    # As tres contas abaixo guardam o **sinal publicado**, e nao a magnitude.
+    # Elas existem para uma conta de subtracao -- ``EBIT recorrente = EBIT menos
+    # o que nao se repete`` -- e nessa conta o sinal e a informacao: reversao de
+    # impairment entra positiva e perda entra negativa. Padronizar para
+    # magnitude aqui inverteria metade dos casos sem que nada acusasse.
+    Conta(
+        chave="impairment",
+        rotulo="Perdas por nao recuperabilidade de ativos (impairment)",
+        demonstracao="dre",
+        sinonimos=(
+            "perdas pela nao recuperabilidade de ativos",
+            "perda por reducao ao valor recuperavel",
+            "impairment",
+            "reversao de impairment",
+        ),
+        codigos_cvm=("3.04.03",),
+        ordem="3.04.03",
+        ajuda=(
+            "Baixa (ou reversao) contabil do valor de um ativo. Nao e caixa e nao "
+            "se repete: 94 companhias reconheceram em 2024, somando R$ 167 bilhoes."
+        ),
+    ),
+    Conta(
+        chave="outras_receitas_operacionais",
+        rotulo="Outras receitas operacionais",
+        demonstracao="dre",
+        sinonimos=("outras receitas operacionais",),
+        codigos_cvm=("3.04.04",),
+        ordem="3.04.04",
+        ajuda=(
+            "Onde moram ganho de venda de ativo, credito tributario e ganho "
+            "judicial. Parte e recorrente e parte nao -- por isso aparece "
+            "separada, em vez de somada ao resultado sem aviso."
+        ),
+    ),
+    Conta(
+        chave="outras_despesas_operacionais",
+        rotulo="Outras despesas operacionais",
+        demonstracao="dre",
+        sinonimos=("outras despesas operacionais",),
+        codigos_cvm=("3.04.05",),
+        ordem="3.04.05",
+        ajuda="A contrapartida das outras receitas: perdas e provisoes fora da operacao.",
+    ),
     Conta(
         chave="equivalencia_patrimonial",
         rotulo="Resultado de equivalencia patrimonial",

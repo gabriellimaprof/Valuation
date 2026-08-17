@@ -418,6 +418,70 @@ def _resultado(analise, dfs) -> None:
         "ou com custo — vale checar antes de projetar margem estável."
     )
 
+    _nao_recorrente(analise, dfs)
+
+
+def _nao_recorrente(analise, dfs) -> None:
+    """O que no resultado se repete, e o que aconteceu uma vez.
+
+    Reversão de impairment, venda de ativo, ganho tributário e ganho judicial
+    entram na DRE do SG&A para baixo. Podem fazer EBIT, LAIR e lucro líquido
+    superarem o **lucro bruto** — contabilmente correto, economicamente
+    enganoso, porque nada disso se repete.
+    """
+    from valuation.casos_especiais import ver_recorrente
+
+    visao = ver_recorrente(analise)
+    if visao is None or not visao.relevante:
+        return
+
+    st.markdown("#### O que se repete, e o que aconteceu uma vez")
+    colunas = st.columns(3)
+    with colunas[0]:
+        metrica(
+            "Margem EBIT reportada",
+            float(visao.margem_ebit.dropna().iloc[-1]),
+            "pct",
+        )
+    with colunas[1]:
+        metrica(
+            "Margem EBIT recorrente",
+            float(visao.margem_ebit_recorrente.dropna().iloc[-1]),
+            "pct",
+        )
+    with colunas[2]:
+        metrica("Peso do não recorrente no EBIT", visao.peso, "pct")
+
+    tabela = pd.DataFrame(
+        {
+            "EBIT reportado": visao.ebit,
+            "(−) Impairment": -visao.impairment,
+            "(−) Outras receitas operacionais": -visao.outras_receitas,
+            "(−) Outras despesas operacionais": -visao.outras_despesas,
+            "EBIT recorrente": visao.ebit_recorrente,
+            "Equivalência patrimonial (à parte)": visao.equivalencia,
+        }
+    ).T
+    tabela.columns = [str(a) for a in dfs.anos]
+    st.dataframe(tabela_formatada(tabela, "moeda", dfs.unidade), width="stretch")
+
+    anos = visao.anos_com_lucro_acima_do_bruto()
+    if anos:
+        st.warning(
+            f"**O lucro líquido superou o lucro bruto em {', '.join(str(a) for a in anos)}.** "
+            "Contabilmente é possível e não indica erro: reversão de impairment, "
+            "venda de ativo, ganho tributário ou judicial entram abaixo do lucro "
+            "bruto e podem superá-lo. O que não se pode é projetar a partir daí."
+        )
+
+    st.caption(
+        "O ajuste vai nos **dois sentidos**: quando o item foi uma perda — "
+        "impairment, tipicamente — a margem recorrente fica **maior** que a "
+        "reportada. A equivalência patrimonial aparece à parte e não é subtraída: "
+        "para uma holding ela é o negócio, para uma indústria é resultado de "
+        "coligada que não gera caixa na controladora."
+    )
+
 
 def _retorno(analise) -> None:
     conceito("roic", "O indicador mais importante do valuation")

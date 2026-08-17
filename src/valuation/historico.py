@@ -305,6 +305,25 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
             arrendamento, divida_bruta
         )
 
+    # Itens que nao se repetem. A CVM padroniza os codigos (3.04.03 impairment,
+    # 3.04.04 outras receitas, 3.04.05 outras despesas), entao a separacao nao
+    # depende de adivinhar rotulo. Medido na base: 165 de 172 companhias tem
+    # algum, com peso mediano de 17,4% do EBIT -- projetar do EBIT reportado e,
+    # nessa metade da base, projetar um evento como se fosse regime.
+    nao_recorrente = (
+        d.serie("impairment")
+        .fillna(0)
+        .add(d.serie("outras_receitas_operacionais").fillna(0), fill_value=0)
+        .add(d.serie("outras_despesas_operacionais").fillna(0), fill_value=0)
+    )
+    if nao_recorrente.abs().sum() > 0:
+        indicadores["Margem EBIT recorrente"] = _divisao_segura(
+            ebit.sub(nao_recorrente, fill_value=0), receita
+        )
+        indicadores["Itens nao recorrentes / EBIT"] = _divisao_segura(
+            nao_recorrente, ebit
+        )
+
     # Ex-IFRS 16. Desde 2019 o aluguel saiu do resultado operacional e virou
     # depreciacao mais juros, entao o EBITDA subiu sem que nada tenha melhorado.
     # Em rede de farmacia ou de academia isso muda a leitura inteira: a margem da

@@ -727,6 +727,7 @@ def _checar_contra_historico(
         )
 
     achados += _checar_arrendamento_projetado(resultado, analise)
+    achados += _checar_itens_nao_recorrentes(resultado, analise)
 
     leasing = analise.ultimo("Arrendamento / Divida bruta")
     if np.isfinite(leasing) and leasing > LEASING_RELEVANTE:
@@ -872,3 +873,89 @@ def _checar_arrendamento_projetado(
             referencia="Damodaran, Investment Valuation, cap. 3 (lease adjustments)",
         )
     ]
+
+
+# A partir daqui o que nao se repete deixa de ser detalhe e passa a definir o
+# EBIT do periodo. Medido na base de 2024: 47% das companhias com item nao
+# recorrente estao acima disto.
+NAO_RECORRENTE_RELEVANTE = 0.20
+
+
+def _checar_itens_nao_recorrentes(
+    resultado: ResultadoValuation, analise: AnaliseHistorica
+) -> list[Achado]:
+    """Reversao de impairment, venda de ativo, ganho tributario ou judicial.
+
+    Todos entram na DRE **do SG&A para baixo** e podem fazer EBIT, LAIR e lucro
+    liquido superarem o lucro bruto. Nada disso e erro contabil -- e nada disso
+    se repete. Projetar margem a partir de um ano assim e projetar o evento.
+    """
+    from .casos_especiais import ver_recorrente
+
+    recorrente = ver_recorrente(analise)
+    if recorrente is None or not np.isfinite(recorrente.peso):
+        return []
+
+    achados: list[Achado] = []
+    anos_estranhos = recorrente.anos_com_lucro_acima_do_bruto()
+    if anos_estranhos:
+        equivalencia = recorrente.equivalencia.dropna()
+        pela_equivalencia = (
+            not equivalencia.empty and abs(float(equivalencia.iloc[-1])) > 0
+        )
+        causa = (
+            "equivalência patrimonial — a companhia vive do resultado de "
+            "coligadas, e não da própria operação"
+            if pela_equivalencia
+            else "itens não recorrentes lançados do SG&A para baixo"
+        )
+        achados.append(
+            Achado(
+                codigo="lucro_acima_do_lucro_bruto",
+                severidade=INFORMACAO,
+                titulo=(
+                    f"Lucro líquido superou o lucro bruto em "
+                    f"{', '.join(str(a) for a in anos_estranhos)}"
+                ),
+                detalhe=(
+                    "Contabilmente é possível e não indica erro: reversão de "
+                    "impairment, venda de ativo, ganho tributário ou judicial "
+                    "entram abaixo do lucro bruto e podem superá-lo. Aqui a causa "
+                    f"aparenta ser {causa}."
+                ),
+                acao=(
+                    "Confira a margem EBIT recorrente antes de projetar: o resultado "
+                    "desse ano não veio da operação e não se repete."
+                ),
+                referencia="",
+            )
+        )
+
+    if recorrente.peso >= NAO_RECORRENTE_RELEVANTE:
+        margem = recorrente.margem_ebit.dropna()
+        margem_rec = recorrente.margem_ebit_recorrente.dropna()
+        if not margem.empty and not margem_rec.empty:
+            achados.append(
+                Achado(
+                    codigo="ebit_depende_de_nao_recorrente",
+                    severidade=ALERTA,
+                    titulo=(
+                        f"{_pct(recorrente.peso, 0)} do EBIT vem de itens que não "
+                        "se repetem"
+                    ),
+                    detalhe=(
+                        f"Impairment, outras receitas e outras despesas operacionais "
+                        f"respondem por {_pct(recorrente.peso, 0)} do EBIT na mediana "
+                        f"do período. A margem EBIT reportada é "
+                        f"{_pct(float(margem.iloc[-1]))} e a recorrente, "
+                        f"{_pct(float(margem_rec.iloc[-1]))}."
+                    ),
+                    acao=(
+                        "Ancore a projeção na margem recorrente. A reportada embute "
+                        "um evento que não volta no ano seguinte — e quando o item "
+                        "foi uma perda, a recorrente é **maior**, não menor."
+                    ),
+                    referencia="CFA Institute, Financial Statement Analysis",
+                )
+            )
+    return achados

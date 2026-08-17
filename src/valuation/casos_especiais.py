@@ -611,3 +611,132 @@ def passivo_de_arrendamento(visao: VisaoExIFRS16) -> float:
     """O passivo contratado que o balanco reconhece, no ultimo ano."""
     diferenca = (visao.divida_bruta_reportada - visao.divida_bruta).dropna()
     return float(diferenca.iloc[-1]) if not diferenca.empty else float("nan")
+
+
+# ---------------------------------------------------------------------------
+# O que se repete, e o que aconteceu uma vez
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResultadoRecorrente:
+    """EBIT com e sem os itens que nao se repetem.
+
+    **Por que isso importa mais do que parece.** Reversao de impairment, ganho
+    na venda de ativo, credito tributario e ganho judicial entram na DRE do
+    SG&A para baixo. Eles podem fazer EBIT, LAIR e lucro liquido superarem o
+    **lucro bruto** -- o que e contabilmente correto e economicamente enganoso,
+    porque nada disso se repete no ano seguinte.
+
+    Medido na base de 2024: **165 de 172 companhias tem item nao recorrente
+    diferente de zero**, com peso mediano de 17,4% do EBIT e acima de 20% em
+    quase metade delas. Projetar a partir do EBIT reportado, nesses casos, e
+    projetar um evento como se fosse regime.
+
+    De onde os numeros saem
+    -----------------------
+
+    A CVM padroniza os codigos, entao nao ha adivinhacao de rotulo::
+
+        3.04.03  Perdas pela nao recuperabilidade de ativos (impairment)
+        3.04.04  Outras receitas operacionais
+        3.04.05  Outras despesas operacionais
+
+        EBIT recorrente = EBIT - (3.04.03 + 3.04.04 + 3.04.05)
+
+    Com o **sinal publicado**, e nao com magnitude: reversao de impairment entra
+    positiva, perda entra negativa, e a subtracao cuida dos dois casos.
+
+    A equivalencia patrimonial (``3.04.06``) fica **de fora da subtracao**, de
+    proposito. Para uma holding ela e o negocio; para uma industria e resultado
+    de coligada que nao gera caixa na controladora. Excluir por padrao acertaria
+    numa e erraria na outra, entao ela aparece separada e quem le decide.
+    """
+
+    receita: pd.Series
+    ebit: pd.Series
+    ebit_recorrente: pd.Series
+    impairment: pd.Series
+    outras_receitas: pd.Series
+    outras_despesas: pd.Series
+    equivalencia: pd.Series
+    lucro_bruto: pd.Series
+    lucro_liquido: pd.Series
+
+    @property
+    def nao_recorrente(self) -> pd.Series:
+        return self.ebit - self.ebit_recorrente
+
+    @property
+    def margem_ebit(self) -> pd.Series:
+        return self.ebit / self.receita
+
+    @property
+    def margem_ebit_recorrente(self) -> pd.Series:
+        return self.ebit_recorrente / self.receita
+
+    @property
+    def peso(self) -> float:
+        """Quanto do EBIT, na mediana, veio do que nao se repete."""
+        ebit = self.ebit.replace(0, np.nan)
+        razao = (self.nao_recorrente / ebit).replace([np.inf, -np.inf], np.nan).dropna()
+        return float(razao.abs().median()) if not razao.empty else float("nan")
+
+    @property
+    def relevante(self) -> bool:
+        return bool(np.isfinite(self.peso) and self.peso >= 0.10)
+
+    def anos_com_lucro_acima_do_bruto(self) -> list[int]:
+        """Anos em que o lucro liquido superou o lucro bruto.
+
+        Nao e erro contabil -- pode ser reversao de impairment, venda de ativo,
+        ganho tributario ou judicial. E o sinal mais visivel de que o resultado
+        daquele ano nao veio da operacao.
+        """
+        comparavel = pd.concat(
+            [self.lucro_liquido, self.lucro_bruto], axis=1, keys=["ll", "bruto"]
+        ).dropna()
+        acima = comparavel[comparavel["ll"] > comparavel["bruto"]]
+        return [int(a) for a in acima.index]
+
+    @property
+    def explicacao(self) -> str:
+        if not np.isfinite(self.peso):
+            return "Não há itens não recorrentes destacados na DRE."
+        ultimo = self.nao_recorrente.dropna()
+        if ultimo.empty:
+            return "Não há itens não recorrentes destacados na DRE."
+        return (
+            f"Itens não recorrentes respondem por {self.peso:.1%} do EBIT na "
+            f"mediana do período. No último ano foram {float(ultimo.iloc[-1]):,.1f}, "
+            f"contra EBIT de {float(self.ebit.dropna().iloc[-1]):,.1f}."
+        )
+
+
+def ver_recorrente(analise: AnaliseHistorica) -> ResultadoRecorrente | None:
+    """Separa o EBIT do que nao se repete, ou ``None`` sem EBIT para separar."""
+    d = analise.demonstracoes
+    ebit = d.serie("ebit")
+    if ebit.dropna().empty:
+        return None
+
+    impairment = d.serie("impairment")
+    outras_receitas = d.serie("outras_receitas_operacionais")
+    outras_despesas = d.serie("outras_despesas_operacionais")
+
+    nao_recorrente = (
+        impairment.fillna(0)
+        .add(outras_receitas.fillna(0), fill_value=0)
+        .add(outras_despesas.fillna(0), fill_value=0)
+    )
+    return ResultadoRecorrente(
+        receita=d.serie("receita_liquida"),
+        ebit=ebit,
+        ebit_recorrente=ebit.sub(nao_recorrente, fill_value=0),
+        impairment=impairment,
+        outras_receitas=outras_receitas,
+        outras_despesas=outras_despesas,
+        equivalencia=d.serie("equivalencia_patrimonial"),
+        lucro_bruto=d.serie("lucro_bruto"),
+        lucro_liquido=d.serie("lucro_liquido"),
+    )

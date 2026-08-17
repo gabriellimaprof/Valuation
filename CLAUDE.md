@@ -353,6 +353,35 @@ D&A virou **regra somada** sobre `6.01.01` — na seção de ajustes ao lucro, l
 que fala de depreciação **é** depreciação, sem precisar de verbo. Cobertura de
 `depreciacao_amortizacao` foi de 366 para 434 companhias.
 
+**Lucro líquido acima do lucro bruto é contábil, e é um sinal.** Reversão de
+impairment, venda de ativo, ganho tributário e ganho judicial entram na DRE **do
+SG&A para baixo** e podem levar EBIT, LAIR e lucro líquido acima do lucro bruto.
+Não é erro; é resultado que não se repete. A CVM padroniza os códigos, então a
+separação não depende de adivinhar rótulo:
+
+```
+3.04.03  Perdas pela não recuperabilidade de ativos (impairment)
+3.04.04  Outras receitas operacionais
+3.04.05  Outras despesas operacionais
+
+EBIT recorrente = EBIT − (3.04.03 + 3.04.04 + 3.04.05)
+```
+
+Com o **sinal publicado**, não com magnitude: reversão entra positiva, perda
+entra negativa, e a subtração cuida dos dois casos. As três contas não existiam
+no vocabulário — somam R$ 511 bi em 2024 e não eram lidas.
+
+Medido: **165 de 172 companhias** têm item não recorrente diferente de zero, com
+peso mediano de **17,4% do EBIT** e acima de 20% em quase metade. CESP tem
+margem EBIT de 134% reportada e **21,5% recorrente**. E o ajuste vai nos dois
+sentidos: na Vale o item foi impairment, então a recorrente (33,8%) é **maior**
+que a reportada (26,9%).
+
+A equivalência patrimonial (`3.04.06`) fica **fora da subtração**, de propósito:
+para uma holding ela é o negócio, para uma indústria é resultado de coligada que
+não gera caixa na controladora. Excluir por padrão acertaria numa e erraria na
+outra, então ela aparece separada.
+
 **Duas verificações minhas estavam erradas, e a auditoria mostrou.** "Lucro
 líquido não supera o bruto" acusou 29 companhias e as 29 estavam certas — Itaúsa
 tem lucro líquido de R$ 14 bi sobre lucro bruto de R$ 2,4 bi porque vive de
@@ -369,7 +398,7 @@ companhia publicou, não defeito do app. Um caso do de-para que parece erro e n�
 
 ## Estado atual
 
-760 testes passando. Verificado de verdade: contas financeiras, identidades,
+774 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
