@@ -137,6 +137,11 @@ CONTAS_DRE: tuple[Conta, ...] = (
             "Despesa sem saida de caixa. E o que separa o EBITDA do EBIT, e volta ao "
             "fluxo de caixa depois de calculado o imposto."
         ),
+        # D&A e magnitude: ``EBITDA = EBIT + D&A`` nao admite valor negativo, que
+        # faria o EBITDA ficar **abaixo** do EBIT. Auditada a base de 2024, 43
+        # companhias industriais publicavam a linha com sinal invertido -- Casas
+        # Bahia com -R$ 864 mi --, e o app repassava.
+        sinal_invertido=True,
         ordem="3.04.90",  # dentro das operacionais, logo antes do EBIT
     ),
     Conta(
@@ -747,7 +752,21 @@ CONTAS_DFC: tuple[Conta, ...] = (
             "depreciation and amortization",
         ),
         ajuda="Muitas empresas so divulgam a D&A na DFC, nao na DRE.",
+        sinal_invertido=True,
         ordem="6.01.50",  # dentro do operacional, junto dos ajustes
+    ),
+    Conta(
+        chave="outros_operacionais",
+        rotulo="Outros movimentos operacionais",
+        demonstracao="dfc",
+        sinonimos=("outros",),
+        codigos_cvm=("6.01.03",),
+        ordem="6.01.93",
+        ajuda=(
+            "A terceira parte do caixa operacional, ao lado da geracao e do "
+            "capital de giro. Costuma abrigar juro e imposto pagos. Sem ela a "
+            "decomposicao do FCO so fecha em 47% das companhias; com ela, em 97%."
+        ),
     ),
     Conta(
         chave="impostos_pagos",

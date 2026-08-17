@@ -777,11 +777,23 @@ def _somar_arrendamento_fora_da_divida(
     """
     series = arrendamento_no_passivo(linhas)
 
-    # O arrendamento e **substituido**, nao somado: esta e a fonte unica.
-    for prazo, chave in (("curto", "arrendamento_curto_prazo"), ("longo", "arrendamento_longo_prazo")):
+    # O arrendamento e **substituido**, nao somado: esta e a fonte unica. E
+    # quando esta leitura encontra alguma linha, ela passa a mandar nas duas
+    # contas -- inclusive para **apagar** a que nao tem valor. Sem isso, a
+    # companhia que so publica arrendamento longo ficava com o reconhecimento
+    # por rotulo enchendo a conta de curto prazo com o numero do longo: a
+    # auditoria achou dois casos assim em 2023, e nenhuma identidade os pegaria.
+    encontrou = any(series[prazo] for prazo in ("curto", "longo"))
+    for prazo, chave in (
+        ("curto", "arrendamento_curto_prazo"),
+        ("longo", "arrendamento_longo_prazo"),
+    ):
         if series[prazo]:
             tabela[chave] = dict(series[prazo])
             mapeamento[chave] = "linhas de arrendamento do balanço"
+        elif encontrou:
+            tabela.pop(chave, None)
+            mapeamento.pop(chave, None)
 
     # A divida, ao contrario, **recebe** o que estava fora dela: o que ja estava
     # dentro entrou por 2.01.04 / 2.02.01 e nao pode entrar de novo.
@@ -925,6 +937,30 @@ REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
             re.I,
         ),
         rotulo_curto_basta=True,
+    ),
+    RegraSomada(
+        # D&A somada, e nao escolhida. Auditada a base de 2024, a leitura por
+        # rotulo deixava **R$ 121 bilhoes de fora em 106 companhias** -- a cauda
+        # de rotulos e longa ("Depreciacoes, amortizacoes e desvalorizacoes",
+        # "Amortizacao e Depreciacao", "Depreciacao/Amortizacao") e listar
+        # sinonimo a sinonimo nao termina. E onde a companhia abria a linha em
+        # duas ou tres, a disputa por confianca ficava com uma so e jogava o
+        # resto fora: mais R$ 4 bilhoes, em 127 companhias.
+        #
+        # A secao 6.01.01 e a dos ajustes ao lucro; linha que fala de
+        # depreciacao ali **e** depreciacao, sem precisar de verbo.
+        chave="depreciacao_dfc",
+        prefixo="6.01.01.",
+        inclui=re.compile(r"deprecia|amortiza|exaust|deple", re.I),
+        # Amortizacao de custo de captacao e despesa financeira diferida, nao
+        # D&A de ativo fixo -- somada aqui, inflaria o EBITDA.
+        exclui=re.compile(
+            r"custo de transa|capta[cç][aã]o|deb[êe]ntur|empr[ée]stim|financiament|"
+            r"[áa]gio na|mais.valia na",
+            re.I,
+        ),
+        confirma=re.compile(r"deprecia|amortiza|exaust", re.I),
+        secao_dispensa_verbo="6.01.01",
     ),
     RegraSomada(
         chave="juros_pagos",

@@ -58,6 +58,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   referencias.py        onde cada indicador cai na base brasileira, medido
   qualitativo.py        evidência para as perguntas de framework, sem respondê-las
   relatorio.py          o material todo em um markdown diffável
+  auditoria.py          de-para da leitura: identidades, contenção e origem
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
   biblioteca.py         pasta local de valuations, desligada por padrão
@@ -323,9 +324,52 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   cru na tela, eixo do mapa de calor reinterpretado como número. **Rode o app e
   olhe antes de dar por pronto.**
 
+## A auditoria de leitura, e o que ela achou
+
+`auditoria.py` varre a base inteira e pergunta, conta por conta, de onde o
+número veio e se ele fecha com os que deveriam limitá-lo. Rodar é
+`python -m valuation.auditoria` sobre o cache, ou `auditar_base(...)`. São três
+famílias: **identidades** (ativo = passivo, seções da DFC, decomposição do FCO),
+**contenção** (conta filha não excede a que a contém) e **origem** — o de-para
+de qual código CVM alimentou cada conta canônica, em quantas companhias.
+
+A terceira é a que pega o erro que nenhuma soma denuncia. Conta que vem de
+`3.01` em 400 companhias e de outro código em duas não quebra identidade
+nenhuma, e está errada.
+
+**Resultado das três rodadas: 726 → 230 → 14 achados em 467 companhias.**
+
+O que a auditoria corrigiu, medido:
+
+| Achado | Companhias | O que era |
+|---|---|---|
+| D&A com sinal negativo | 48 → 0 | D&A é magnitude; `EBITDA = EBIT + D&A` não admite negativo. 43 eram industriais |
+| D&A não reconhecida | 106 | **R$ 121 bi** invisíveis — cauda de rótulos ("Depreciações, amortizações e desvalorizações") que listar sinônimo a sinônimo não termina |
+| D&A partida em várias linhas | 127 | Mais R$ 4 bi: a disputa por confiança ficava com uma linha e descartava o resto |
+| `6.01.03` nunca lido | 459 | A decomposição do FCO fechava em 47%; com o termo, **96,8%** |
+| Arrendamento longo na conta de curto | 2 | Rótulos idênticos nos dois códigos; nenhuma identidade pegaria |
+
+D&A virou **regra somada** sobre `6.01.01` — na seção de ajustes ao lucro, linha
+que fala de depreciação **é** depreciação, sem precisar de verbo. Cobertura de
+`depreciacao_amortizacao` foi de 366 para 434 companhias.
+
+**Duas verificações minhas estavam erradas, e a auditoria mostrou.** "Lucro
+líquido não supera o bruto" acusou 29 companhias e as 29 estavam certas — Itaúsa
+tem lucro líquido de R$ 14 bi sobre lucro bruto de R$ 2,4 bi porque vive de
+equivalência patrimonial. E a decomposição do FCO acusava 126 companhias porque
+eu não descontava o juro trazido do financiamento: em Panatlântica a diferença
+era exatamente os R$ 59,75 mi reclassificados. Verificação que acusa o legítimo
+não é verificação.
+
+**O que sobrou, e por quê:** 8 companhias (1,7%) onde a decomposição do FCO não
+fecha, e 2 que publicam receita líquida negativa — esta é leitura fiel do que a
+companhia publicou, não defeito do app. Um caso do de-para que parece erro e não
+é: `caixa_equivalentes` vindo de `1.01` em 20 companhias são **bancos**, onde
+`1.01` é caixa mesmo e não ativo circulante.
+
 ## Estado atual
 
-742 testes passando. Verificado de verdade: contas financeiras, identidades,
+760 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

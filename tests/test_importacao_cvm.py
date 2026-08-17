@@ -1673,3 +1673,37 @@ def test_as_duas_leituras_do_juro_usam_o_mesmo_criterio():
 
     regra = next(r for r in REGRAS_SOMADAS if r.chave == "juros_pagos")
     assert regra.exclui is _NAO_E_JURO_PAGO
+
+
+def test_arrendamento_so_longo_nao_vaza_para_a_conta_de_curto():
+    """A leitura do balanco manda nas duas contas, inclusive para apagar.
+
+    Companhia que so publica arrendamento de longo prazo ficava com o
+    reconhecimento por rotulo enchendo a conta de curto com o numero do longo --
+    os rotulos sao identicos nos dois codigos. A auditoria achou dois casos em
+    2023, e nenhuma identidade contabil os pegaria.
+    """
+    from valuation.importacao.cvm import LinhaCVM, _somar_arrendamento_fora_da_divida
+
+    def linha(codigo, valor):
+        return LinhaCVM(
+            codigo=codigo,
+            descricao="Financiamento por Arrendamento",
+            valor=valor,
+            ano=2024,
+            demonstracao="bp",
+            escala="MIL",
+            escopo="con",
+        )
+
+    tabela = {
+        # o reconhecimento por rotulo pos o numero do longo no curto
+        "arrendamento_curto_prazo": {2024: 800.0},
+        "divida_curto_prazo": {2024: 100.0},
+        "divida_longo_prazo": {2024: 900.0},
+    }
+    mapeamento = {"arrendamento_curto_prazo": "2.02.01.03 - Financiamento por Arrendamento"}
+    _somar_arrendamento_fora_da_divida([linha("2.02.01.03", 800.0)], tabela, mapeamento, [])
+
+    assert "arrendamento_curto_prazo" not in tabela
+    assert tabela["arrendamento_longo_prazo"][2024] == pytest.approx(800.0)
