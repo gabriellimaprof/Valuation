@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 621 testes
+pytest                        # 807 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -410,6 +410,128 @@ para uma holding ela é o negócio, para uma indústria é resultado de coligada
 não gera caixa na controladora. Excluir por padrão acertaria numa e erraria na
 outra, então ela aparece separada.
 
+## A DRE gerencial, e os dois erros de sinal que ela revelou
+
+A árvore da CVM serve para fiscalizar; para modelar é preciso outra forma, que
+é a do dono do projeto e está em `Demonstracoes.dre_gerencial()`:
+
+```
+ROL − custos = LB
+LB − SG&A + equivalência + outras receitas/despesas = EBIT
+EBIT + D&A = EBITDA
+EBITDA + ajustes = EBITDA ajustado
+EBIT ± resultado financeiro = LAIR
+LAIR − impostos = LL consolidado → controladores
+```
+
+São 22 linhas, com o resultado financeiro aberto em receitas, despesas e
+derivativos/câmbio, e o imposto aberto em corrente e diferido. Aba **DRE** em
+Histórico, em valores ou em percentual da receita.
+
+**Duas coisas saem por subtração, e é decisão e não atalho.** O SG&A vem do
+bloco `3.04` menos o que não é SG&A — as contas `3.04.01` e `3.04.02` só existem
+em 297 e 454 das 467 companhias, e `3.04` existe em todas. Derivativos e câmbio
+vêm do resíduo do resultado financeiro: não há código padronizado para eles, e
+quando a companhia abre a linha ela cai num código livre dentro de `3.06`.
+
+**`conferir_dre_gerencial()` anda junto e aparece na tela.** Ponte montada por
+subtração com sinal trocado produz uma DRE que parece certa e não fecha; foi
+exatamente o que aconteceu **três** vezes, e nenhuma outra verificação da
+auditoria pegava:
+
+- **`imposto_corrente` estava guardado como magnitude.** Na WEG de 2023 o
+  diferido foi **crédito** de R$ 404,8 mi; somado como despesa, a ponte dava
+  R$ 1.532,7 mi de imposto contra os R$ 723,2 mi publicados. `sinal_invertido`
+  saiu da conta.
+- **O bloco `3.04` também.** Numa holding ele é **positivo** — na Itaúsa,
+  +R$ 14 bi, porque a equivalência supera as despesas —, e a magnitude jogava
+  essa ordem de grandeza no SG&A. O bloco passa a vir de `EBIT − lucro bruto`,
+  que é identidade e não depende de sinal publicado.
+- **E `impostos` (`3.08`) também, com o alcance maior dos três.** Medido: **118
+  das 467 companhias publicam `3.08` positivo**, R$ 71 bi de crédito lidos como
+  despesa. Na DRE isso quase não aparecia, porque a ponte prefere `3.08.01` e
+  `3.08.02`; onde doía era na **alíquota efetiva**, que é `impostos / LAIR`
+  clipada em [0, 1] — crédito lido como despesa sobe a alíquota em vez de zerá-la,
+  e com R$ 6,1 bi de crédito sobre LAIR de R$ 328,9 mi a razão passa de 1, é
+  clipada em 100% e **zera o NOPAT**.
+
+**O sinal do imposto não se decide por convenção de fonte, se mede.** `3.08` foi
+mantido com magnitude porque planilhas de terminal publicam despesa positiva e a
+CVM publica negativa. Mas a identidade que a própria companhia publica desempata:
+**432 das 467 fecham `LAIR + 3.08 = 3.09` com o sinal publicado, e nenhuma fecha
+com a convenção invertida.** `_corrigir_sinal_dos_impostos` passa a tirar o sinal
+dali — da companhia, não da fonte —, mantendo a convenção de despesa positiva que
+a derivação e a alíquota efetiva já usavam. Corrige **só o sinal**: quando as
+magnitudes divergem a conta fica como foi lida, porque plug que absorve diferença
+esconde erro de leitura, que é o que a ponte existe para achar. A correção entra
+em `derivadas` e aparece na tela.
+
+**Corrente e diferido não são duas metades do mesmo sinal.** Cada um pode ser
+crédito por conta própria, e discordar é o caso comum. Medido no DFP consolidado
+de 2024:
+
+| | Companhias |
+|---|---|
+| Crédito no **diferido** (`3.08.02` > 0) | **221** de 467 |
+| Crédito no corrente (`3.08.01` > 0) | 16 |
+| Crédito nos dois | 8 |
+| **Sinais opostos entre corrente e diferido** | **204** |
+| `3.08.01 + 3.08.02 = 3.08` com o sinal publicado | **440 de 440** |
+| … com magnitude | 0 |
+
+Conferido conta a conta contra o arquivo bruto: **449 das 467 batem com sinal**
+nas duas contas. As 18 que divergem são banco ou seguradora — Itaú, BTG, Pine, BB
+Seguridade —, que publicam em outro plano e já eram detectadas e avisadas.
+
+**O template mandava o usuário fazer errado.** A instrução dizia "custos,
+despesas, **impostos** e capex podem ser positivos ou negativos: o app usa a
+magnitude e padroniza o sinal sozinho" — verdade para custo, falsa para IR desde
+que corrente e diferido passaram a guardar o sinal publicado. Quem seguisse
+transformaria em despesa o crédito de 47% da base. O texto agora abre a exceção
+com o número medido, e `_corrigir_sinal_do_ir_aberto` recupera o caso em que a
+soma tem a magnitude do total e o sinal oposto. Quando corrente e diferido têm
+sinais opostos e vieram como magnitude, **a informação se perdeu na origem e o app
+não a inventa** — `_conferir` avisa que os dois não reconstroem o total.
+
+Medido na base inteira depois das três correções, passo a passo:
+
+| Passo da ponte | Fecha exato | Fecha até 1% | Não fecha | Sem dado |
+|---|---|---|---|---|
+| `ROL − custos = LB` | 458 | 458 | **0** | 9 |
+| `LB − SG&A + equiv. + outros = EBIT` | 465 | 465 | **0** | 2 |
+| `EBIT + D&A = EBITDA` | 465 | 465 | **0** | 2 |
+| `EBITDA − não recorrentes = EBITDA aj.` | 465 | 465 | **0** | 2 |
+| `EBIT ± resultado financeiro = LAIR` | 463 | 463 | 2 | 2 |
+| `LAIR − IR = continuadas` | 465 | 465 | **0** | 2 |
+| `continuadas + descontinuadas = LL` | 461 | 461 | 4 | 2 |
+| `LL − não controladores = controladores` | 337 | 352 | 8 | 107 |
+| **Cadeia inteira** | **440** | **455** | **12** | — |
+
+Duas leituras da mesma coisa: **440 fecham na aritmética exata** e 455 admitindo
+1% (a diferença é arredondamento de demonstração publicada). Das 455, duas não
+têm subtotal mensurável nenhum — então **453 são verificadas fechando**, contra
+413 antes das correções de sinal.
+
+**Os seis primeiros passos não falham em ninguém.** Tudo que sobra está nas duas
+últimas linhas, e nenhuma é defeito de leitura:
+
+- **8 publicam `3.11.01 + 3.11.02 ≠ 3.11`** — a árvore da própria companhia não
+  fecha. A Azul publica R$ 9.190 mi de lucro aos controladores com consolidado de
+  −R$ 9.151 mi; Cyrela, R$ 1.649 + (−R$ 272) contra R$ 1.921; Tupy e RCI zeram
+  `3.11.02` com `3.11.01` diferente de `3.11`.
+- **3 são banco ou seguradora** (Daycoval, BB Seguridade, IRB), onde `3.06` não é
+  resultado financeiro. Já eram detectadas e avisadas antes desta ponte.
+- **1 não está no cadastro** pelo nome, e não foi identificada.
+
+**A tela acusa e não conserta**: consertar esconderia do analista que a companhia
+publicou algo inconsistente.
+
+**Uma coisa medida e não explicada:** o passo dos controladores tem **107
+companhias sem denominador** — o valor apurado é zero, e a conferência não tem
+como dar desvio relativo. Não sei ainda se são companhias sem participação de
+minoritários, se `3.11.01` não é publicado, ou se é defeito da conferência. Os
+demais passos têm 2 ou 9. Está em aberto.
+
 **Duas verificações minhas estavam erradas, e a auditoria mostrou.** "Lucro
 líquido não supera o bruto" acusou 29 companhias e as 29 estavam certas — Itaúsa
 tem lucro líquido de R$ 14 bi sobre lucro bruto de R$ 2,4 bi porque vive de
@@ -426,7 +548,7 @@ companhia publicou, não defeito do app. Um caso do de-para que parece erro e n�
 
 ## Estado atual
 
-779 testes passando. Verificado de verdade: contas financeiras, identidades,
+807 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

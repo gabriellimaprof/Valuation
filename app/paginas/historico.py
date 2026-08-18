@@ -48,6 +48,7 @@ def render() -> None:
 
     visao = ver_ex_ifrs16(analise)
     rotulos = [
+        "DRE",
         "Resultado",
         "Qualidade dos lucros",
         "Retorno e decomposição",
@@ -63,16 +64,18 @@ def render() -> None:
     abas = st.tabs(rotulos)
 
     with abas[0]:
-        _resultado(analise, dfs)
+        _dre_gerencial(dfs)
     with abas[1]:
-        _qualidade(analise)
+        _resultado(analise, dfs)
     with abas[2]:
-        _retorno(analise)
+        _qualidade(analise)
     with abas[3]:
-        _reinvestimento(analise)
+        _retorno(analise)
     with abas[4]:
+        _reinvestimento(analise)
+    with abas[5]:
         _capital_de_giro(analise)
-    proxima = 5
+    proxima = 6
     if visao is not None:
         with abas[proxima]:
             _ifrs16(visao, dfs)
@@ -90,6 +93,108 @@ def render() -> None:
             analise.resumo().style.format("{:,.3f}", na_rep="—"),
             width="stretch",
         )
+
+
+def _dre_gerencial(dfs) -> None:
+    """A DRE na forma em que o analista a monta — e a conferência dela.
+
+    A CVM publica a DRE numa árvore que serve para fiscalizar, não para modelar:
+    ``3.04`` é um bloco único que junta SG&A, impairment, outras receitas,
+    outras despesas e equivalência patrimonial. A tela abre os cinco, porque
+    três não se repetem e um não é operacional.
+
+    A conferência anda junto de propósito. A ponte é montada por subtração em
+    vários pontos, e subtração com sinal trocado produz uma DRE que parece certa
+    e não fecha — foi assim que apareceram os dois erros de sinal que já
+    corrigimos. Quem lê precisa ver que ela fechou, não confiar que fechou.
+    """
+    st.markdown("#### A DRE do jeito que se modela")
+    st.caption(
+        "Receita líquida − custos = lucro bruto; menos SG&A, mais equivalência e "
+        "outros = EBIT; mais D&A = EBITDA; menos o que não se repete = EBITDA "
+        "ajustado; menos o resultado financeiro = LAIR; menos impostos = lucro "
+        "líquido."
+    )
+
+    dre = dfs.dre_gerencial()
+    if dre.empty:
+        st.info("Sem DRE importada para montar a ponte.")
+        return
+    dre.columns = [str(coluna) for coluna in dre.columns]
+
+    base = st.radio(
+        "Como exibir",
+        ["Valores", "% da receita líquida"],
+        horizontal=True,
+        key="dre_gerencial_base",
+        help=(
+            "Em percentual da receita a DRE vira estrutura de custo, que é o que "
+            "se projeta — e o que se compara com par."
+        ),
+    )
+
+    subtotais = set(dfs.SUBTOTAIS_DRE)
+
+    def destacar(linha):
+        return [
+            "font-weight: 700" if linha.name in subtotais else "" for _ in linha
+        ]
+
+    if base == "Valores":
+        formatada = tabela_formatada(dre, "moeda", dfs.unidade)
+    else:
+        receita = dre.loc["Receita líquida"].replace(0, np.nan)
+        formatada = tabela_formatada(dre.div(receita, axis=1), "pct")
+    st.dataframe(formatada.style.apply(destacar, axis=1), width="stretch")
+
+    _conferencia_da_dre(dfs)
+
+    st.caption(
+        "**O SG&A sai por subtração, e não das contas `3.04.01` e `3.04.02`** — "
+        "elas só existem em 297 e 454 das 467 companhias da base, enquanto o "
+        "bloco `3.04` existe em todas. Tirando dele impairment, outras "
+        "receitas/despesas e equivalência, sobra o SG&A de verdade para qualquer "
+        "companhia. **Derivativos e câmbio saem por resíduo** do resultado "
+        "financeiro: não há código padronizado para eles, então quando a "
+        "companhia abre a linha ela cai num código livre dentro de `3.06` e o "
+        "resíduo a captura; quando não abre, o resíduo é zero — que é a resposta "
+        "certa."
+    )
+
+
+def _conferencia_da_dre(dfs) -> None:
+    """Cada subtotal contra a soma das linhas que o compõem."""
+    conferencia = dfs.conferir_dre_gerencial()
+    if conferencia.empty:
+        return
+    conferencia.columns = [str(coluna) for coluna in conferencia.columns]
+
+    valores = conferencia.to_numpy(dtype=float)
+    pior = float(np.nanmax(valores)) if np.isfinite(valores).any() else 0.0
+
+    if pior < 1e-6:
+        st.success(
+            "**Todos os subtotais fecham.** Cada um bate com a soma das linhas "
+            "acima dele, em todos os anos."
+        )
+        with st.expander("Ver a conferência linha a linha"):
+            st.dataframe(
+                tabela_formatada(conferencia, "pct2"), width="stretch"
+            )
+        return
+
+    st.warning(
+        f"**Um subtotal não fecha** — desvio máximo de {formatar(pior, 'pct2')} "
+        "sobre o valor publicado. Isso pode ser leitura errada **ou** a própria "
+        "demonstração não reconciliando consigo mesma: a Azul de 2024, por "
+        "exemplo, publica o lucro dos controladores positivo com o consolidado "
+        "negativo. O app acusa e não conserta em silêncio — consertar esconderia "
+        "de você que a companhia publicou algo inconsistente."
+    )
+    st.dataframe(
+        tabela_formatada(conferencia, "pct2"),
+        width="stretch",
+    )
 
 
 def _ifrs16(visao, dfs) -> None:
@@ -276,8 +381,8 @@ def _qualidade(analise) -> None:
         with colunas[0]:
             metrica("Conversão mediana FCO / EBITDA", qualidade.conversao_mediana, "pct")
         colunas[1].caption(
-            "Os cortes são os quartis medidos em 423 companhias brasileiras: a "
-            "**mediana converte 54%**, o quartil inferior 14% e o superior 83%. O "
+            "Os cortes são os quartis medidos em 429 companhias brasileiras: a "
+            "**mediana converte 52%**, o quartil inferior 15% e o superior 78%. O "
             "FCO já é líquido de imposto e de juro pago — e o app padroniza o juro "
             "para o operacional, senão duas companhias idênticas teriam números "
             "diferentes só pela apresentação."

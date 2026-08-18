@@ -108,6 +108,224 @@ class Demonstracoes:
         saida.index = pd.Index(rotulos, name="Conta")
         return saida
 
+
+    def dre_gerencial(self) -> pd.DataFrame:
+        """A DRE na forma em que o analista a monta, com os subtotais que usa.
+
+        A CVM publica a DRE numa arvore que serve para fiscalizar, nao para
+        modelar: ``3.04`` e um bloco unico chamado "Despesas/Receitas
+        Operacionais" que junta SG&A, impairment, outras receitas, outras
+        despesas e equivalencia patrimonial. Quem projeta precisa dos cinco
+        separados, porque tres deles nao se repetem e um nao e operacional.
+
+        A ponte montada aqui::
+
+            Receita liquida
+            (-) Custos
+            = Lucro bruto
+            (-) SG&A
+            (+/-) Equivalencia patrimonial
+            (+/-) Outros (impairment e outras receitas/despesas)
+            = EBIT
+            (+) D&A
+            = EBITDA
+            (-) Itens nao recorrentes
+            = EBITDA ajustado
+            (+) Receitas financeiras
+            (-) Despesas financeiras
+            (+/-) Derivativos e cambio
+            = LAIR
+            (-) IR corrente
+            (-) IR diferido
+            = Lucro liquido consolidado
+            (-) Nao controladores
+            = Controladores
+
+        **O SG&A e obtido por subtracao**, e nao pelas contas ``3.04.01`` e
+        ``3.04.02``: elas so existem em 297 e 454 das 467 companhias, enquanto
+        ``3.04`` existe em todas. Tirando dele impairment, outras e
+        equivalencia sobra o SG&A de verdade, para qualquer companhia.
+
+        **Derivativos e cambio saem por residuo** do resultado financeiro. Nao
+        ha codigo padronizado para eles: quando a companhia abre a linha, ela
+        cai num codigo livre dentro de ``3.06``, e o residuo a captura. Quando
+        nao abre, o residuo e zero -- que e a resposta certa.
+        """
+        def s(chave: str) -> pd.Series:
+            return self.serie(chave).reindex(self.valores.columns)
+
+        zero = pd.Series(0.0, index=self.valores.columns)
+
+        receita = s("receita_liquida")
+        custos = s("custo_produtos_vendidos")
+        bruto = s("lucro_bruto")
+        if bruto.isna().all():
+            bruto = receita.sub(custos, fill_value=0)
+
+        impairment = s("impairment").fillna(0)
+        outras_receitas = s("outras_receitas_operacionais").fillna(0)
+        outras_despesas = s("outras_despesas_operacionais").fillna(0)
+        equivalencia = s("equivalencia_patrimonial").fillna(0)
+        outros = impairment.add(outras_receitas).add(outras_despesas)
+
+        ebit = s("ebit")
+
+        # O bloco 3.04 vem do proprio EBIT, e nao da conta guardada. Motivo: ele
+        # **pode ser positivo** -- numa holding a equivalencia patrimonial supera
+        # as despesas, e a Itausa tem 3.04 de +R$ 14 bi. ``despesas_operacionais``
+        # e guardada como magnitude, entao o sinal se perde e o SG&A sai com a
+        # ordem de grandeza do lucro de coligadas. Derivando de ``3.05 - 3.03``,
+        # que e identidade, a ponte fecha em holding e em industria.
+        bloco = ebit.sub(bruto, fill_value=0)
+        if ebit.isna().all():
+            bloco = -s("despesas_operacionais").fillna(0)
+        sga = -(bloco.sub(outros).sub(equivalencia))
+        if ebit.isna().all():
+            ebit = bruto.sub(sga).add(equivalencia).add(outros)
+
+        depreciacao = s("depreciacao_amortizacao").fillna(0)
+        ebitda = ebit.add(depreciacao, fill_value=0)
+        ebitda_ajustado = ebitda.sub(outros, fill_value=0)
+
+        receitas_fin = s("receitas_financeiras").fillna(0)
+        despesas_fin = s("despesas_financeiras").fillna(0)
+        resultado_fin = s("resultado_financeiro")
+        derivativos = resultado_fin.sub(receitas_fin).add(despesas_fin).fillna(0)
+
+        lair = s("lucro_antes_impostos")
+        if lair.isna().all():
+            lair = ebit.add(resultado_fin.fillna(0), fill_value=0)
+
+        # Os dois carregam o sinal publicado: despesa negativa, credito
+        # positivo. Somar magnitudes quebraria a ponte de quem teve credito.
+        corrente = s("imposto_corrente").fillna(0)
+        diferido = s("imposto_diferido").fillna(0)
+        impostos = s("impostos")
+        if (corrente.abs() + diferido.abs()).sum() == 0 and impostos.notna().any():
+            # ``impostos`` (3.08) e guardado com despesa positiva, e o sinal ja
+            # veio da identidade da companhia (ver
+            # ``_corrigir_sinal_dos_impostos``), entao quem teve credito entra
+            # aqui somando -- que e como ele foi publicado.
+            corrente = -impostos.fillna(0)
+
+        # ``LAIR - impostos`` da o resultado das operacoes **continuadas**, e nao
+        # o lucro consolidado. Quem teve operacao descontinuada no ano tem os
+        # dois diferentes: na WEG de 2023 a distancia e de 13,8%.
+        descontinuadas = s("operacoes_descontinuadas").fillna(0)
+        continuadas = lair.add(corrente, fill_value=0).add(diferido, fill_value=0)
+
+        lucro = s("lucro_liquido")
+        controladores = s("lucro_controladores")
+        nao_controladores = s("lucro_nao_controladores").fillna(0)
+        if controladores.isna().all():
+            controladores = lucro.sub(nao_controladores, fill_value=0)
+
+        linhas = {
+            "Receita líquida": receita,
+            "(−) Custos": -custos.fillna(0),
+            "= Lucro bruto": bruto,
+            "(−) SG&A": -sga,
+            "(+/−) Equivalência patrimonial": equivalencia,
+            "(+/−) Outros": outros,
+            "= EBIT": ebit,
+            "(+) D&A": depreciacao,
+            "= EBITDA": ebitda,
+            "(−) Itens não recorrentes": -outros,
+            "= EBITDA ajustado": ebitda_ajustado,
+            "(+) Receitas financeiras": receitas_fin,
+            "(−) Despesas financeiras": -despesas_fin,
+            "(+/−) Derivativos e câmbio": derivativos,
+            "= LAIR": lair,
+            "IR corrente": corrente,
+            "IR diferido": diferido,
+            "= Operações continuadas": continuadas,
+            "(+/−) Operações descontinuadas": descontinuadas,
+            "= Lucro líquido consolidado": lucro,
+            "(−) Não controladores": -nao_controladores,
+            "= Controladores": controladores,
+        }
+        return pd.DataFrame(linhas).T
+
+    # Linhas de subtotal da DRE gerencial, para a tela destacar sem repetir a
+    # regra em cada lugar que a exibe.
+    SUBTOTAIS_DRE = (
+        "= Lucro bruto",
+        "= EBIT",
+        "= EBITDA",
+        "= EBITDA ajustado",
+        "= LAIR",
+        "= Operações continuadas",
+        "= Lucro líquido consolidado",
+        "= Controladores",
+    )
+
+    def conferir_dre_gerencial(self, tolerancia: float = 0.01) -> pd.DataFrame:
+        """Confere cada subtotal contra a soma das linhas que o compoem.
+
+        Existe porque a ponte e montada por subtracao em varios pontos, e
+        subtracao com sinal trocado produz uma DRE que parece certa e nao
+        fecha. Devolve o desvio relativo de cada subtotal, por ano.
+        """
+        dre = self.dre_gerencial()
+
+        def linha(nome: str) -> pd.Series:
+            return dre.loc[nome] if nome in dre.index else pd.Series(dtype=float)
+
+        checagens = {
+            "Lucro bruto": (
+                linha("Receita líquida").add(linha("(−) Custos"), fill_value=0),
+                linha("= Lucro bruto"),
+            ),
+            "EBIT": (
+                linha("= Lucro bruto")
+                .add(linha("(−) SG&A"), fill_value=0)
+                .add(linha("(+/−) Equivalência patrimonial"), fill_value=0)
+                .add(linha("(+/−) Outros"), fill_value=0),
+                linha("= EBIT"),
+            ),
+            "EBITDA": (
+                linha("= EBIT").add(linha("(+) D&A"), fill_value=0),
+                linha("= EBITDA"),
+            ),
+            "EBITDA ajustado": (
+                linha("= EBITDA").add(linha("(−) Itens não recorrentes"), fill_value=0),
+                linha("= EBITDA ajustado"),
+            ),
+            "LAIR": (
+                linha("= EBIT")
+                .add(linha("(+) Receitas financeiras"), fill_value=0)
+                .add(linha("(−) Despesas financeiras"), fill_value=0)
+                .add(linha("(+/−) Derivativos e câmbio"), fill_value=0),
+                linha("= LAIR"),
+            ),
+            "Operações continuadas": (
+                linha("= LAIR")
+                .add(linha("IR corrente"), fill_value=0)
+                .add(linha("IR diferido"), fill_value=0),
+                linha("= Operações continuadas"),
+            ),
+            "Lucro líquido": (
+                linha("= Operações continuadas").add(
+                    linha("(+/−) Operações descontinuadas"), fill_value=0
+                ),
+                linha("= Lucro líquido consolidado"),
+            ),
+            "Controladores": (
+                linha("= Lucro líquido consolidado").add(
+                    linha("(−) Não controladores"), fill_value=0
+                ),
+                linha("= Controladores"),
+            ),
+        }
+
+        linhas = {}
+        for nome, (montado, publicado) in checagens.items():
+            escala = publicado.abs().replace(0, np.nan)
+            linhas[nome] = ((montado - publicado).abs() / escala).round(6)
+        conferencia = pd.DataFrame(linhas).T
+        conferencia.index.name = "Subtotal"
+        return conferencia
+
     def composicao(self, codigo: str, ano: int | None = None) -> pd.DataFrame:
         """Do que uma conta publicada e feita, pelas filhas diretas.
 
@@ -312,7 +530,117 @@ def _derivar(
                 mudou = True
         if not mudou:
             break
+    corrigidos = _corrigir_sinal_dos_impostos(tabela, anos)
+    if corrigidos:
+        derivadas["impostos"] = (
+            "sinal corrigido pela identidade LAIR - lucro liquido em "
+            f"{corrigidos}: a companhia publicou credito de imposto, e nao despesa"
+        )
+    abertos = _corrigir_sinal_do_ir_aberto(tabela, anos)
+    if abertos:
+        derivadas["imposto_corrente"] = derivadas["imposto_diferido"] = (
+            f"sinal invertido em {abertos}: a origem trouxe magnitude, e corrente e "
+            "diferido precisam do sinal publicado (despesa negativa, credito positivo)"
+        )
     return derivadas
+
+
+def _corrigir_sinal_dos_impostos(
+    tabela: dict[str, dict[int, float]], anos: list[int]
+) -> str:
+    """O sinal do IR vem da identidade da companhia, e nao de convencao de fonte.
+
+    ``impostos`` e guardado com **despesa positiva** -- a convencao que a
+    derivacao ``LAIR - lucro liquido`` ja usa e da qual sai a aliquota efetiva.
+    Guardar a magnitude perde o credito, e credito nao e caso raro: medido no
+    DFP consolidado de 2024, **118 das 467 companhias publicam ``3.08``
+    positivo**, somando R$ 71 bi lidos como despesa. O estrago maior nao e na
+    ponte da DRE, e na aliquota efetiva: com credito de R$ 6,1 bi sobre LAIR de
+    R$ 328,9 mi, a razao passa de 1, e clipada em 100% **zera o NOPAT**.
+
+    Qual sinal e o certo nao se decide por fonte, se mede: **432 das 467
+    companhias fecham ``LAIR + 3.08 = 3.09`` com o sinal publicado, e nenhuma
+    fecha com a convencao invertida**. Entao ele sai da identidade da propria
+    companhia.
+
+    Corrige **so o sinal**, nunca o valor: quando as magnitudes divergem, a
+    conta fica como foi lida. Plug que absorve diferenca esconderia erro de
+    leitura, que e justamente o que a ponte existe para achar.
+    """
+    impostos = tabela.get("impostos")
+    lair = tabela.get("lucro_antes_impostos")
+    lucro = tabela.get("lucro_liquido")
+    if not impostos or not lair or not lucro:
+        return ""
+    descontinuadas = tabela.get("operacoes_descontinuadas") or {}
+
+    def numero(fonte: dict[int, float], ano: int) -> float | None:
+        valor = fonte.get(ano)
+        return valor if valor is not None and np.isfinite(valor) else None
+
+    corrigidos: list[int] = []
+    for ano in anos:
+        lido = numero(impostos, ano)
+        antes = numero(lair, ano)
+        depois = numero(lucro, ano)
+        if lido is None or antes is None or depois is None:
+            continue
+        # ``lucro_liquido`` e o consolidado (3.11); o imposto so alcanca as
+        # operacoes continuadas, entao a descontinuada sai antes da conta.
+        continuadas = depois - (numero(descontinuadas, ano) or 0.0)
+        identidade = antes - continuadas
+        escala = max(abs(identidade), abs(lido), 1.0)
+        if abs(abs(identidade) - abs(lido)) / escala > 1e-6:
+            continue
+        if identidade * lido < 0:
+            impostos[ano] = identidade
+            corrigidos.append(ano)
+    return ", ".join(str(ano) for ano in corrigidos)
+
+
+def _corrigir_sinal_do_ir_aberto(
+    tabela: dict[str, dict[int, float]], anos: list[int]
+) -> str:
+    """Corrente e diferido guardam o **sinal publicado**, e cada um pode ser credito.
+
+    Nao sao duas metades do mesmo sinal. Medido no DFP consolidado de 2024:
+    **221 das 467 companhias tiveram credito no diferido** e 16 no corrente, 8
+    nas duas, e em **204 os dois tem sinais opostos** -- o caso mais comum da
+    base, nao a excecao. ``3.08.01 + 3.08.02 = 3.08`` fecha com o sinal publicado
+    em 440 de 440 companhias que abrem as duas, e em nenhuma com magnitude.
+
+    Da CVM eles ja chegam com o sinal certo. O risco esta na planilha, onde o
+    usuario pode digitar as duas como despesa positiva -- e ate agora o template
+    mandava fazer exatamente isso. Quando a soma tem a magnitude do total e o
+    sinal oposto, foi isso que aconteceu, e os dois viram do lado certo.
+
+    Quando as magnitudes nao batem, **nao mexe**: com corrente e diferido de
+    sinais opostos digitados como magnitude a informacao se perdeu, e nao ha
+    identidade que a recupere. ``_conferir`` avisa nesse caso.
+    """
+    corrente = tabela.get("imposto_corrente")
+    diferido = tabela.get("imposto_diferido")
+    impostos = tabela.get("impostos")
+    if not corrente or not diferido or not impostos:
+        return ""
+
+    corrigidos: list[int] = []
+    for ano in anos:
+        cor, dif, total = corrente.get(ano), diferido.get(ano), impostos.get(ano)
+        if any(v is None or not np.isfinite(v) for v in (cor, dif, total)):
+            continue
+        soma = cor + dif
+        # ``impostos`` guarda despesa positiva; as filhas, o sinal publicado.
+        esperado = -total
+        if soma == 0 or esperado == 0:
+            continue
+        escala = max(abs(esperado), abs(soma), 1.0)
+        if abs(abs(esperado) - abs(soma)) / escala > 1e-6:
+            continue
+        if soma * esperado < 0:
+            corrente[ano], diferido[ano] = -cor, -dif
+            corrigidos.append(ano)
+    return ", ".join(str(ano) for ano in corrigidos)
 
 
 def _conferir(demonstracoes_valores: pd.DataFrame, avisos: list[str]) -> None:
@@ -357,6 +685,27 @@ def _conferir(demonstracoes_valores: pd.DataFrame, avisos: list[str]) -> None:
                 f"A DFC nao fecha em ate {desvio:.1%}: operacional, investimento, "
                 "financiamento e variacao cambial nao somam a variacao de caixa. "
                 "Confira se alguma linha foi classificada na secao errada."
+            )
+
+    # Corrente e diferido tem que reconstruir o total. Cada um pode ser credito
+    # por conta propria -- em 204 das 467 companhias de 2024 eles tem sinais
+    # opostos --, entao a soma nao se confere por magnitude, e sim com sinal.
+    corrente, diferido, impostos = (
+        serie("imposto_corrente"),
+        serie("imposto_diferido"),
+        serie("impostos"),
+    )
+    if corrente is not None and diferido is not None and impostos is not None:
+        soma = corrente.fillna(0).add(diferido.fillna(0), fill_value=0)
+        escala = impostos.abs().replace(0, np.nan)
+        desvio = ((soma + impostos).abs() / escala).max()
+        if np.isfinite(desvio) and desvio > 0.01:
+            avisos.append(
+                f"IR corrente mais IR diferido nao reconstroem o IR total (ate {desvio:.1%} "
+                "de diferenca). Os dois precisam do sinal publicado -- despesa negativa, "
+                "credito positivo -- e credito e comum no diferido. Se a origem trouxe "
+                "magnitude nos dois com sinais que na verdade eram opostos, o sinal se "
+                "perdeu e so a origem pode recuperar."
             )
 
     ebit, lucro = serie("ebit"), serie("lucro_liquido")

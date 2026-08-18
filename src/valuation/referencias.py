@@ -42,6 +42,12 @@ Na segunda, o juro pago foi padronizado para o operacional (ver
 ``cvm._padronizar_juros_no_fco``). A conversao mediana caiu de 64% para **54%**:
 121 companhias classificavam juro no financiamento e o FCO delas era, ate
 entao, um numero que nao se comparava com o das outras.
+
+Na terceira, depois da auditoria de leitura. A D&A passou a ser somada da DFC
+em vez de escolhida por rotulo, e a margem EBITDA mediana subiu de 17,2% para
+**19,9%**; os pagamentos sairam do capital de giro, e o investimento em giro
+mediano caiu de 4,0% para **2,8%** da receita. Cada uma dessas medicoes anteriores
+descrevia uma leitura que hoje se sabe incompleta.
 """
 
 from __future__ import annotations
@@ -50,8 +56,9 @@ import numpy as np
 import pandas as pd
 
 MEDIDO_EM = (
-    "exercícios 2020 a 2024, DFP consolidada, com a D&A corrigida e o juro pago "
-    "padronizado no operacional"
+    "exercícios 2020 a 2024, DFP consolidada, depois da auditoria de leitura: "
+    "D&A somada da DFC, juro pago padronizado no operacional e pagamentos "
+    "retirados do capital de giro"
 )
 COMPANHIAS_MEDIDAS = 447
 
@@ -59,18 +66,17 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (423, (-1.081, -0.492, 0.143, 0.539, 0.833, 1.151, 1.930)),
-    "Margem EBITDA": (445, (-0.270, -0.030, 0.086, 0.172, 0.337, 0.539, 0.718)),
+    "Conversao de caixa (FCO / EBITDA)": (429, (-0.950, -0.422, 0.152, 0.521, 0.776, 1.048, 1.334)),
+    "Margem EBITDA": (445, (-0.227, 0.009, 0.097, 0.199, 0.359, 0.601, 0.743)),
     "Margem liquida": (445, (-0.671, -0.196, -0.001, 0.061, 0.138, 0.288, 0.435)),
     "Crescimento da receita": (435, (-0.101, -0.032, 0.056, 0.151, 0.268, 0.458, 0.718)),
-    "Capex / Receita": (414, (0.003, 0.007, 0.020, 0.049, 0.124, 0.276, 0.487)),
+    "Capex / Receita": (414, (0.003, 0.007, 0.020, 0.049, 0.124, 0.284, 0.487)),
     "ROIC": (419, (-0.200, -0.010, 0.033, 0.101, 0.173, 0.272, 0.408)),
-    "Investimento em giro (DFC) / Receita": (440, (-0.312, -0.109, -0.005, 0.040, 0.097, 0.215, 0.411)),
-    "Divida liquida / EBITDA": (423, (-1.623, -0.511, 0.530, 2.120, 3.860, 7.539, 13.633)),
+    "Investimento em giro (DFC) / Receita": (440, (-0.318, -0.113, -0.011, 0.028, 0.083, 0.168, 0.293)),
+    "Divida liquida / EBITDA": (429, (-1.505, -0.535, 0.512, 2.075, 3.471, 6.535, 9.669)),
     "Liquidez corrente": (447, (0.338, 0.562, 1.065, 1.519, 2.140, 2.983, 4.341)),
-    "Payout (dividendos / lucro)": (342, (0.000, 0.000, 0.129, 0.326, 0.567, 0.884, 1.107)),
-}
-# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
+    "Payout (dividendos / lucro)": (343, (0.000, 0.000, 0.129, 0.325, 0.567, 0.878, 1.106)),
+}# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de
 # todo o passivo, nao so juro. Um corte em 2 p.p. -- que era o do app -- acusa

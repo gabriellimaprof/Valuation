@@ -628,7 +628,13 @@ def test_cada_conta_bate_com_a_linha_publicada(codigo, escopo, catalogo):
             continue
 
         esperado = sum(publicadas[c] for c in codigos)
-        if POR_CHAVE[chave].sinal_invertido:
+        if chave == "impostos":
+            # ``impostos`` guarda **despesa positiva**, e o sinal sai da
+            # identidade da companhia e nao da magnitude: quem publicou credito
+            # (3.08 positivo) fica negativo aqui. Sao 118 das 467 companhias de
+            # 2024. Ver ``_corrigir_sinal_dos_impostos``.
+            esperado = -esperado
+        elif POR_CHAVE[chave].sinal_invertido:
             esperado = abs(esperado)
         conferidas += 1
         assert obtido == pytest.approx(esperado, rel=1e-9), (
@@ -1755,3 +1761,173 @@ def test_nenhuma_demonstracao_nova_atrapalha_o_reconhecimento(weg):
     for chave in ("receita_liquida", "ebit", "lucro_liquido"):
         origem = weg.mapeamento.get(chave, "")
         assert origem.startswith("3."), f"{chave} veio de {origem}"
+
+
+# ---------------------------------------------------------------------------
+# O sinal do imposto vem da identidade, e nao de convencao de fonte
+# ---------------------------------------------------------------------------
+
+
+def test_credito_de_imposto_nao_vira_despesa(catalogo):
+    """118 das 467 companhias de 2024 publicam ``3.08`` positivo -- R$ 71 bi.
+
+    Guardado como magnitude, o credito virava despesa. O estrago nao aparecia na
+    DRE (que le ``3.08.01``/``3.08.02``) e sim na **aliquota efetiva**: ela e
+    ``impostos / LAIR`` clipada em [0, 1], entao credito lido como despesa sobe
+    a aliquota em vez de zera-la, e com credito grande sobre LAIR pequeno ela
+    bate 100% e **zera o NOPAT**.
+    """
+    dfs = importar_cvm(24805, [2024], cache=DADOS, catalogo=catalogo)
+    publicado = _linhas_publicadas(24805, "con", 2024)["3.08"]
+    assert publicado > 0, "o fixture deixou de ser um caso de credito"
+
+    assert dfs.valor("impostos", 2024) == pytest.approx(-publicado)
+    assert "impostos" in dfs.derivadas
+    assert "credito" in dfs.derivadas["impostos"]
+
+
+def test_despesa_de_imposto_continua_positiva(catalogo):
+    """A convencao nao mudou: despesa positiva. So o credito ganhou sinal."""
+    weg = importar_cvm(5410, [2024], cache=DADOS, catalogo=catalogo)
+    assert weg.valor("impostos", 2024) > 0
+    assert "impostos" not in weg.derivadas
+
+
+def test_a_correcao_de_sinal_nao_plugga_diferenca_de_valor():
+    """Corrige o sinal, nunca o valor -- plug esconderia erro de leitura."""
+    from valuation.importacao.importador import _corrigir_sinal_dos_impostos
+
+    # Identidade diz -100 (credito), mas a conta lida tem outra magnitude.
+    tabela = {
+        "impostos": {2024: 250.0},
+        "lucro_antes_impostos": {2024: 400.0},
+        "lucro_liquido": {2024: 500.0},
+    }
+    assert _corrigir_sinal_dos_impostos(tabela, [2024]) == ""
+    assert tabela["impostos"][2024] == 250.0
+
+    # Mesma magnitude, sinal trocado: aí sim corrige.
+    tabela["impostos"] = {2024: 100.0}
+    assert _corrigir_sinal_dos_impostos(tabela, [2024]) == "2024"
+    assert tabela["impostos"][2024] == -100.0
+
+
+def test_a_operacao_descontinuada_sai_antes_da_identidade():
+    """O imposto so alcanca a operacao continuada; 3.11 traz as duas."""
+    from valuation.importacao.importador import _corrigir_sinal_dos_impostos
+
+    tabela = {
+        "impostos": {2024: 40.0},          # magnitude de um credito
+        "lucro_antes_impostos": {2024: 100.0},
+        "lucro_liquido": {2024: 170.0},    # 140 continuadas + 30 descontinuadas
+        "operacoes_descontinuadas": {2024: 30.0},
+    }
+    assert _corrigir_sinal_dos_impostos(tabela, [2024]) == "2024"
+    assert tabela["impostos"][2024] == -40.0
+
+
+def test_corrente_e_diferido_guardam_o_sinal_publicado(catalogo):
+    """Cada um pode ser credito por conta propria, e em geral discordam.
+
+    Medido no DFP consolidado de 2024: 221 das 467 companhias tiveram credito no
+    **diferido**, 16 no corrente, 8 nas duas, e em **204 os dois tem sinais
+    opostos** -- o caso mais comum da base. Conferido conta a conta contra o
+    arquivo em 449 das 467; as 18 restantes sao banco ou seguradora, que publicam
+    em outro plano de contas e ja sao detectadas.
+    """
+    for codigo in (5410, 24805):
+        dfs = importar_cvm(codigo, [2024], cache=DADOS, catalogo=catalogo)
+        publicadas = _linhas_publicadas(codigo, "con", 2024)
+        for chave, cod in (
+            ("imposto_corrente", "3.08.01"),
+            ("imposto_diferido", "3.08.02"),
+        ):
+            if cod not in publicadas:
+                continue
+            assert dfs.valor(chave, 2024) == pytest.approx(publicadas[cod]), (
+                f"{chave} de {codigo} perdeu o sinal publicado"
+            )
+
+
+def test_a_soma_das_duas_reconstroi_o_total(catalogo):
+    """``3.08.01 + 3.08.02 = 3.08`` fecha com o sinal publicado, nunca com magnitude.
+
+    Sao 440 de 440 companhias que abrem as duas contas. Como ``impostos`` guarda
+    despesa positiva e as filhas o sinal publicado, a soma delas e ``-impostos``.
+    """
+    for codigo in (5410, 24805):
+        dfs = importar_cvm(codigo, [2024], cache=DADOS, catalogo=catalogo)
+        soma = dfs.valor("imposto_corrente", 2024) + dfs.valor("imposto_diferido", 2024)
+        assert soma == pytest.approx(-dfs.valor("impostos", 2024), rel=1e-9)
+
+
+def test_planilha_com_as_duas_em_magnitude_tem_o_sinal_recuperado():
+    """O template mandava digitar magnitude; quem seguiu tem conserto.
+
+    Quando a soma tem a magnitude do total e o sinal oposto, foi magnitude, e a
+    identidade devolve os dois ao lado certo.
+    """
+    from valuation.importacao.importador import _corrigir_sinal_do_ir_aberto
+
+    tabela = {
+        "imposto_corrente": {2024: 60.0},   # digitados como despesa positiva
+        "imposto_diferido": {2024: 40.0},
+        "impostos": {2024: 100.0},          # despesa positiva, convencao do app
+    }
+    assert _corrigir_sinal_do_ir_aberto(tabela, [2024]) == "2024"
+    assert tabela["imposto_corrente"][2024] == -60.0
+    assert tabela["imposto_diferido"][2024] == -40.0
+
+
+def test_sinais_opostos_digitados_como_magnitude_nao_sao_inventados():
+    """A informacao se perdeu na origem, e nenhuma identidade a recupera.
+
+    Corrente de -60 com diferido de +20 da total de -40. Digitados como 60 e 20,
+    a soma e 80: magnitude nenhuma bate com 40, e o certo e **nao mexer**.
+    """
+    from valuation.importacao.importador import _corrigir_sinal_do_ir_aberto
+
+    tabela = {
+        "imposto_corrente": {2024: 60.0},
+        "imposto_diferido": {2024: 20.0},
+        "impostos": {2024: 40.0},
+    }
+    assert _corrigir_sinal_do_ir_aberto(tabela, [2024]) == ""
+    assert tabela["imposto_corrente"][2024] == 60.0
+    assert tabela["imposto_diferido"][2024] == 20.0
+
+
+def test_quando_nao_da_para_recuperar_o_app_avisa():
+    """Numero que nao fecha e nao aparece e o pior tipo de erro."""
+    import pandas as pd
+
+    from valuation.importacao.importador import _conferir
+
+    valores = pd.DataFrame(
+        {2024: {"imposto_corrente": 60.0, "imposto_diferido": 20.0, "impostos": 40.0}}
+    )
+    avisos: list[str] = []
+    _conferir(valores, avisos)
+    assert any("nao reconstroem o IR total" in a for a in avisos), avisos
+
+
+def test_o_template_nao_promete_magnitude_para_o_ir(tmp_path):
+    """A instrucao antiga levava o usuario direto ao erro que acabamos de corrigir."""
+    from openpyxl import load_workbook
+
+    from valuation.importacao.template import gerar_template
+
+    caminho = gerar_template(tmp_path / "modelo.xlsx")
+    aba = load_workbook(caminho)["Instrucoes"]
+    texto = " ".join(
+        str(c.value) for (c,) in aba.iter_rows(min_col=1, max_col=1) if c.value
+    )
+    assert "IR e CSLL correntes" in texto and "IR e CSLL diferidos" in texto
+    assert "despesa negativa, credito positivo" in texto
+    # E a regra da magnitude nao pode mais citar impostos.
+    linha_magnitude = next(
+        linha
+        for linha in texto.split(".")
+        if "magnitude e padroniza o sinal" in linha
+    )
+    assert "imposto" not in linha_magnitude.lower()

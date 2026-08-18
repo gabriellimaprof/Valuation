@@ -28,8 +28,8 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
-# Medidos em 423 companhias, com a D&A corrigida **e** o juro pago padronizado
-# no operacional: P25 = 14,3%, mediana = 53,9%, P75 = 83,3%.
+# Medidos em 429 companhias, ja depois da auditoria de leitura: P25 = 15,2%,
+# mediana = 52,1%, P75 = 77,6%.
 #
 # Os cortes sao os quartis observados, e nao mais os 90%/60% de convencao. A
 # razao e que os absolutos perderam sentido aqui: o FCO brasileiro e liquido de
@@ -37,10 +37,11 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 # importada de um mercado de imposto e juro baixos. O que resta de absoluto e a
 # leitura de cada empresa contra a base, que o sinal reporta em percentil.
 #
-# Historico das calibracoes, porque cada uma corrigiu um erro: 0,60 acusava
-# 47,3% da base antes da correcao da D&A; depois dela, ainda 30%; e a
-# padronizacao do juro derrubou a mediana de 64% para 54%.
-CONVERSAO_BOA = 0.85
+# Historico das calibracoes, porque cada uma corrigiu um erro de leitura: 0,60
+# acusava 47,3% da base antes da correcao da D&A; depois dela, ainda 30%; a
+# padronizacao do juro derrubou a mediana de 64% para 54%; e a D&A somada da DFC
+# a levou a 52%.
+CONVERSAO_BOA = 0.78
 CONVERSAO_FRACA = 0.15
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15

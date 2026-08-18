@@ -1617,6 +1617,17 @@ def periodo_acumulado(
     )
 
 
+def _itr_vazio(zip_path: Path, ano: int, escopo: str = "con") -> bool:
+    """O arquivo do ano existe mas ainda nao tem nenhuma companhia?"""
+    try:
+        with zipfile.ZipFile(zip_path) as arquivo:
+            bruto = arquivo.read(_nome_no_zip("DRE", escopo, ano, "itr"))
+    except (KeyError, zipfile.BadZipFile, OSError):
+        return True
+    linhas = [linha for linha in bruto.splitlines()[1:] if linha]
+    return not linhas
+
+
 def _demonstracoes_do_itr(
     zip_path: Path,
     ano: int,
@@ -1683,8 +1694,12 @@ def importar_ltm(
     zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
     escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
     trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
-    if not trimestres:
-        # Em janeiro o arquivo do ano existe e esta vazio; o ITR util e o anterior.
+    if not trimestres and _itr_vazio(zip_itr, ano):
+        # Em janeiro o arquivo do ano ja existe e esta vazio; o ITR util e o do
+        # ano anterior. A condicao e **o arquivo estar vazio**, e nao a
+        # companhia faltar nele: sem essa distincao, pedir o ano movel de uma
+        # companhia que nao publica ITR baixava o zip do ano anterior -- 33 MB
+        # por consulta, para nada.
         ano -= 1
         zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
         escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]

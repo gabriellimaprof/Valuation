@@ -112,3 +112,63 @@ def test_os_cortes_sao_apresentados_como_convencao(weg):
     """Nao calibrados contra a base da CVM -- e a tela nao pode esconder isso."""
     teste = _rodar(weg)
     assert any("convenções de leitura" in c.value for c in teste.caption)
+
+
+# ---------------------------------------------------------------------------
+# A DRE gerencial
+# ---------------------------------------------------------------------------
+
+
+def test_a_aba_de_dre_e_a_primeira(weg):
+    """E a primeira porque e de onde tudo o mais sai."""
+    teste = _rodar(weg)
+    rotulos = [aba.label for aba in teste.tabs if aba.label]
+    assert rotulos[0] == "DRE"
+
+
+def test_a_tela_mostra_a_ponte_na_ordem_da_especificacao(weg):
+    teste = _rodar(weg)
+    dre = weg.dre_gerencial()
+    assert list(dre.index)[:3] == ["Receita líquida", "(−) Custos", "= Lucro bruto"]
+
+    # A tabela exibida e a mesma que o motor monta, so formatada.
+    exibidas = [
+        quadro for quadro in teste.dataframe if "= EBITDA ajustado" in list(quadro.value.index)
+    ]
+    assert exibidas, "a DRE gerencial nao chegou a tela"
+    assert list(exibidas[0].value.index) == list(dre.index)
+
+
+def test_a_conferencia_aparece_junto_e_nao_escondida(weg):
+    """Ponte montada por subtracao precisa ser vista fechando, nao presumida."""
+    teste = _rodar(weg)
+    textos = [s.value for s in teste.success]
+    assert any("subtotais fecham" in t for t in textos), textos
+
+
+def test_a_tela_avisa_quando_um_subtotal_nao_fecha(weg):
+    """Companhia que publica DRE inconsistente tem que aparecer como tal."""
+    import pandas as pd
+
+    quebrada = type(weg)(**{**weg.__dict__, "valores": weg.valores.copy()})
+    quebrada.valores.loc["lucro_liquido"] = (
+        pd.to_numeric(quebrada.valores.loc["lucro_liquido"]) * 2
+    )
+    teste = _rodar(quebrada)
+    textos = [a.value for a in teste.warning]
+    assert any("não fecha" in t for t in textos), textos
+
+
+def test_a_dre_em_percentual_da_receita(weg):
+    """Estrutura de custo e o que se projeta; a tela oferece as duas leituras."""
+    teste = _rodar(weg)
+    radios = [r for r in teste.radio if r.label == "Como exibir"]
+    assert radios, "faltou a escolha entre valores e percentual"
+    radios[0].set_value("% da receita líquida").run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+
+    exibidas = [
+        quadro for quadro in teste.dataframe if "= EBITDA ajustado" in list(quadro.value.index)
+    ]
+    assert exibidas
+    assert exibidas[0].value.loc["Receita líquida"].iloc[0].startswith("100,0%")

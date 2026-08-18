@@ -269,12 +269,10 @@ CONTAS_DRE: tuple[Conta, ...] = (
         chave="impairment",
         rotulo="Perdas por nao recuperabilidade de ativos (impairment)",
         demonstracao="dre",
-        sinonimos=(
-            "perdas pela nao recuperabilidade de ativos",
-            "perda por reducao ao valor recuperavel",
-            "impairment",
-            "reversao de impairment",
-        ),
+        # Sem sinonimos, de proposito: o codigo e fixo (ST_CONTA_FIXA) e casa em
+        # 1,0. O rotulo so criaria ambiguidade -- medido, 10 companhias publicam
+        # "Outras Receitas Operacionais" no slot 3.04.06, que e da equivalencia.
+        sinonimos=(),
         codigos_cvm=("3.04.03",),
         ordem="3.04.03",
         ajuda=(
@@ -286,7 +284,7 @@ CONTAS_DRE: tuple[Conta, ...] = (
         chave="outras_receitas_operacionais",
         rotulo="Outras receitas operacionais",
         demonstracao="dre",
-        sinonimos=("outras receitas operacionais",),
+        sinonimos=(),
         codigos_cvm=("3.04.04",),
         ordem="3.04.04",
         ajuda=(
@@ -299,7 +297,7 @@ CONTAS_DRE: tuple[Conta, ...] = (
         chave="outras_despesas_operacionais",
         rotulo="Outras despesas operacionais",
         demonstracao="dre",
-        sinonimos=("outras despesas operacionais",),
+        sinonimos=(),
         codigos_cvm=("3.04.05",),
         ordem="3.04.05",
         ajuda="A contrapartida das outras receitas: perdas e provisoes fora da operacao.",
@@ -333,7 +331,11 @@ CONTAS_DRE: tuple[Conta, ...] = (
         demonstracao="dre",
         sinonimos=("corrente", "imposto corrente", "current income tax"),
         codigos_cvm=("3.08.01",),
-        sinal_invertido=True,
+        # **Sinal publicado**, e nao magnitude. O corrente e o diferido sao as
+        # duas metades do 3.08 e cada uma pode ser despesa ou credito: na WEG de
+        # 2023 o diferido foi credito de R$ 404,8 mi, e somar as duas como
+        # magnitude dava R$ 1.532,7 mi contra os R$ 723,2 mi publicados. A ponte
+        # da DRE nao fechava, e nada mais acusava.
         ajuda="A parcela do imposto que vira caixa no ano; o diferido nao.",
     ),
     Conta(
@@ -1078,7 +1080,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="receita_bruta",
         rotulo="Receita bruta (vendas de mercadorias, produtos e servicos)",
         demonstracao="dva",
-        sinonimos=("vendas de mercadorias produtos e servicos",),
+        sinonimos=(),
         codigos_cvm=("7.01.01",),
         ordem="7.01.01",
         ajuda=(
@@ -1090,7 +1092,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="valor_adicionado_receitas",
         rotulo="Receitas (DVA)",
         demonstracao="dva",
-        sinonimos=("receitas",),
+        sinonimos=(),
         codigos_cvm=("7.01",),
         ordem="7.01",
     ),
@@ -1098,7 +1100,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="insumos_de_terceiros",
         rotulo="Insumos adquiridos de terceiros",
         demonstracao="dva",
-        sinonimos=("insumos adquiridos de terceiros",),
+        sinonimos=(),
         codigos_cvm=("7.02",),
         ordem="7.02",
         ajuda="Quanto do faturamento sai direto para fornecedores.",
@@ -1107,7 +1109,10 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="pessoal",
         rotulo="Pessoal (folha e beneficios)",
         demonstracao="dva",
-        sinonimos=("pessoal",),
+        # Codigo so: em banco e seguradora a DVA numera as secoes como 7.09 e
+        # 7.11, e casar por rotulo levaria "Pessoal" de banco para ca sem que o
+        # resto da leitura acompanhasse.
+        sinonimos=(),
         codigos_cvm=("7.08.01",),
         ordem="7.08.01",
         ajuda=(
@@ -1119,7 +1124,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="impostos_taxas_contribuicoes",
         rotulo="Impostos, taxas e contribuicoes (total)",
         demonstracao="dva",
-        sinonimos=("impostos taxas e contribuicoes",),
+        sinonimos=(),
         codigos_cvm=("7.08.02",),
         ordem="7.08.02",
         ajuda=(
@@ -1131,7 +1136,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="aluguel_dva",
         rotulo="Alugueis pagos (DVA)",
         demonstracao="dva",
-        sinonimos=("alugueis",),
+        sinonimos=(),
         codigos_cvm=("7.08.03.02",),
         ordem="7.08.03.02",
         ajuda=(
@@ -1147,7 +1152,7 @@ CONTAS_DVA: tuple[Conta, ...] = (
         chave="juros_dva",
         rotulo="Juros (remuneracao de capital de terceiros)",
         demonstracao="dva",
-        sinonimos=("juros",),
+        sinonimos=(),
         codigos_cvm=("7.08.03.01",),
         ordem="7.08.03.01",
     ),
