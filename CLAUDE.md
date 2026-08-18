@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 807 testes
+pytest                        # 810 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -504,7 +504,7 @@ Medido na base inteira depois das três correções, passo a passo:
 | `EBIT ± resultado financeiro = LAIR` | 463 | 463 | 2 | 2 |
 | `LAIR − IR = continuadas` | 465 | 465 | **0** | 2 |
 | `continuadas + descontinuadas = LL` | 461 | 461 | 4 | 2 |
-| `LL − não controladores = controladores` | 337 | 352 | 8 | 107 |
+| `LL − não controladores = controladores` | 442 | 457 | 8 | 2 |
 | **Cadeia inteira** | **440** | **455** | **12** | — |
 
 Duas leituras da mesma coisa: **440 fecham na aritmética exata** e 455 admitindo
@@ -526,11 +526,21 @@ têm subtotal mensurável nenhum — então **453 são verificadas fechando**, c
 **A tela acusa e não conserta**: consertar esconderia do analista que a companhia
 publicou algo inconsistente.
 
-**Uma coisa medida e não explicada:** o passo dos controladores tem **107
-companhias sem denominador** — o valor apurado é zero, e a conferência não tem
-como dar desvio relativo. Não sei ainda se são companhias sem participação de
-minoritários, se `3.11.01` não é publicado, ou se é defeito da conferência. Os
-demais passos têm 2 ou 9. Está em aberto.
+**O passo dos controladores tinha 107 companhias sem denominador, e era bug.**
+O valor apurado dava zero, e a conferência não tinha como dar desvio relativo.
+Medida a causa: **102 das 467 publicam `3.11.01 = 0` e `3.11.02 = 0` com `3.11`
+diferente de zero.** Não é que os controladores não tenham ganhado nada — é que a
+companhia não tem minoritário e não repete o total na filha. Lido ao pé da letra,
+o lucro dos controladores da CESP era **zero em vez dos R$ 1.077,9 mi** que ela
+ganhou; na Axia Energia Nordeste, R$ 2.914,6 mi.
+
+É o mesmo caso da D&A: **zero publicado que quer dizer "não abri", não "não
+tem"** — e a correção é a mesma peça, uma `Derivacao` com `substitui_zero`.
+Depois dela o passo vai de 337 para **442 fechando exato** e os 107 sem
+denominador viram 2 (Rio Paranapanema e TIM S.A., que publicam `3.11` zerado — ali
+zero é zero mesmo). A cadeia inteira não muda, porque conta que não fecha por
+falta de denominador nunca era contada como falha; o que muda é que **102
+companhias passam a ter lucro dos controladores correto** onde antes tinham zero.
 
 **Duas verificações minhas estavam erradas, e a auditoria mostrou.** "Lucro
 líquido não supera o bruto" acusou 29 companhias e as 29 estavam certas — Itaúsa
@@ -548,7 +558,7 @@ companhia publicou, não defeito do app. Um caso do de-para que parece erro e n�
 
 ## Estado atual
 
-807 testes passando. Verificado de verdade: contas financeiras, identidades,
+810 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

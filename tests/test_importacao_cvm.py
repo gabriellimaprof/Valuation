@@ -1931,3 +1931,52 @@ def test_o_template_nao_promete_magnitude_para_o_ir(tmp_path):
         if "magnitude e padroniza o sinal" in linha
     )
     assert "imposto" not in linha_magnitude.lower()
+
+
+def test_companhia_sem_minoritario_zera_as_filhas_de_3_11(catalogo):
+    """102 das 467 publicam ``3.11.01 = 0`` e ``3.11.02 = 0`` com ``3.11`` != 0.
+
+    Nao e que os controladores nao tenham ganhado nada -- e que a companhia nao
+    tem minoritario e nao se deu ao trabalho de repetir o total na filha. Lido ao
+    pe da letra, o lucro dos controladores da CESP seria zero em vez dos
+    R$ 1.077,9 mi que ela ganhou.
+
+    Mesmo caso da D&A: zero publicado que quer dizer "nao abri", nao "nao tem".
+    """
+    from valuation.importacao.esquema import POR_CHAVE  # noqa: F401
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "lucro_liquido": {2024: 1_077_900_000.0},
+        "lucro_controladores": {2024: 0.0},
+        "lucro_nao_controladores": {2024: 0.0},
+    }
+    derivadas = _derivar(tabela, [2024])
+    assert tabela["lucro_controladores"][2024] == 1_077_900_000.0
+    assert "lucro_controladores" in derivadas
+
+
+def test_o_zero_nao_atropela_quem_publica_a_abertura():
+    """Quem abre 3.11.01 de verdade nao pode ter o valor substituido."""
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "lucro_liquido": {2024: 82_440_000.0},
+        "lucro_controladores": {2024: 79_514_000.0},
+        "lucro_nao_controladores": {2024: 0.0},
+    }
+    _derivar(tabela, [2024])
+    assert tabela["lucro_controladores"][2024] == 79_514_000.0
+
+
+def test_companhia_com_tudo_zerado_continua_zerada():
+    """Rio Paranapanema e TIM S.A. publicam 3.11 zero. Zero ali e zero mesmo."""
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "lucro_liquido": {2024: 0.0},
+        "lucro_controladores": {2024: 0.0},
+        "lucro_nao_controladores": {2024: 0.0},
+    }
+    _derivar(tabela, [2024])
+    assert tabela["lucro_controladores"][2024] == 0.0
