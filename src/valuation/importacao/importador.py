@@ -495,9 +495,16 @@ def _ajustar_sinal(conta: Conta, valores: dict[int, float]) -> tuple[dict[int, f
 
 
 def _derivar(
-    tabela: dict[str, dict[int, float]], anos: list[int]
+    tabela: dict[str, dict[int, float]],
+    anos: list[int],
+    mapeamento: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Preenche contas ausentes a partir das disponiveis, ate estabilizar."""
+    """Preenche contas ausentes a partir das disponiveis, ate estabilizar.
+
+    ``mapeamento`` e opcional e existe para o de-para nao mentir: quando a D&A
+    da DRE e trocada pela da DFC, a origem registrada tem que passar a apontar
+    para a linha que de fato virou o numero.
+    """
     derivadas: dict[str, str] = {}
     for _ in range(len(DERIVACOES) + 1):
         mudou = False
@@ -536,6 +543,19 @@ def _derivar(
             "sinal corrigido pela identidade LAIR - lucro liquido em "
             f"{corrigidos}: a companhia publicou credito de imposto, e nao despesa"
         )
+    trocados = _preferir_a_da_do_fluxo_de_caixa(tabela, anos)
+    if trocados:
+        origem_dre = (mapeamento or {}).get("depreciacao_amortizacao", "a linha da DRE")
+        derivadas["depreciacao_amortizacao"] = (
+            f"D&A trazida da DFC em {trocados}, no lugar de '{origem_dre}': a linha "
+            "da DRE fica dentro de 'Despesas Gerais e Administrativas' e nao inclui "
+            "a depreciacao que correu pelo CPV"
+        )
+        # O de-para tem que apontar para a linha que virou o numero, e nao para a
+        # que perdeu: origem registrada errada e o tipo de erro que soma nenhuma
+        # denuncia -- que e justamente o que a auditoria de origem existe para pegar.
+        if mapeamento is not None and "depreciacao_dfc" in mapeamento:
+            mapeamento["depreciacao_amortizacao"] = mapeamento["depreciacao_dfc"]
     abertos = _corrigir_sinal_do_ir_aberto(tabela, anos)
     if abertos:
         derivadas["imposto_corrente"] = derivadas["imposto_diferido"] = (
@@ -596,6 +616,52 @@ def _corrigir_sinal_dos_impostos(
             impostos[ano] = identidade
             corrigidos.append(ano)
     return ", ".join(str(ano) for ano in corrigidos)
+
+
+def _preferir_a_da_do_fluxo_de_caixa(
+    tabela: dict[str, dict[int, float]], anos: list[int]
+) -> str:
+    """Entre a D&A da DRE e a da DFC, a da DFC e a completa -- e nao por pouco.
+
+    A linha da DRE mora em ``3.04.02.x``, **dentro de "Despesas Gerais e
+    Administrativas"**. Ela so captura a depreciacao que correu pelo SG&A; a que
+    correu pelo CPV, que numa industria ou numa concessionaria e a maior parte,
+    nao esta ali. O ajuste da DFC (``6.01.01.x``) devolve ao lucro **toda** a D&A
+    que o reduziu, que e exatamente o que ``EBITDA = EBIT + D&A`` pede.
+
+    Nao e questao de preferencia: medido nas 467 companhias de 2024, entre as 56
+    que publicam as duas, **a da DFC nunca e menor** -- em 34 elas coincidem
+    exatamente e em 22 a da DFC e maior, com razao que vai a **310x**. Na CPFL
+    Energia a DRE traz R$ 142,0 mi contra R$ 2.303,1 mi da DFC, sobre um EBIT de
+    R$ 10,8 bi; na Axia Energia Norte, R$ 5,1 mi contra R$ 1.568,6 mi.
+
+    O efeito e sobre o EBITDA: mediana zero (a maioria ja vinha da DFC ou
+    coincide), mas **P90 de +11,2 pontos de margem**. A CPFL Energias Renovaveis
+    passa de 48,8% para 67,5%; a Eneva, de 23,7% para 34,3%.
+
+    Quando so a DRE tem o numero (5 companhias), ela fica. A troca entra em
+    ``derivadas`` e aparece na tela.
+    """
+    da = tabela.get("depreciacao_amortizacao")
+    dfc = tabela.get("depreciacao_dfc")
+    if not da or not dfc:
+        return ""
+
+    trocados: list[int] = []
+    for ano in anos:
+        atual, do_fluxo = da.get(ano), dfc.get(ano)
+        if atual is None or do_fluxo is None:
+            continue
+        if not (np.isfinite(atual) and np.isfinite(do_fluxo)):
+            continue
+        if do_fluxo == 0:
+            continue
+        escala = max(abs(atual), abs(do_fluxo), 1.0)
+        if abs(atual - do_fluxo) / escala < 1e-6:
+            continue
+        da[ano] = do_fluxo
+        trocados.append(ano)
+    return ", ".join(str(ano) for ano in trocados)
 
 
 def _corrigir_sinal_do_ir_aberto(
@@ -781,7 +847,7 @@ def importar(
     if not anos:
         raise ValueError(f"Nenhum ano com dados em {caminho.name}.")
 
-    derivadas = _derivar(tabela, anos)
+    derivadas = _derivar(tabela, anos, mapeamento)
 
     ordem = [c.chave for c in CONTAS if c.chave in tabela]
     valores_df = pd.DataFrame(
@@ -850,7 +916,7 @@ def aplicar_mapeamento_manual(
         mapeamento[chave] = f"{rotulo} ({aba}) [manual]"
 
     anos = demonstracoes.anos
-    derivadas = _derivar(tabela, anos)
+    derivadas = _derivar(tabela, anos, mapeamento)
     ordem = [c.chave for c in CONTAS if c.chave in tabela]
     valores_df = pd.DataFrame(
         {ano: {chave: tabela[chave].get(ano, np.nan) for chave in ordem} for ano in anos},

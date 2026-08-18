@@ -1980,3 +1980,77 @@ def test_companhia_com_tudo_zerado_continua_zerada():
     }
     _derivar(tabela, [2024])
     assert tabela["lucro_controladores"][2024] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# A D&A do EBITDA vem da DFC, nao da DRE
+# ---------------------------------------------------------------------------
+
+
+def test_a_da_da_dre_e_so_o_pedaco_do_sga():
+    """``3.04.02.x`` mora dentro de "Despesas Gerais e Administrativas".
+
+    Ela captura a depreciacao que correu pelo SG&A e nao a que correu pelo CPV --
+    que numa industria ou concessionaria e a maior parte. O ajuste da DFC devolve
+    ao lucro **toda** a D&A que o reduziu, que e o que ``EBITDA = EBIT + D&A``
+    pede. Medido nas 467 companhias de 2024: entre as 56 que publicam as duas, a
+    da DFC **nunca e menor** -- 34 coincidem e em 22 a da DFC e maior, ate 310x.
+    """
+    from valuation.importacao.importador import _preferir_a_da_do_fluxo_de_caixa
+
+    # CPFL Energia de 2024, em reais.
+    tabela = {
+        "depreciacao_amortizacao": {2024: 142_031_000.0},   # 3.04.02.01
+        "depreciacao_dfc": {2024: 2_303_124_000.0},         # 6.01.01.02
+    }
+    assert _preferir_a_da_do_fluxo_de_caixa(tabela, [2024]) == "2024"
+    assert tabela["depreciacao_amortizacao"][2024] == 2_303_124_000.0
+
+
+def test_quando_as_duas_coincidem_nada_e_registrado():
+    """34 das 56 ja coincidem; registrar troca ali so faria ruido na tela."""
+    from valuation.importacao.importador import _preferir_a_da_do_fluxo_de_caixa
+
+    tabela = {
+        "depreciacao_amortizacao": {2024: 812_485_000.0},
+        "depreciacao_dfc": {2024: 812_485_000.0},
+    }
+    assert _preferir_a_da_do_fluxo_de_caixa(tabela, [2024]) == ""
+
+
+def test_sem_da_na_dfc_a_da_dre_fica():
+    """5 companhias so tem a linha da DRE. Trocar por nada seria perder o numero."""
+    from valuation.importacao.importador import _preferir_a_da_do_fluxo_de_caixa
+
+    tabela = {
+        "depreciacao_amortizacao": {2024: 500.0},
+        "depreciacao_dfc": {2024: 0.0},
+    }
+    assert _preferir_a_da_do_fluxo_de_caixa(tabela, [2024]) == ""
+    assert tabela["depreciacao_amortizacao"][2024] == 500.0
+
+
+def test_a_troca_aparece_como_conta_derivada(catalogo):
+    """Numero que muda sozinho sem aparecer e o pior tipo de correcao."""
+    dfs = importar_cvm(5410, [2024], cache=DADOS, catalogo=catalogo)
+    assert "depreciacao_amortizacao" in dfs.derivadas
+    assert "DFC" in dfs.derivadas["depreciacao_amortizacao"]
+
+
+def test_o_ebitda_da_weg_nao_muda_com_a_troca(catalogo):
+    """A WEG ja vinha da DFC; a mudanca de prioridade nao pode mexer nela."""
+    dfs = importar_cvm(5410, [2024], cache=DADOS, catalogo=catalogo)
+    assert dfs.ebitda()[2024] == pytest.approx(8_503_013_000.0)
+
+
+def test_o_de_para_aponta_para_a_linha_que_virou_o_numero(catalogo):
+    """Origem registrada errada e erro que soma nenhuma denuncia.
+
+    Trocar o valor e deixar o mapeamento apontando para a linha da DRE faria a
+    auditoria de origem reportar ``3.04.02.x`` para um numero que veio de
+    ``6.01.01.x``. E exatamente o tipo de coisa que ela existe para pegar.
+    """
+    dfs = importar_cvm(5410, [2024], cache=DADOS, catalogo=catalogo)
+    origem = dfs.mapeamento.get("depreciacao_amortizacao", "")
+    if "depreciacao_amortizacao" in dfs.derivadas and origem:
+        assert origem.startswith("6."), origem

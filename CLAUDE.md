@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 810 testes
+pytest                        # 816 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -353,6 +353,32 @@ D&A virou **regra somada** sobre `6.01.01` — na seção de ajustes ao lucro, l
 que fala de depreciação **é** depreciação, sem precisar de verbo. Cobertura de
 `depreciacao_amortizacao` foi de 366 para 434 companhias.
 
+**E entre as duas fontes, a da DFC tem prioridade — não é preferência, é
+estrutura.** A linha da DRE mora em `3.04.02.x`, **dentro de "Despesas Gerais e
+Administrativas"**: ela captura só a depreciação que correu pelo SG&A, e a que
+correu pelo CPV — que numa indústria ou concessionária é a maior parte — não está
+ali. O ajuste da DFC (`6.01.01.x`) devolve ao lucro **toda** a D&A que o reduziu,
+que é exatamente o que `EBITDA = EBIT + D&A` pede.
+
+Medido nas 467 de 2024: 368 já vinham da DFC e 61 da DRE. Entre as **56 que
+publicam as duas, a da DFC nunca é menor** — 34 coincidem exatamente e em 22 a da
+DFC é maior:
+
+| Companhia | D&A na DRE | D&A na DFC | Razão |
+|---|---|---|---|
+| Axia Energia Norte | R$ 5,1 mi | R$ 1.568,6 mi | **310x** |
+| CPFL Energias Renováveis | R$ 11,0 mi | R$ 690,2 mi | 63x |
+| CPFL Energia | R$ 142,0 mi | R$ 2.303,1 mi | 16x |
+
+O efeito na margem EBITDA tem mediana zero — a maioria já vinha da DFC ou coincide
+— e **P90 de +11,2 pontos**: CPFL Energias Renováveis vai de 48,8% para 67,5%, a
+Eneva de 23,7% para 34,3%. Quando só a DRE tem o número (5 companhias), ela fica.
+
+`_preferir_a_da_do_fluxo_de_caixa` faz a troca, registra em `derivadas` **nomeando
+as duas linhas**, e **corrige o de-para**: origem registrada apontando para
+`3.04.02.x` num número que veio de `6.01.01.x` é o tipo de erro que soma nenhuma
+denuncia, e é o que a auditoria de origem existe para pegar.
+
 **O app abre todas as demonstrações, e o vocabulário é uma camada de nomes.**
 Medido na WEG de 2024, o zip traz **574 linhas consolidadas**; DRE, BP e DFC
 somam 276. As outras 298 estavam em **DMPL, DVA e DRA**, que não eram abertas —
@@ -558,7 +584,7 @@ companhia publicou, não defeito do app. Um caso do de-para que parece erro e n�
 
 ## Estado atual
 
-810 testes passando. Verificado de verdade: contas financeiras, identidades,
+816 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

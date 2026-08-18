@@ -1279,7 +1279,7 @@ def montar_demonstracoes(
             )
 
     anos = sorted({ano for valores in tabela.values() for ano in valores})
-    derivadas = _derivar(tabela, anos)
+    derivadas = _derivar(tabela, anos, mapeamento)
 
     ordem = [c.chave for c in CONTAS if c.chave in tabela]
     valores_df = pd.DataFrame(
