@@ -57,8 +57,10 @@ import pandas as pd
 
 MEDIDO_EM = (
     "exercícios 2020 a 2024, DFP consolidada, depois da auditoria de leitura: "
-    "D&A somada da DFC, juro pago padronizado no operacional e pagamentos "
-    "retirados do capital de giro"
+    "D&A da DFC (e não da linha da DRE, que só traz o pedaço do SG&A), juro pago "
+    "padronizado no operacional, pagamentos retirados do capital de giro, sinal "
+    "do IR vindo da identidade e lucro dos controladores derivado quando a "
+    "companhia zera 3.11.01"
 )
 COMPANHIAS_MEDIDAS = 447
 
@@ -66,14 +68,14 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (429, (-0.950, -0.422, 0.152, 0.521, 0.776, 1.048, 1.334)),
-    "Margem EBITDA": (445, (-0.227, 0.009, 0.097, 0.199, 0.359, 0.601, 0.743)),
+    "Conversao de caixa (FCO / EBITDA)": (429, (-0.968, -0.427, 0.150, 0.514, 0.755, 0.999, 1.219)),
+    "Margem EBITDA": (445, (-0.227, 0.012, 0.099, 0.199, 0.380, 0.615, 0.750)),
     "Margem liquida": (445, (-0.671, -0.196, -0.001, 0.061, 0.138, 0.288, 0.435)),
     "Crescimento da receita": (435, (-0.101, -0.032, 0.056, 0.151, 0.268, 0.458, 0.718)),
     "Capex / Receita": (414, (0.003, 0.007, 0.020, 0.049, 0.124, 0.284, 0.487)),
-    "ROIC": (419, (-0.200, -0.010, 0.033, 0.101, 0.173, 0.272, 0.408)),
+    "ROIC": (419, (-0.200, -0.010, 0.043, 0.107, 0.180, 0.283, 0.408)),
     "Investimento em giro (DFC) / Receita": (440, (-0.318, -0.113, -0.011, 0.028, 0.083, 0.168, 0.293)),
-    "Divida liquida / EBITDA": (429, (-1.505, -0.535, 0.512, 2.075, 3.471, 6.535, 9.669)),
+    "Divida liquida / EBITDA": (429, (-1.461, -0.511, 0.512, 2.070, 3.446, 6.403, 9.669)),
     "Liquidez corrente": (447, (0.338, 0.562, 1.065, 1.519, 2.140, 2.983, 4.341)),
     "Payout (dividendos / lucro)": (343, (0.000, 0.000, 0.129, 0.325, 0.567, 0.878, 1.106)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas

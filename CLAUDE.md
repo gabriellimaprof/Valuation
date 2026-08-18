@@ -214,14 +214,17 @@ companhias que classificam juro nas duas seções:
 As duas leituras do juro (a conta somada que alimenta o Kd e a reclassificação)
 usam **o mesmo padrão de exclusão**, e há teste que quebra se alguém separá-los.
 
-**Os cortes de conversão são os quartis medidos, não convenção.** Com a D&A
-corrigida e o juro padronizado: P25 = 14,3%, mediana = **53,9%**, P75 = 83,3%.
-Os cortes são 0,15 e 0,85. O 90%/60% de convenção não transfere: o FCO
+**Os cortes de conversão são os quartis medidos, não convenção.** Medidos de
+novo depois das correções de sinal e da D&A da DFC: P25 = **15,0%**, mediana =
+**51,4%**, P75 = **75,5%**. Os cortes são 0,15 e 0,76, e o de baixo acusa 25,2%
+da base — um quarto, que é o que um corte no quartil deve acusar. O 90%/60% de
+convenção não transfere: o FCO
 brasileiro é líquido de imposto (34%) e de juro, e o EBITDA é antes dos dois —
 90% era referência de um mercado de imposto e juro baixos. Histórico das
 calibrações, porque cada uma corrigiu um erro: 0,60 acusava 47,3% da base antes
-da correção da D&A; depois dela, ainda 30%; e a padronização do juro derrubou a
-mediana de 64% para 54%.
+da correção da D&A; depois dela, ainda 30%; a padronização do juro derrubou a
+mediana de 64% para 54%; e trazer a D&A da DFC subiu o EBITDA da cauda, o que
+baixou a conversão de 53,9% para 51,4% e o P75 de 77,6% para 75,5%.
 
 **Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
 2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
@@ -337,7 +340,9 @@ A terceira é a que pega o erro que nenhuma soma denuncia. Conta que vem de
 `3.01` em 400 companhias e de outro código em duas não quebra identidade
 nenhuma, e está errada.
 
-**Resultado das três rodadas: 726 → 230 → 14 achados em 467 companhias.**
+**Resultado das quatro rodadas: 726 → 230 → 14 → 7 achados em 467 companhias.**
+Na última, os 7 são 5 companhias onde a decomposição do FCO não fecha e 2 que
+publicam receita líquida negativa — e as duas são leitura fiel do publicado.
 
 O que a auditoria corrigiu, medido:
 
@@ -576,7 +581,7 @@ eu não descontava o juro trazido do financiamento: em Panatlântica a diferenç
 era exatamente os R$ 59,75 mi reclassificados. Verificação que acusa o legítimo
 não é verificação.
 
-**O que sobrou, e por quê:** 8 companhias (1,7%) onde a decomposição do FCO não
+**O que sobrou, e por quê:** 5 companhias (1,1%) onde a decomposição do FCO não
 fecha, e 2 que publicam receita líquida negativa — esta é leitura fiel do que a
 companhia publicou, não defeito do app. Um caso do de-para que parece erro e não
 é: `caixa_equivalentes` vindo de `1.01` em 20 companhias são **bancos**, onde
@@ -796,10 +801,11 @@ Em ordem de valor:
    combinação que exagera (g ancorado + ROIC nominal fixo) está montada.
 7. **Os cortes de leitura agora têm as duas leituras** — absoluta e percentil.
    `referencias.py` guarda a distribuição medida em 447 companhias, e a
-   qualidade dos lucros cita onde o número cai. Falta estender aos demais
-   cortes: `ALAVANCAGEM_ALTA = 3.5` fica entre o P50 (2,83) e o P75 (5,35) da
-   base, ou seja, dispara em ~40% das companhias, e ninguém verificou se isso é
-   o pretendido.
+   qualidade dos lucros cita onde o número cai. `ALAVANCAGEM_ALTA = 3.5` era o
+   corte não verificado, e **agora foi**: com a leitura corrigida, o P75 da base
+   é 3,45 e o corte dispara em **24,0% das companhias**. Ele é o quartil, e o
+   ~40% que eu tinha registrado vinha de números pré-correção. Os demais cortes
+   do app ainda não têm a leitura de percentil.
 8. **A seção qualitativa reúne evidência, não responde.** `qualitativo.py` traz
    as cinco forças mais a pergunta do fosso, cada uma com o que foi medido, o
    que os dados não alcançam e o campo do analista em branco. Ameaça de
