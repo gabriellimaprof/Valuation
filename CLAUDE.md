@@ -312,7 +312,13 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Como testar
 
-`pytest` roda tudo. As regras que valem:
+`pytest` roda tudo, em ~90 s. No CI (`.github/workflows/testes.yml`) ele roda em
+todo push; **a varredura no navegador não**, e a distinção é deliberada: ela sobe
+o app e baixa dados da CVM, então serviço de terceiro fora do ar reprovaria
+código que está certo. Fica no disparo manual (`workflow_dispatch`), que guarda
+as imagens das telas como artefato.
+
+As regras que valem:
 
 - **Contas conferidas na mão** onde é possível (trava dos 30%, capitalização de
   P&D, valor presente do leasing, casos isolados do TSR).
