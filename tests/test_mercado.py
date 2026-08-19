@@ -8,6 +8,7 @@ por isso a conta esta separada da rede e testada sozinha.
 
 from __future__ import annotations
 
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -129,3 +130,115 @@ def test_medida_com_a_curva_real():
     assert r.vencimento
     assert r.diferenca > 0.03, "o Brasil paga premio sobre o Tesouro americano"
     assert r.diferenca < 0.10, "e nao um premio absurdo"
+
+
+# ---------------------------------------------------------------------------
+# Focus: as duas bases de calculo, e o bloco macro inteiro
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+FOCUS = Path(__file__).parent / "dados" / "mercado" / "focus.json"
+
+
+@pytest.fixture
+def focus_offline(monkeypatch):
+    """Serve o recorte real do Olinda no lugar da rede.
+
+    O fixture guarda **as duas** bases de cálculo de propósito: é a duplicata
+    que o teste precisa ver para provar que o filtro funciona.
+    """
+    from valuation import mercado
+
+    recorte = json.loads(FOCUS.read_text(encoding="utf-8"))
+
+    def falso(url: str, cabecalhos=None) -> bytes:
+        for indicador, dados in recorte.items():
+            if urllib.parse.quote(f"Indicador eq '{indicador}'") in url:
+                return json.dumps(dados).encode("utf-8")
+        raise AssertionError(f"pedido inesperado: {url}")
+
+    monkeypatch.setattr(mercado, "_buscar", falso)
+    return recorte
+
+
+def test_o_focus_publica_o_mesmo_ano_duas_vezes(focus_offline):
+    """``baseCalculo`` 0 são os últimos 30 dias; 1, os últimos 5 dias úteis.
+
+    Sem filtrar, cada ano volta duplicado e o código pegava um dos dois por
+    ordem de linha. Medido na coleta de 14/08/2026: IPCA de 2027 com mediana
+    4,2402 na base 0 (148 casas) e 4,2060 na base 1 (69 casas).
+    """
+    linhas = focus_offline["IPCA"]["value"]
+    bases = {linha["baseCalculo"] for linha in linhas}
+    assert bases == {0, 1}, "o fixture deixou de ter as duas bases"
+
+    anos = [linha["DataReferencia"] for linha in linhas]
+    assert len(anos) != len(set(anos)), "o fixture deixou de ter ano repetido"
+
+
+def test_expectativas_devolve_um_ano_uma_vez(focus_offline):
+    from valuation.mercado import expectativas
+
+    tabela = expectativas("IPCA")
+    assert list(tabela.index) == sorted(set(tabela.index))
+    assert tabela.index.is_unique
+
+
+def test_a_base_padrao_e_a_de_30_dias_por_ter_mais_casas(focus_offline):
+    """A base 0 é a do relatório publicado e tem mais que o dobro de respondentes."""
+    from valuation.mercado import BASE_5_DIAS, expectativas
+
+    trinta = expectativas("IPCA")
+    cinco = expectativas("IPCA", base=BASE_5_DIAS)
+    assert int(trinta["numeroRespondentes"].iloc[0]) > int(
+        cinco["numeroRespondentes"].iloc[0]
+    )
+
+
+def test_a_data_da_coleta_acompanha_o_numero(focus_offline):
+    """Projeção sem data é projeção sem validade."""
+    from valuation.mercado import expectativas
+
+    assert expectativas("IPCA").attrs["coleta"] == "2026-08-14"
+
+
+def test_o_bloco_macro_sai_em_decimal_menos_o_cambio(focus_offline):
+    """Câmbio é preço em reais por dólar, e não taxa: não se divide por 100."""
+    from valuation.mercado import macro_do_focus
+
+    macro = macro_do_focus(anos_a_frente=3)
+    assert 0.0 < macro.ipca < 0.20
+    assert 0.0 < macro.pib_real < 0.20
+    assert 0.0 < macro.selic < 0.50
+    assert 3.0 < macro.cambio < 10.0
+    assert macro.coleta == "2026-08-14"
+    assert all(n > 0 for n in macro.respondentes.values())
+
+
+def test_o_bloco_macro_usa_o_ano_mais_distante_da_janela(focus_offline):
+    """A projeção curta carrega o choque corrente; perpetuidade quer regime.
+
+    Medido na coleta de 14/08/2026: IPCA de 5,02% para 2026 contra 3,50% para
+    2029. Pegar o ano errado projeta um ciclo como se fosse regime.
+    """
+    from valuation.mercado import expectativas, macro_do_focus
+
+    macro = macro_do_focus(anos_a_frente=3)
+    tabela = expectativas("IPCA")
+    proximo = float(tabela["Mediana"].iloc[0]) / 100
+    assert macro.ipca == pytest.approx(float(tabela.loc[macro.ano_de_referencia, "Mediana"]) / 100)
+    assert macro.ipca < proximo
+
+
+def test_a_comparacao_poe_modelo_e_focus_lado_a_lado(focus_offline):
+    """A pergunta que o analista faz ao abrir a tela, respondida de uma vez."""
+    from valuation.mercado import macro_do_focus
+    from valuation.premissas import PremissasMacro
+
+    tabela = macro_do_focus().comparar(PremissasMacro(inflacao_brl=0.05, pib_real=0.015))
+    assert list(tabela.index) == ["IPCA", "PIB real"]
+    assert tabela.loc["IPCA", "No modelo"] == pytest.approx(0.05)
+    assert tabela.loc["IPCA", "Diferença"] == pytest.approx(
+        0.05 - tabela.loc["IPCA", "Focus"]
+    )

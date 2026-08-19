@@ -115,7 +115,22 @@ def _buscar(url: str, cabecalhos: dict | None = None) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-def expectativas(indicador: str, cache: Path | None = None) -> pd.DataFrame:
+# O Focus publica **duas** estatisticas para a mesma coleta e o mesmo ano, no
+# campo ``baseCalculo``: 0 usa as respostas dos ultimos 30 dias, 1 usa so as dos
+# ultimos 5 dias uteis. Sem filtrar, cada ano volta duplicado -- medido na coleta
+# de 14/08/2026, o IPCA de 2027 aparecia com mediana 4,2402 (base 0, 148 casas) e
+# 4,2060 (base 1, 69 casas), e o codigo pegava uma das duas por ordem de linha.
+#
+# A base 0 e a do relatorio Focus publicado, e tem **mais que o dobro de
+# respondentes**. A 1 e mais recente e mais ruidosa; fica disponivel por
+# parametro para quem quiser a leitura do dia.
+BASE_30_DIAS = 0
+BASE_5_DIAS = 1
+
+
+def expectativas(
+    indicador: str, cache: Path | None = None, base: int = BASE_30_DIAS
+) -> pd.DataFrame:
     """Projecoes do Focus para um indicador, por ano de referencia.
 
     Devolve a coleta mais recente, com mediana, dispersao e quantas casas
@@ -123,7 +138,7 @@ def expectativas(indicador: str, cache: Path | None = None) -> pd.DataFrame:
     e 14,25% nao e a mesma coisa que consenso.
     """
     filtro = urllib.parse.quote(f"Indicador eq '{indicador}'")
-    url = f"{URL_FOCUS}?$format=json&$orderby=Data desc&$top=60&$filter={filtro}"
+    url = f"{URL_FOCUS}?$format=json&$orderby=Data desc&$top=120&$filter={filtro}"
     dados = json.loads(_buscar(url.replace(" ", "%20")).decode("utf-8"))
     linhas = dados.get("value") or []
     if not linhas:
@@ -132,11 +147,17 @@ def expectativas(indicador: str, cache: Path | None = None) -> pd.DataFrame:
     tabela = pd.DataFrame(linhas)
     recente = tabela["Data"].max()
     tabela = tabela[tabela["Data"] == recente]
-    return (
+    if "baseCalculo" in tabela.columns:
+        escolhida = tabela[tabela["baseCalculo"] == base]
+        if not escolhida.empty:
+            tabela = escolhida
+    saida = (
         tabela.assign(ano=tabela["DataReferencia"].astype(int))
         .set_index("ano")[["Mediana", "Media", "DesvioPadrao", "numeroRespondentes"]]
         .sort_index()
     )
+    saida.attrs["coleta"] = str(recente)[:10]
+    return saida
 
 
 def ipca_esperado(anos_a_frente: int = 3, cache: Path | None = None) -> float:
@@ -289,3 +310,97 @@ def medir_risco_pais(
     vencimento = curva.loc[distancia.idxmin(), "vencimento"].strftime("%d/%m/%Y")
 
     return risco_pais_implicito(taxa, inflacao, rf_usd, inflacao_usd, vencimento)
+
+
+# ---------------------------------------------------------------------------
+# O bloco macro inteiro, numa chamada
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MacroDoFocus:
+    """As premissas macro como o mercado as projeta, prontas para comparar.
+
+    Existe para responder de uma vez a pergunta que o analista faz ao abrir a
+    tela: "o que eu digitei esta perto do consenso?". Traz a **data da coleta** e
+    quantas casas responderam porque projecao de consenso sem numero de
+    respondentes nao e consenso, e sim media de quem quis responder.
+    """
+
+    ipca: float
+    pib_real: float
+    selic: float
+    cambio: float
+    ano_de_referencia: int
+    coleta: str
+    respondentes: dict[str, int]
+
+    def comparar(self, macro) -> pd.DataFrame:
+        """O que esta no modelo contra o que o Focus projeta, lado a lado."""
+        linhas = {
+            "IPCA": (macro.inflacao_brl, self.ipca),
+            "PIB real": (getattr(macro, "pib_real", float("nan")), self.pib_real),
+        }
+        return pd.DataFrame(
+            [
+                {
+                    "Premissa": nome,
+                    "No modelo": no_modelo,
+                    "Focus": no_focus,
+                    "Diferença": no_modelo - no_focus,
+                }
+                for nome, (no_modelo, no_focus) in linhas.items()
+            ]
+        ).set_index("Premissa")
+
+
+# Os nomes dos indicadores vem **acentuados** do Olinda, e "PIB Total" nao e
+# "PIB": pedir o nome errado devolve lista vazia, e nao erro.
+INDICADORES_FOCUS = {
+    "ipca": "IPCA",
+    "pib_real": "PIB Total",
+    "selic": "Selic",
+    "cambio": "Câmbio",
+}
+
+
+def macro_do_focus(anos_a_frente: int = 3, cache: Path | None = None) -> MacroDoFocus:
+    """IPCA, PIB real, Selic e câmbio de longo prazo, pelo Focus.
+
+    Usa o ano mais distante dentro da janela, e nao o proximo: a projecao curta
+    carrega o choque corrente, e premissa de perpetuidade quer regime. Medido na
+    coleta de 14/08/2026, a diferenca entre os dois nao e pequena -- IPCA de
+    5,02% para 2026 contra **3,50%** para 2029.
+
+    **Nao troca nada sozinho.** Devolve os numeros para a tela mostrar ao lado
+    dos que o usuario digitou; aplicar e decisao dele. O padrao do app continua
+    sendo a pratica do dono do projeto (IPCA 5%, PIB real 1,5%), que e mais
+    conservadora que o consenso nos dois.
+    """
+    limite = date.today().year + anos_a_frente
+    valores: dict[str, float] = {}
+    respondentes: dict[str, int] = {}
+    coleta = ""
+    ano_escolhido = limite
+
+    for chave, indicador in INDICADORES_FOCUS.items():
+        tabela = expectativas(indicador, cache)
+        coleta = coleta or str(tabela.attrs.get("coleta", ""))
+        candidatos = tabela[tabela.index <= limite]
+        if candidatos.empty:
+            raise ErroMercado(f"O Focus nao tem '{indicador}' para a janela pedida.")
+        linha = candidatos.iloc[-1]
+        ano_escolhido = int(candidatos.index[-1])
+        # Cambio e preco em reais por dolar, e nao taxa: nao se divide por 100.
+        valores[chave] = float(linha["Mediana"]) / (1.0 if chave == "cambio" else 100.0)
+        respondentes[chave] = int(linha["numeroRespondentes"])
+
+    return MacroDoFocus(
+        ipca=valores["ipca"],
+        pib_real=valores["pib_real"],
+        selic=valores["selic"],
+        cambio=valores["cambio"],
+        ano_de_referencia=ano_escolhido,
+        coleta=coleta,
+        respondentes=respondentes,
+    )

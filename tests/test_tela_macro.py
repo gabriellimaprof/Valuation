@@ -185,3 +185,39 @@ def test_a_ancora_do_g_aparece_onde_o_ipca_e_editado():
 
     ancorado = _rodar(TELA_CUSTO, {"perpetuidade.ancora": "ipca"})
     assert any("ancorado em **IPCA**" in c.value for c in ancorado.caption)
+
+
+# ---------------------------------------------------------------------------
+# A comparacao com o Focus
+# ---------------------------------------------------------------------------
+
+
+def test_o_focus_nasce_desligado():
+    """Não busca nada sem o usuário pedir — mesma regra do risco-país da NTN-B.
+
+    Uma tela que sai buscando na rede ao abrir custa segundos toda vez e põe um
+    serviço de terceiro no caminho crítico de quem só queria ver a projeção.
+    """
+    teste = _rodar(TELA_PREMISSAS)
+    alavancas = [t.label for t in teste.toggle]
+    assert "Comparar com o Focus" in alavancas
+    alavanca = next(t for t in teste.toggle if t.label == "Comparar com o Focus")
+    assert alavanca.value is False
+
+
+def test_ligar_a_comparacao_nao_altera_premissa_nenhuma():
+    """O padrão do app é a prática de quem o construiu; o consenso é referência.
+
+    Aplicar tem que ser um segundo clique, explícito: IPCA de 5% contra os 3,5%
+    do Focus é escolha, e não esquecimento.
+    """
+    teste = _rodar(TELA_PREMISSAS)
+    antes = teste.session_state["empresa"].macro.inflacao_brl
+
+    alavanca = next(t for t in teste.toggle if t.label == "Comparar com o Focus")
+    alavanca.set_value(True).run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+
+    # Com rede, mostra os números; sem rede, avisa e segue. Nos dois casos a
+    # premissa não pode ter mudado sozinha.
+    assert teste.session_state["empresa"].macro.inflacao_brl == antes

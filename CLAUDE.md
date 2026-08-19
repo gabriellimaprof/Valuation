@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 837 testes
+pytest                        # 846 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -666,7 +666,7 @@ não é verificação.
 
 ## Estado atual
 
-837 testes passando. Verificado de verdade: contas financeiras, identidades,
+846 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -775,10 +775,9 @@ pediu, e o efeito é grande demais para entrar sem decisão dele.
 Consequência prática que sobrevive: **prêmio de risco é o estresse macro mais
 duro**, porque sobe o desconto sem contrapartida nenhuma no fluxo.
 
-## Fontes de mercado já verificadas em campo (não implementadas)
+## Fontes de mercado, e a pegadinha do Focus
 
-Três APIs públicas foram confirmadas contra o endpoint real, com formato e
-nomes exatos. Falta o módulo; a parte que costuma custar mais já está feita.
+Três APIs públicas, em `mercado.py`, todas confirmadas contra o endpoint real:
 
 - **Focus / Expectativas de Mercado** (`olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata`):
   IPCA, Selic, PIB e Câmbio por ano de referência, com mediana, desvio e nº de
@@ -788,6 +787,24 @@ nomes exatos. Falta o módulo; a parte que costuma custar mais já está feita.
 - **Tesouro Transparente** — preço e taxa diários de todos os títulos, incluindo
   a curva NTN-B. Latin-1, `;`, decimal com vírgula: **as mesmas convenções da
   CVM**, então o tratamento existente serve.
+
+**O Focus publica o mesmo ano duas vezes, e isso passou despercebido.** O campo
+`baseCalculo` vale 0 (respostas dos últimos 30 dias) ou 1 (últimos 5 dias úteis),
+e sem filtrar cada ano volta duplicado — o código pegava um dos dois por ordem de
+linha. Medido na coleta de 14/08/2026: IPCA de 2027 com mediana **4,2402** na
+base 0 (148 casas) e **4,2060** na base 1 (69 casas). O padrão é a base 0, que é
+a do relatório publicado e tem mais que o dobro de respondentes.
+
+**`macro_do_focus()` traz o bloco inteiro** — IPCA, PIB real, Selic e câmbio —
+usando o **ano mais distante** da janela, e não o próximo: a projeção curta
+carrega o choque corrente, e premissa de perpetuidade quer regime. A diferença
+não é pequena: 5,02% para 2026 contra **3,50%** para 2029.
+
+Na tela de Premissas a comparação **nasce desligada e não troca nada sozinha** —
+mesma regra do risco-país da NTN-B. Medido em 19/08/2026, o consenso é mais
+otimista com inflação e menos com crescimento que a prática do dono do projeto:
+IPCA de 3,5% contra 5%, PIB real de 2,0% contra 1,5%. Aplicar é um segundo
+clique.
 
 **O uso mais valioso da NTN-B não é virar `rf`, é calibrar `risco_pais`.** O Ke
 é montado em USD por decisão documentada acima, e trocar isso pela curva local

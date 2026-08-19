@@ -376,6 +376,8 @@ def _perpetuidade(empresa) -> None:
         else:
             st.rerun()
 
+    _confrontar_com_o_focus(ipca, pib_real / 100)
+
     g_previsto = previsto if previsto is not None else crescimento / 100
     if usar_gordon and g_previsto > pib_nominal:
         st.warning(
@@ -384,6 +386,75 @@ def _perpetuidade(empresa) -> None:
             f"{formatar(ipca, 'pct')} composto com PIB real de "
             f"{formatar(pib_real / 100, 'pct')})."
         )
+
+
+def _confrontar_com_o_focus(ipca: float, pib_real: float) -> None:
+    """O que está digitado, contra o que o mercado projeta.
+
+    Os dois números que formam o teto do `g` são hoje escolha do analista —
+    a prática do dono do projeto é IPCA de 5% e PIB real de 1,5%. O Focus tem os
+    dois, e a comparação é a pergunta que se faz ao abrir esta tela.
+
+    **Não busca nada sem o usuário pedir, e não troca nada sozinho.** Mesma regra
+    do risco-país medido pela NTN-B: o padrão do app continua sendo a prática de
+    quem o construiu, e o consenso entra como referência ao lado, não por cima.
+    Aplicar é um segundo clique, explícito.
+    """
+    if not st.toggle(
+        "Comparar com o Focus",
+        value=False,
+        key="comparar_focus",
+        help=(
+            "Busca as projeções do Boletim Focus no Banco Central. Só quando "
+            "você pede, e o app não altera nenhuma premissa por conta própria."
+        ),
+    ):
+        return
+
+    from valuation import mercado
+
+    try:
+        focus = mercado.macro_do_focus()
+    except mercado.ErroMercado as erro:
+        st.warning(f"Não consegui falar com o Banco Central: {erro}")
+        return
+
+    colunas = st.columns(4)
+    for coluna, (rotulo, no_modelo, no_focus, casas) in zip(
+        colunas,
+        (
+            ("IPCA", ipca, focus.ipca, focus.respondentes["ipca"]),
+            ("PIB real", pib_real, focus.pib_real, focus.respondentes["pib_real"]),
+            ("Selic", None, focus.selic, focus.respondentes["selic"]),
+            ("Câmbio", None, focus.cambio, focus.respondentes["cambio"]),
+        ),
+    ):
+        if rotulo == "Câmbio":
+            coluna.metric("Câmbio (Focus)", formatar(no_focus, "numero"))
+        elif no_modelo is None:
+            coluna.metric(f"{rotulo} (Focus)", formatar(no_focus, "pct"))
+        else:
+            coluna.metric(
+                rotulo,
+                formatar(no_modelo, "pct"),
+                delta=f"{formatar(no_modelo - no_focus, 'pct')} vs. Focus",
+                delta_color="off",
+            )
+        coluna.caption(f"{casas} casas responderam")
+
+    st.caption(
+        f"Coleta de {focus.coleta}, projeções para **{focus.ano_de_referencia}** — "
+        "o ano mais distante da janela, e não o próximo: a projeção curta carrega "
+        "o choque corrente, e premissa de perpetuidade quer regime. O Focus "
+        "publica duas estatísticas por ano; esta é a de **30 dias**, a do "
+        "relatório, que tem mais que o dobro de respondentes da de 5 dias."
+    )
+
+    if st.button("Usar os números do Focus"):
+        estado.atualizar(
+            {"macro.inflacao_brl": focus.ipca, "macro.pib_real": focus.pib_real}
+        )
+        st.rerun()
 
 
 def _visualizar() -> None:
