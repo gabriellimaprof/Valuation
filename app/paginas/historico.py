@@ -9,7 +9,15 @@ import streamlit as st
 from valuation.qualidade import BOM, RUIM, SEM_DADOS, avaliar_qualidade
 
 from .. import estado
-from ..componentes import conceito, etapa, formatar, grafico, metrica, tabela_formatada
+from ..componentes import (
+    conceito,
+    em_texto,
+    etapa,
+    formatar,
+    grafico,
+    metrica,
+    tabela_formatada,
+)
 from ..graficos import (
     barras_ciclo,
     barras_temporais,
@@ -347,10 +355,10 @@ def _valuation_nas_duas_bases(visao, unidade: str) -> None:
     if np.isfinite(perpetuo) and np.isfinite(passivo):
         folga = perpetuo - passivo
         st.caption(
-            f"O balanço reconhece {formatar(passivo, 'moeda', unidade)} de "
+            f"O balanço reconhece {em_texto(passivo, unidade)} de "
             f"arrendamento — o valor presente dos aluguéis do **prazo contratado**. "
-            f"Pagar aluguel para sempre custa {formatar(perpetuo, 'moeda', unidade)} "
-            f"a valor presente. A diferença de {formatar(folga, 'moeda', unidade)} é o "
+            f"Pagar aluguel para sempre custa {em_texto(perpetuo, unidade)} "
+            f"a valor presente. A diferença de {em_texto(folga, unidade)} é o "
             "que a leitura reportada ganha por supor que o aluguel termina quando o "
             "contrato vence."
         )

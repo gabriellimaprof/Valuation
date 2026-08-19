@@ -19,6 +19,7 @@ from .. import estado
 from ..componentes import (
     aviso_sem_modelo,
     conceito,
+    em_texto,
     etapa,
     formatar,
     grafico,
@@ -441,14 +442,14 @@ def _preco(decomposicao, resultado, acionista) -> None:
 
     if margem > 0:
         st.success(
-            f"Pagando até {formatar(preco_maximo, 'moeda', unidade)} você ainda obtém "
+            f"Pagando até {em_texto(preco_maximo, unidade)} você ainda obtém "
             f"{alvo:.1f}% ao ano. O preço considerado está "
             f"{formatar(margem, 'pct')} abaixo desse teto."
         )
     else:
         st.warning(
             f"Para obter {alvo:.1f}% ao ano seria preciso pagar no máximo "
-            f"{formatar(preco_maximo, 'moeda', unidade)} — "
+            f"{em_texto(preco_maximo, unidade)} — "
             f"{formatar(abs(margem), 'pct')} abaixo do preço considerado."
         )
 
@@ -564,6 +565,6 @@ def _fluxos(acionista, decomposicao) -> None:
     ).T
     st.dataframe(tabela_formatada(fluxos, "moeda", unidade), width="stretch")
     st.caption(
-        f"Dividendos acumulados: {formatar(float(np.sum(decomposicao.dividendos)), 'moeda', unidade)} · "
-        f"Venda no ano {decomposicao.anos}: {formatar(decomposicao.preco_saida, 'moeda', unidade)}"
+        f"Dividendos acumulados: {em_texto(float(np.sum(decomposicao.dividendos)), unidade)} · "
+        f"Venda no ano {decomposicao.anos}: {em_texto(decomposicao.preco_saida, unidade)}"
     )

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 825 testes
+pytest                        # 837 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -343,6 +343,18 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   número em tabela, tire foto do elemento e olhe. **Rode o app e olhe antes de
   dar por pronto.**
 
+**`R$` é cifrão, e o Streamlit lê cifrão como LaTeX.** A unidade brasileira é
+`R$ milhões`, então **duas** aparições dela no mesmo markdown fecham um par
+`$…$` e o trecho entre as duas vira fórmula. Visto no navegador: "Saldo de dívida
+bruta ao fim de cada ano, em R _milhões. O saldo de partida é 400,0 R_ milhões"
+— o meio em itálico de matemática, e os dois cifrões sumidos.
+
+`componentes.em_texto()` escapa o `$`; `formatar()` não, porque também alimenta
+tabela, e ali o `\$` apareceria literal. **A distinção é por destino:** número
+que vai para texto passa por `em_texto`, número que vai para célula não. Onze
+frases já estavam quebradas — em Múltiplos, Retorno e na aba de IFRS 16 — e
+nenhum teste as pegaria, porque o markdown só é interpretado no navegador.
+
 ## A auditoria de leitura, e o que ela achou
 
 `auditoria.py` varre a base inteira e pergunta, conta por conta, de onde o
@@ -654,7 +666,7 @@ não é verificação.
 
 ## Estado atual
 
-825 testes passando. Verificado de verdade: contas financeiras, identidades,
+837 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -866,11 +878,27 @@ Em ordem de valor:
    combinação que exagera (g ancorado + ROIC nominal fixo) está montada.
 7. **Os cortes de leitura agora têm as duas leituras** — absoluta e percentil.
    `referencias.py` guarda a distribuição medida em 447 companhias, e a
-   qualidade dos lucros cita onde o número cai. `ALAVANCAGEM_ALTA = 3.5` era o
-   corte não verificado, e **agora foi**: com a leitura corrigida, o P75 da base
-   é 3,45 e o corte dispara em **24,0% das companhias**. Ele é o quartil, e o
-   ~40% que eu tinha registrado vinha de números pré-correção. Os demais cortes
-   do app ainda não têm a leitura de percentil.
+   qualidade dos lucros cita onde o número cai. **Os cortes que faltavam foram
+   medidos**, e um deles estava errado por confusão de grandeza:
+
+   | Corte | Valor | P75 da base | Dispara em |
+   |---|---|---|---|
+   | `DIVIDA_EBITDA_ALTA` | 3,5 | 3,40 | 23,4% |
+   | `DIVIDA_PL_ALTA` | 2,0 | 1,79 | 21,0% |
+   | `LEASING_RELEVANTE` | 0,20 | 0,206 | 26,3% |
+   | `NAO_RECORRENTE_RELEVANTE` | 0,20 | 0,266 | 31,9% |
+
+   **`ALAVANCAGEM_ALTA` media duas grandezas diferentes com o mesmo 3,5**: D/E
+   alvo (dívida sobre patrimônio) e dívida líquida/EBITDA (dívida sobre geração
+   de caixa). Que os dois números calhassem de ser iguais era coincidência, não
+   calibração. Em D/E o 3,5 disparava em **8,6%** — não era um corte alto, era um
+   corte que quase nunca disparava, mascarado por parecer calibrado. Virou
+   `DIVIDA_PL_ALTA = 2.0`, que é o quartil.
+
+   `NAO_RECORRENTE_RELEVANTE` fica em 0,20 e não no quartil de propósito — "um
+   quinto do EBIT" é limiar com significado próprio e a distância para o P75 é
+   pequena. O que não podia ficar era o comentário citando "47%", que media outra
+   coisa: só as companhias que tinham item, e num ano só.
 8. **A seção qualitativa reúne evidência, não responde.** `qualitativo.py` traz
    as cinco forças mais a pergunta do fosso, cada uma com o que foi medido, o
    que os dados não alcançam e o campo do analista em branco. Ameaça de

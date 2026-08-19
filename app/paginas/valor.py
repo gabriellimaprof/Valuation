@@ -9,6 +9,7 @@ from .. import estado
 from ..componentes import (
     aviso_sem_modelo,
     conceito,
+    em_texto,
     etapa,
     formatar,
     grafico,
@@ -123,25 +124,37 @@ def _cronograma_de_divida(config) -> None:
     ]
     inicial = float(empresa.ponte.divida_bruta)
 
-    with st.expander(
-        "Cronograma da dívida — obrigatório para o FCFE",
-        expanded=not config.get("divida_por_ano"),
-    ):
+    # Sempre aberto. Ele fechava sozinho: na primeira renderização o cronograma
+    # ainda era ``None``, o bloco o preenchia com dívida constante e chamava
+    # ``st.rerun()`` -- e na segunda passada ``expanded`` já era falso. Quem
+    # acabou de escolher FCFE via o cronograma sumir sem nunca te-lo visto.
+    with st.expander("Cronograma da dívida — obrigatório para o FCFE", expanded=True):
         st.caption(
-            f"Saldo de dívida bruta ao fim de cada ano. O saldo de partida é "
-            f"{formatar(inicial, 'moeda')}, o da ponte. O juro de cada ano incide "
-            "sobre o saldo de **abertura**, e a variação do saldo entra no fluxo "
-            "do acionista: amortizar consome caixa do acionista, captar devolve."
+            "Saldo de dívida bruta ao fim de cada ano. O "
+            f"saldo de partida é {em_texto(inicial, empresa.unidade)}, o "
+            "da ponte. O juro de cada ano incide sobre o saldo de **abertura**, e "
+            "a variação do saldo entra no fluxo do acionista: amortizar consome "
+            "caixa do acionista, captar devolve."
         )
 
         salvos = config.get("divida_por_ano")
         if not salvos or len(salvos) != len(anos):
             salvos = [inicial] * len(anos)
 
+        # O ano vai como **coluna**, e não como índice: o ``data_editor`` esconde
+        # o índice e numera as linhas 1, 2, 3…, o que faria o analista contar nos
+        # dedos qual ano está editando.
         tabela = st.data_editor(
-            pd.DataFrame({"Dívida ao fim do ano": salvos}, index=[str(a) for a in anos]),
+            pd.DataFrame({"Ano": anos, "Dívida ao fim do ano": salvos}),
             width="stretch",
+            hide_index=True,
             key="editor_divida",
+            column_config={
+                "Ano": st.column_config.NumberColumn("Ano", format="%d", disabled=True),
+                "Dívida ao fim do ano": st.column_config.NumberColumn(
+                    f"Dívida ao fim do ano ({empresa.unidade})", format="%.1f"
+                ),
+            },
         )
         valores = [float(v) for v in tabela["Dívida ao fim do ano"]]
 

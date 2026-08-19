@@ -98,6 +98,23 @@ def formatar(valor: float | None, formato: str = "moeda", unidade: str = "") -> 
     return f"{texto} {unidade}".strip()
 
 
+def em_texto(valor: float | None, unidade: str = "") -> str:
+    """Valor monetario para dentro de um markdown, com o ``$`` escapado.
+
+    O Streamlit interpreta ``$...$`` como LaTeX. A unidade brasileira e
+    ``R$ milhoes``, entao **duas** aparicoes dela na mesma frase fecham um par e
+    o trecho entre as duas vira formula. Visto no navegador: "Saldo de divida
+    bruta ao fim de cada ano, em R milhoes. O saldo de partida e 400,0 R
+    milhoes" saiu com o meio em italico de matematica, e a frase perdeu os dois
+    cifroes.
+
+    Nao da para escapar dentro de ``formatar``, que tambem alimenta tabela --
+    ali o ``\$`` apareceria literal. Entao a distincao e por destino: numero que
+    vai para texto passa por aqui, numero que vai para celula nao.
+    """
+    return formatar(valor, "moeda", unidade).replace("$", r"\$")
+
+
 def tabela_formatada(
     dados: pd.DataFrame, formato: str = "moeda", unidade: str = ""
 ) -> pd.DataFrame:

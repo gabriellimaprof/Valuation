@@ -15,7 +15,7 @@ from valuation.importacao.cvm import (
 )
 
 from .. import estado
-from ..componentes import conceito, etapa, formatar, grafico
+from ..componentes import conceito, em_texto, etapa, formatar, grafico
 from ..graficos import barras_de_faixa
 
 COLUNAS_PEERS = [
@@ -597,15 +597,15 @@ def _comparar(alvo, comparaveis) -> None:
 
     if abs(diferenca) < 0.20:
         st.success(
-            f"Os múltiplos sugerem {formatar(mediana_multiplos, 'moeda', unidade)} contra "
-            f"{formatar(resultado.equity_value, 'moeda', unidade)} do DCF — uma diferença "
+            f"Os múltiplos sugerem {em_texto(mediana_multiplos, unidade)} contra "
+            f"{em_texto(resultado.equity_value, unidade)} do DCF — uma diferença "
             f"de {formatar(abs(diferenca), 'pct')}. As duas abordagens contam a mesma "
             "história, o que reforça o resultado."
         )
     else:
         direcao = "acima" if diferenca > 0 else "abaixo"
         st.warning(
-            f"Os múltiplos sugerem {formatar(mediana_multiplos, 'moeda', unidade)}, "
+            f"Os múltiplos sugerem {em_texto(mediana_multiplos, unidade)}, "
             f"{formatar(abs(diferenca), 'pct')} {direcao} do DCF. Vale entender a "
             "divergência: ou o mercado precifica algo que a projeção não captura "
             "(ou o contrário), ou o peer group não é tão comparável quanto parece."

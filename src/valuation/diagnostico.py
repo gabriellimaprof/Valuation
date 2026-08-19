@@ -57,6 +57,14 @@ PESO_PERPETUIDADE_ALTO = 0.75
 # divida sobre patrimonio, ND/EBITDA mede divida sobre geracao de caixa. Que os
 # dois numeros calhassem de ser 3,5 era coincidencia, nao calibracao -- e o corte
 # unico dava a impressao de que uma medicao valia para os dois.
+#
+# Medido nas companhias de 2024, mediana de 2020-2024 por companhia:
+#
+#   ND/EBITDA  n=449  P50 1,93  P75 3,40  P90 6,23  -> 3,5 acusa 23,4%
+#   D/E        n=420  P50 0,93  P75 1,79  P90 3,23  -> 2,0 acusa 21,0%
+#
+# E o 3,5 compartilhado acusava so **8,6%** em D/E: nao era um corte alto, era um
+# corte que quase nunca disparava, mascarado por parecer calibrado.
 DIVIDA_EBITDA_ALTA = 3.5
 DIVIDA_PL_ALTA = 2.0
 MARGEM_ROIC_WACC_EXCEPCIONAL = 0.10
@@ -81,6 +89,10 @@ CONVERSAO_CAIXA_BAIXA = 0.15
 JUROS_CAPITALIZADOS = 0.169
 # A partir daqui o arrendamento deixa de ser detalhe da divida e passa a mudar a
 # leitura do EBITDA e da alavancagem. Em Petrobras chega a metade.
+#
+# Medido: o peso do aluguel no EBITDA tem P75 de **0,206** nas 297 companhias que
+# publicam o desembolso, e o corte acusa 26,3%. E o quartil, por acaso e nao por
+# projeto -- mas agora esta medido.
 LEASING_RELEVANTE = 0.20
 
 
@@ -881,8 +893,19 @@ def _checar_arrendamento_projetado(
 
 
 # A partir daqui o que nao se repete deixa de ser detalhe e passa a definir o
-# EBIT do periodo. Medido na base de 2024: 47% das companhias com item nao
-# recorrente estao acima disto.
+# EBIT do periodo.
+#
+# O numero que estava aqui -- "47% das companhias com item nao recorrente" --
+# media outra coisa: so as companhias que tinham item, e num ano so. Medido em
+# ``ResultadoRecorrente.peso``, que e a grandeza que este corte de fato olha
+# (mediana do **modulo** de nao recorrente sobre EBIT, 2020-2024, n=467):
+#
+#   P25 0,032   P50 0,099   P75 0,266   P90 0,723
+#   0,20 acusa 31,9% da base; 0,25, o quartil, acusaria 27,2%
+#
+# Fica em 0,20 e nao no quartil de proposito: "um quinto do EBIT" e um limiar com
+# significado proprio, e a diferenca para o P75 e pequena. O que nao podia ficar
+# era o numero errado no comentario, dando a impressao de calibracao que nao houve.
 NAO_RECORRENTE_RELEVANTE = 0.20
 
 
