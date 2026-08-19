@@ -20,3 +20,4 @@ htmlcov/
 
 # Arquivos temporarios do app
 .streamlit/secrets.toml
+tools/telas/

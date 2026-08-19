@@ -141,11 +141,24 @@ def _dre_gerencial(dfs) -> None:
         ]
 
     if base == "Valores":
-        formatada = tabela_formatada(dre, "moeda", dfs.unidade)
+        # A unidade fica no rótulo da coluna e não em cada célula: com 22 linhas
+        # e 7 anos, repeti-la são 154 vezes o mesmo texto empurrando o número
+        # para fora da largura útil. Visto no navegador, não no teste.
+        formatada = tabela_formatada(dre, "moeda")
+        st.caption(f"Valores em {dfs.unidade}.")
     else:
         receita = dre.loc["Receita líquida"].replace(0, np.nan)
         formatada = tabela_formatada(dre.div(receita, axis=1), "pct")
-    st.dataframe(formatada.style.apply(destacar, axis=1), width="stretch")
+
+    st.dataframe(
+        formatada.style.apply(destacar, axis=1),
+        width="stretch",
+        # Sem isto o Streamlit corta o rótulo: "(+/−) Equivalência patrimonial"
+        # virava "(+/−) Equivalência" e "(−) Itens não recorrentes" virava
+        # "(−) Itens não reco" -- justamente as duas linhas que o leitor precisa
+        # distinguir das vizinhas.
+        column_config={"_index": st.column_config.Column("Linha", width="medium")},
+    )
 
     _conferencia_da_dre(dfs)
 

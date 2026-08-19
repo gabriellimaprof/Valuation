@@ -322,10 +322,26 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 - **As fórmulas do Excel são validadas célula a célula** contra o motor Python
   (`tests/test_excel_formulas.py`, usando o pacote `formulas`). Planilha que
   calcula diferente do motor é pior que planilha nenhuma.
-- **O app é verificado no navegador**, com Playwright, percorrendo o fluxo real.
-  Vários bugs sérios só apareceram assim — colisão de URL entre telas, markdown
-  cru na tela, eixo do mapa de calor reinterpretado como número. **Rode o app e
-  olhe antes de dar por pronto.**
+- **O app é verificado no navegador**, com Playwright, percorrendo o fluxo real:
+  `python tools/navegador.py <porta>`, com o app rodando. Ele importa a WEG pela
+  própria interface, percorre as doze telas e todas as abas de cada uma, e acusa
+  exceção desenhada na página, markdown cru e rolagem horizontal.
+
+  **Isso não é redundante com o `AppTest`.** O `AppTest` executa a tela em
+  processo e pega exceção, widget que não monta e tipo que o Arrow recusa; o que
+  ele não vê é o que só existe depois do render. Dois defeitos da aba de DRE
+  saíram daí e nenhum teste os pegaria: a unidade repetida em **cada uma das 154
+  células** (22 linhas × 7 anos), empurrando o número para fora da largura útil,
+  e o rótulo cortado — "(+/−) Equivalência patrimonial" virava "(+/−)
+  Equivalência" e "(−) Itens não recorrentes" virava "(−) Itens não reco",
+  justamente as duas linhas que precisam ser distinguidas das vizinhas.
+
+  Duas armadilhas do próprio script, custaram tempo: **navegue pelo menu, nunca
+  por `goto`** — recarregar a página abre outra sessão do Streamlit e o histórico
+  importado se perde, e toda tela aparece vazia; e **`st.dataframe` desenha em
+  canvas**, então `inner_text()` não lê o conteúdo da tabela. Para conferir
+  número em tabela, tire foto do elemento e olhe. **Rode o app e olhe antes de
+  dar por pronto.**
 
 ## A auditoria de leitura, e o que ela achou
 
