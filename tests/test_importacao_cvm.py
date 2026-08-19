@@ -2054,3 +2054,65 @@ def test_o_de_para_aponta_para_a_linha_que_virou_o_numero(catalogo):
     origem = dfs.mapeamento.get("depreciacao_amortizacao", "")
     if "depreciacao_amortizacao" in dfs.derivadas and origem:
         assert origem.startswith("6."), origem
+
+
+# ---------------------------------------------------------------------------
+# A DFC pelo metodo direto usa os mesmos codigos para outras contas
+# ---------------------------------------------------------------------------
+
+DIRETA = 3328  # publica a DFC pelo metodo direto
+
+
+def test_o_metodo_direto_e_detectado_pelo_arquivo():
+    """A CVM publica os dois metodos em arquivos separados, e isso e a verdade.
+
+    Pelo rotulo nao daria: das 16 companhias de 2024 no metodo direto, **so 9
+    abrem com "Recebimento de Consumidores"**. O arquivo (``DFC_MD`` contra
+    ``DFC_MI``) e a declaracao da propria companhia.
+    """
+    dfs = importar_cvm(DIRETA, [2024], cache=DADOS)
+    assert any("metodo direto" in a for a in dfs.avisos), dfs.avisos
+
+
+def test_as_contas_que_so_existem_no_indireto_ficam_em_branco():
+    """No direto, 6.01.01 e "Recebimento de Consumidores".
+
+    Ler pelo codigo poria recebimento de clientes em ``caixa_das_operacoes`` e
+    fornecedores em ``variacao_capital_giro``. Numero errado na conta certa,
+    calado -- e era a causa das 5 unicas companhias em que a decomposicao do FCO
+    nao fechava.
+    """
+    dfs = importar_cvm(DIRETA, [2024], cache=DADOS)
+    for chave in ("caixa_das_operacoes", "variacao_capital_giro", "depreciacao_dfc"):
+        if chave in dfs.valores.index:
+            assert not np.isfinite(dfs.valor(chave, 2024)), (
+                f"{chave} nao existe na DFC pelo metodo direto"
+            )
+
+
+def test_o_que_e_igual_nos_dois_metodos_continua_lido():
+    """So 6.01.xx muda de significado. Os totais de secao sao os mesmos."""
+    dfs = importar_cvm(DIRETA, [2024], cache=DADOS)
+    assert np.isfinite(dfs.valor("fluxo_operacional", 2024))
+    assert np.isfinite(dfs.valor("fluxo_investimento", 2024))
+    assert np.isfinite(dfs.valor("capex", 2024))
+
+
+def test_o_metodo_indireto_nao_foi_afetado(catalogo):
+    """A WEG e as demais do fixture continuam lendo tudo."""
+    weg = importar_cvm(5410, [2024], cache=DADOS, catalogo=catalogo)
+    assert not any("metodo direto" in a for a in weg.avisos)
+    assert np.isfinite(weg.valor("caixa_das_operacoes", 2024))
+    assert np.isfinite(weg.valor("variacao_capital_giro", 2024))
+    assert np.isfinite(weg.valor("depreciacao_amortizacao", 2024))
+
+
+def test_a_regra_somada_da_da_nao_varre_o_direto():
+    """``6.01.01.`` no indireto e a secao de ajustes ao lucro; no direto, nao.
+
+    A regra que soma D&A varre aquele prefixo sem exigir verbo, porque ali linha
+    que fala de depreciacao **e** depreciacao. No metodo direto a mesma varredura
+    pegaria linha de recebimento com "amortizacao" no nome.
+    """
+    dfs = importar_cvm(DIRETA, [2024], cache=DADOS)
+    assert "depreciacao_dfc" not in dfs.mapeamento

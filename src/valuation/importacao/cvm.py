@@ -434,6 +434,13 @@ class LinhaCVM:
     demonstracao: str
     escala: str
     escopo: str
+    # De qual arquivo do zip a linha veio. Existe por causa da DFC: a CVM
+    # publica o metodo direto e o indireto em arquivos separados (``DFC_MD`` e
+    # ``DFC_MI``) e os dois entram no mesmo grupo ``dfc``, mas os codigos de
+    # 6.01 significam coisas diferentes em cada um. O rotulo nao serve para
+    # separar -- so 9 das 16 companhias do metodo direto abrem com "Recebimento
+    # de Consumidores" --, e o arquivo e a declaracao da propria companhia.
+    grupo: str = ""
 
 
 def _nome_no_zip(grupo: str, escopo: str, ano: int, documento: str = "dfp") -> str:
@@ -669,6 +676,7 @@ def _linhas_da_demonstracao(
                     demonstracao=demonstracao,
                     escala=_texto(linha.get("ESCALA_MOEDA")),
                     escopo=escopo,
+                    grupo=grupo,
                 )
             )
 
@@ -1055,6 +1063,66 @@ def detectar_plano(linhas: list[LinhaCVM]) -> str:
     return PLANO_INDUSTRIAL
 
 
+# Na DFC pelo **metodo direto** os codigos de 6.01 significam outra coisa. E o
+# mesmo problema do plano financeiro, num lugar em que ninguem espera: a CVM
+# publica os dois metodos em arquivos separados (``DFC_MI`` e ``DFC_MD``) e o
+# app le os dois no mesmo grupo, mas so a numeracao do indireto foi mapeada.
+#
+#   indireto  6.01.01  Caixa Gerado pelas Operacoes
+#             6.01.02  Variacoes nos Ativos e Passivos
+#             6.01.03  Outros
+#
+#   direto    6.01.01  Recebimento de Consumidores
+#             6.01.02  Fornecedores - Materiais e Servicos
+#             6.01.03  Fornecedores - Energia Eletrica
+#
+# Sao 16 das 467 companhias de 2024, e nelas o app punha "recebimento de
+# consumidores" em ``caixa_das_operacoes`` e "fornecedores" em
+# ``variacao_capital_giro``. **As 5 unicas companhias em que a decomposicao do
+# FCO nao fechava eram todas do metodo direto** -- a auditoria estava apontando
+# para isto sem que ninguem tivesse ligado a causa.
+_MARCA_METODO_DIRETO = re.compile(
+    r"recebimento[s]? de (consumidor|client)|recebido[s]? de (consumidor|client)",
+    re.I,
+)
+
+
+def detectar_metodo_da_dfc(linhas: list[LinhaCVM]) -> str:
+    """``direto`` ou ``indireto``, pelo arquivo em que a companhia declarou.
+
+    Vem do arquivo e nao do rotulo porque o rotulo nao separa: das 16 companhias
+    de 2024 que publicam pelo metodo direto, **so 9 abrem com "Recebimento de
+    Consumidores"**; as outras usam rotulo proprio, e uma regra por nome as
+    perderia. O arquivo (``DFC_MD`` contra ``DFC_MI``) e a declaracao da propria
+    companhia, e nao admite duvida.
+
+    O rotulo entra so como rede para origens que nao sao o zip da CVM -- uma
+    planilha importada nao tem arquivo de origem para consultar.
+    """
+    for linha in linhas:
+        if linha.demonstracao != "dfc":
+            continue
+        if linha.grupo == "DFC_MD":
+            return "direto"
+        if linha.codigo.startswith("6.01.") and _MARCA_METODO_DIRETO.search(
+            linha.descricao
+        ):
+            return "direto"
+    return "indireto"
+
+
+# Contas que so existem no metodo indireto. Elas descrevem a **reconciliacao**
+# do lucro com o caixa, e a DFC direta nao reconcilia nada: ela lista os
+# recebimentos e os pagamentos. Nao ha equivalente, e inventar um seria pior que
+# a ausencia -- e a mesma decisao tomada para bancos.
+_SO_NO_METODO_INDIRETO = (
+    "caixa_das_operacoes",
+    "variacao_capital_giro",
+    "outros_operacionais",
+    "depreciacao_dfc",
+)
+
+
 # O plano financeiro nao e uma variacao do industrial: e outra numeracao. 2.07 e
 # patrimonio liquido, e nao 2.03; 1.01 e caixa, e nao ativo circulante; 3.06 e o
 # imposto, e nao o resultado financeiro. Por isso o mapa e proprio, e nao um
@@ -1081,7 +1149,11 @@ CODIGOS_PLANO_FINANCEIRO: dict[str, str] = {
 }
 
 
-def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
+def _reconhecer_na_demonstracao(
+    linha: LinhaCVM,
+    plano: str = PLANO_INDUSTRIAL,
+    metodo_dfc: str = "indireto",
+):
     """Reconhece a conta canonica de uma linha da CVM.
 
     **A demonstracao de origem limita as contas possiveis.** A DFC da WEG tem
@@ -1095,8 +1167,21 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     acerta menos, mas erra de forma visivel, deixando a linha na lista de nao
     reconhecidas em vez de preencher a conta com o numero de outra.
     """
+    # No metodo direto os codigos de 6.01 nomeiam recebimentos e pagamentos, e
+    # nao a reconciliacao do lucro. Reconhecer por rotulo ali erra de forma
+    # visivel -- a linha sobra como nao reconhecida --, enquanto reconhecer por
+    # codigo erra calado, pondo "Recebimento de Consumidores" em
+    # ``caixa_das_operacoes``.
+    codigo_vale = not (
+        metodo_dfc == "direto"
+        and linha.demonstracao == "dfc"
+        and linha.codigo.startswith("6.01.")
+    )
+
     if plano == PLANO_INDUSTRIAL:
-        resultado = reconhecer(linha.descricao, linha.codigo, linha.demonstracao)
+        resultado = reconhecer(
+            linha.descricao, linha.codigo if codigo_vale else None, linha.demonstracao
+        )
     elif linha.codigo in CODIGOS_PLANO_FINANCEIRO:
         from .esquema import Reconhecimento
 
@@ -1113,6 +1198,10 @@ def _reconhecer_na_demonstracao(linha: LinhaCVM, plano: str = PLANO_INDUSTRIAL):
     if POR_CHAVE[resultado.chave].demonstracao != linha.demonstracao:
         return type(resultado)(
             None, 0.0, f"'{resultado.chave}' nao pertence a {linha.demonstracao}"
+        )
+    if metodo_dfc == "direto" and resultado.chave in _SO_NO_METODO_INDIRETO:
+        return type(resultado)(
+            None, 0.0, f"'{resultado.chave}' nao existe na DFC pelo metodo direto"
         )
     return resultado
 
@@ -1199,6 +1288,17 @@ def montar_demonstracoes(
             "aplica a bancos e seguradoras -- confira conta por conta antes de usar."
         )
 
+    metodo_dfc = detectar_metodo_da_dfc(linhas)
+    if metodo_dfc == "direto":
+        avisos.append(
+            "Esta companhia publica a DFC pelo **metodo direto**, em que os codigos "
+            "de 6.01 nomeiam recebimentos e pagamentos em vez da reconciliacao do "
+            "lucro: 6.01.01 e 'Recebimento de Consumidores' e nao 'Caixa Gerado "
+            "pelas Operacoes'. Deixei em branco caixa gerado, variacao de capital "
+            "de giro e D&A da DFC, que nao existem nessa forma -- o total do "
+            "operacional, o investimento e o financiamento continuam validos."
+        )
+
     # As contas somadas (ver REGRAS_SOMADAS) sao montadas antes, e as linhas que
     # as compoem ficam fora da disputa por confianca do resto do vocabulario.
     somadas: dict[str, dict[int, float]] = {}
@@ -1207,6 +1307,12 @@ def montar_demonstracoes(
     for indice, linha in enumerate(linhas):
         for regra in REGRAS_SOMADAS:
             if not regra.casa(linha):
+                continue
+            # A regra da D&A varre ``6.01.01.`` porque no metodo indireto aquela
+            # e a secao de ajustes ao lucro. No direto, ``6.01.01`` e o
+            # recebimento de clientes, e a mesma varredura pegaria linha de
+            # recebimento com "amortizacao" no nome.
+            if metodo_dfc == "direto" and regra.chave in _SO_NO_METODO_INDIRETO:
                 continue
             valores = somadas.setdefault(regra.chave, {})
             valores[linha.ano] = valores.get(linha.ano, 0.0) + linha.valor
@@ -1220,7 +1326,7 @@ def montar_demonstracoes(
     for indice, linha in enumerate(linhas):
         if indice in consumidas:
             continue
-        resultado = _reconhecer_na_demonstracao(linha, plano)
+        resultado = _reconhecer_na_demonstracao(linha, plano, metodo_dfc)
         if resultado.chave is None or resultado.confianca < CONFIANCA_MINIMA:
             # Uma conta filha nao esta "nao reconhecida": ela e a abertura de uma
             # conta que o app entende. 2.03.02 "Reservas de Capital" explica de

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 816 testes
+pytest                        # 825 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -340,9 +340,15 @@ A terceira é a que pega o erro que nenhuma soma denuncia. Conta que vem de
 `3.01` em 400 companhias e de outro código em duas não quebra identidade
 nenhuma, e está errada.
 
-**Resultado das quatro rodadas: 726 → 230 → 14 → 7 achados em 467 companhias.**
-Na última, os 7 são 5 companhias onde a decomposição do FCO não fecha e 2 que
-publicam receita líquida negativa — e as duas são leitura fiel do publicado.
+**Resultado das cinco rodadas: 726 → 230 → 14 → 7 → 2 achados em 467
+companhias.** Os 2 que sobraram são companhias que publicam **receita líquida
+negativa**, e isso é leitura fiel do que elas publicaram. **Não resta nenhum
+defeito de leitura conhecido na base.**
+
+As 5 últimas a cair tinham todas a mesma causa, e a auditoria vinha apontando
+para ela sem que ninguém tivesse ligado o fio: eram as únicas onde
+`geração + giro` não explicava o FCO, e **todas publicam a DFC pelo método
+direto** (ver abaixo).
 
 O que a auditoria corrigiu, medido:
 
@@ -383,6 +389,43 @@ Eneva de 23,7% para 34,3%. Quando só a DRE tem o número (5 companhias), ela fi
 as duas linhas**, e **corrige o de-para**: origem registrada apontando para
 `3.04.02.x` num número que veio de `6.01.01.x` é o tipo de erro que soma nenhuma
 denuncia, e é o que a auditoria de origem existe para pegar.
+
+**A DFC pelo método direto usa os mesmos códigos para outras contas.** É o mesmo
+problema do plano financeiro, num lugar onde ninguém esperava. A CVM publica os
+dois métodos em arquivos separados (`DFC_MI` e `DFC_MD`), o app lia os dois no
+mesmo grupo `dfc`, e só a numeração do indireto estava mapeada:
+
+| Código | Método indireto | Método direto |
+|---|---|---|
+| `6.01.01` | Caixa Gerado pelas Operações | **Recebimento de Consumidores** |
+| `6.01.02` | Variações nos Ativos e Passivos | **Fornecedores — Materiais e Serviços** |
+| `6.01.03` | Outros | **Fornecedores — Energia Elétrica** |
+
+São **16 das 467 companhias de 2024**, e nelas o app punha recebimento de
+clientes em `caixa_das_operacoes` e pagamento a fornecedores em
+`variacao_capital_giro`. Nenhuma identidade denunciava, porque `6.01` continua
+sendo o total do operacional nos dois métodos — mas **as 5 únicas companhias em
+que a decomposição do FCO não fechava eram todas do método direto.**
+
+`detectar_metodo_da_dfc` decide **pelo arquivo, não pelo rótulo**: das 16, só 9
+abrem com "Recebimento de Consumidores", e uma regra por nome perderia as outras
+7. O arquivo é a declaração da própria companhia. Detectado o direto,
+`caixa_das_operacoes`, `variacao_capital_giro`, `outros_operacionais` e
+`depreciacao_dfc` ficam **em branco** — elas descrevem a reconciliação do lucro
+com o caixa, e a DFC direta não reconcilia nada, ela lista recebimentos e
+pagamentos. Não há equivalente, e inventar um seria pior que a ausência: é a
+mesma decisão tomada para bancos. O total do operacional, o investimento e o
+financiamento continuam válidos, e a tela avisa.
+
+**A margem sugerida parte da recorrente, e não da reportada.** Impairment, venda
+de ativo e ganho tributário entram na DRE do SG&A para baixo e contaminam EBIT e
+EBITDA por igual — a D&A não muda com eles, então a subtração é a mesma nos dois.
+`sugerir_premissas` passou a usar `Margem EBITDA recorrente`, e o ajuste vai nos
+**dois sentidos**: na Vale a mediana 2020-2024 vai de 38,7% reportada para
+**51,9% recorrente** (o item foi impairment, uma perda), e na CESP vai de 72,5%
+para **52,9%** (foi ganho). Na WEG, 19,9% → 21,4%; na Raia Drogasil, 11,1% →
+10,9%. Diferença de 2 p.p. ou mais vira alerta, porque trocar a base da projeção
+sem avisar é mudar o número em silêncio.
 
 **O app abre todas as demonstrações, e o vocabulário é uma camada de nomes.**
 Medido na WEG de 2024, o zip traz **574 linhas consolidadas**; DRE, BP e DFC
@@ -526,17 +569,24 @@ não a inventa** — `_conferir` avisa que os dois não reconstroem o total.
 
 Medido na base inteira depois das três correções, passo a passo:
 
-| Passo da ponte | Fecha exato | Fecha até 1% | Não fecha | Sem dado |
-|---|---|---|---|---|
-| `ROL − custos = LB` | 458 | 458 | **0** | 9 |
-| `LB − SG&A + equiv. + outros = EBIT` | 465 | 465 | **0** | 2 |
-| `EBIT + D&A = EBITDA` | 465 | 465 | **0** | 2 |
-| `EBITDA − não recorrentes = EBITDA aj.` | 465 | 465 | **0** | 2 |
-| `EBIT ± resultado financeiro = LAIR` | 463 | 463 | 2 | 2 |
-| `LAIR − IR = continuadas` | 465 | 465 | **0** | 2 |
-| `continuadas + descontinuadas = LL` | 461 | 461 | 4 | 2 |
-| `LL − não controladores = controladores` | 442 | 457 | 8 | 2 |
-| **Cadeia inteira** | **440** | **455** | **12** | — |
+| Passo da ponte | Fecha exato | Fecha até 1% | Não fecha |
+|---|---|---|---|
+| `ROL − custos = LB` | **467** | **467** | **0** |
+| `LB − SG&A + equiv. + outros = EBIT` | **467** | **467** | **0** |
+| `EBIT + D&A = EBITDA` | **467** | **467** | **0** |
+| `EBITDA − não recorrentes = EBITDA aj.` | **467** | **467** | **0** |
+| `EBIT ± resultado financeiro = LAIR` | 465 | 465 | 2 |
+| `LAIR − IR = continuadas` | **467** | **467** | **0** |
+| `continuadas + descontinuadas = LL` | 463 | 463 | 4 |
+| `LL − não controladores = controladores` | 444 | 459 | 8 |
+| **Cadeia inteira** | **440** | **455** | **12** |
+
+Não há mais nenhum "sem dado": **identidade que fecha exatamente é aprovação, e
+não ausência**, mesmo quando o subtotal é zero e não há denominador para o desvio
+relativo. Eram 9 no lucro bruto — holdings e seguradoras sem linha de receita,
+onde `0 − 0 = 0` é a resposta certa — e 2 nos controladores. Reportar `NaN` ali
+dava impressão de cobertura faltando onde havia identidade trivialmente
+verdadeira.
 
 Duas leituras da mesma coisa: **440 fecham na aritmética exata** e 455 admitindo
 1% (a diferença é arredondamento de demonstração publicada). Das 455, duas não
@@ -581,15 +631,14 @@ eu não descontava o juro trazido do financiamento: em Panatlântica a diferenç
 era exatamente os R$ 59,75 mi reclassificados. Verificação que acusa o legítimo
 não é verificação.
 
-**O que sobrou, e por quê:** 5 companhias (1,1%) onde a decomposição do FCO não
-fecha, e 2 que publicam receita líquida negativa — esta é leitura fiel do que a
-companhia publicou, não defeito do app. Um caso do de-para que parece erro e não
+**O que sobrou, e por quê:** 2 companhias que publicam receita líquida negativa
+— leitura fiel do que a companhia publicou, não defeito do app. Um caso do de-para que parece erro e não
 é: `caixa_equivalentes` vindo de `1.01` em 20 companhias são **bancos**, onde
 `1.01` é caixa mesmo e não ativo circulante.
 
 ## Estado atual
 
-816 testes passando. Verificado de verdade: contas financeiras, identidades,
+825 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

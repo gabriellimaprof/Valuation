@@ -320,8 +320,16 @@ class Demonstracoes:
 
         linhas = {}
         for nome, (montado, publicado) in checagens.items():
+            diferenca = (montado - publicado).abs()
             escala = publicado.abs().replace(0, np.nan)
-            linhas[nome] = ((montado - publicado).abs() / escala).round(6)
+            desvio = (diferenca / escala).round(6)
+            # Identidade que fecha **exatamente** e aprovacao, e nao "sem dado",
+            # mesmo quando o subtotal e zero e nao ha denominador. Sao 9
+            # companhias no lucro bruto -- holdings e seguradoras sem linha de
+            # receita, onde 0 - 0 = 0 e a resposta certa -- e mais 2 nos
+            # controladores. Reportar NaN ali dava a impressao de cobertura
+            # faltando onde o que havia era identidade trivialmente verdadeira.
+            linhas[nome] = desvio.mask(diferenca == 0, 0.0)
         conferencia = pd.DataFrame(linhas).T
         conferencia.index.name = "Subtotal"
         return conferencia

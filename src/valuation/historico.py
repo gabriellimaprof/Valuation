@@ -320,6 +320,14 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         indicadores["Margem EBIT recorrente"] = _divisao_segura(
             ebit.sub(nao_recorrente, fill_value=0), receita
         )
+        # A margem EBITDA recorrente existe porque e **ela** que a projecao usa.
+        # O item nao recorrente entra na DRE do SG&A para baixo, entao contamina
+        # o EBIT e o EBITDA por igual -- a D&A nao muda com ele, e a subtracao e
+        # a mesma nos dois. Sugerir margem a partir da reportada projeta como
+        # regime uma reversao de impairment ou uma venda de ativo.
+        indicadores["Margem EBITDA recorrente"] = _divisao_segura(
+            ebitda.sub(nao_recorrente, fill_value=0), receita
+        )
         indicadores["Itens nao recorrentes / EBIT"] = _divisao_segura(
             nao_recorrente, ebit
         )
@@ -460,14 +468,38 @@ def sugerir_premissas(
         f"ate {crescimento_de_longo_prazo:.1%} no ultimo ano projetado."
     )
 
-    margem = analise.mediana("Margem EBITDA")
-    if not np.isfinite(margem):
+    # A margem parte da **recorrente**, e nao da reportada. Impairment, venda de
+    # ativo e ganho tributario entram na DRE do SG&A para baixo e contaminam
+    # EBIT e EBITDA por igual; projeta-los como regime e projetar um evento para
+    # sempre. Medido na base: 165 de 172 companhias tem item nao recorrente, com
+    # peso mediano de 17,4% do EBIT. O ajuste vai nos dois sentidos -- quando o
+    # item foi perda, a recorrente e **maior** que a reportada.
+    margem_reportada = analise.mediana("Margem EBITDA")
+    margem = analise.mediana("Margem EBITDA recorrente")
+    if np.isfinite(margem) and np.isfinite(margem_reportada):
+        diferenca = margem - margem_reportada
+        justificativas["margem_ebitda"] = (
+            f"Mediana historica da margem EBITDA **recorrente**: {margem:.1%}, "
+            f"contra {margem_reportada:.1%} reportada ({diferenca:+.1%}). Tira "
+            "impairment, outras receitas e outras despesas operacionais, que nao "
+            "se repetem. Mantida constante no horizonte."
+        )
+        if abs(diferenca) >= 0.02:
+            alertas.append(
+                f"A margem EBITDA recorrente ({margem:.1%}) difere da reportada "
+                f"({margem_reportada:.1%}) em {abs(diferenca):.1%}. A sugestao usa a "
+                "recorrente; se o item se repete no seu negocio, volte para a reportada."
+            )
+    elif np.isfinite(margem_reportada):
+        margem = margem_reportada
+        justificativas["margem_ebitda"] = (
+            f"Mediana historica de {margem:.1%}, mantida constante no horizonte. "
+            "A companhia nao publica item nao recorrente, entao reportada e "
+            "recorrente coincidem."
+        )
+    else:
         margem = 0.15
         alertas.append("Sem margem EBITDA historica; adotei 15% como ponto de partida.")
-    else:
-        justificativas["margem_ebitda"] = (
-            f"Mediana historica de {margem:.1%}, mantida constante no horizonte."
-        )
 
     depreciacao_pct = analise.mediana("Depreciacao / Receita")
     if not np.isfinite(depreciacao_pct):

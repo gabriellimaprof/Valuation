@@ -298,3 +298,70 @@ def test_premissas_sugeridas_rodam_no_motor(dfs):
     resultado = avaliar(empresa)
     assert np.isfinite(resultado.equity_value)
     assert resultado.projecao.receita[0] > dfs.valor("receita_liquida")
+
+
+# ---------------------------------------------------------------------------
+# A margem sugerida parte da recorrente
+# ---------------------------------------------------------------------------
+
+
+def _com_nao_recorrente(itens: list[float]) -> Demonstracoes:
+    anos = [2022, 2023, 2024]
+    base = {
+        "receita_liquida": [1000.0] * 3,
+        "custo_produtos_vendidos": [600.0] * 3,
+        "lucro_bruto": [400.0] * 3,
+        "ebit": [200.0 + i for i in itens],
+        "depreciacao_amortizacao": [50.0] * 3,
+        "outras_receitas_operacionais": itens,
+        "lucro_liquido": [120.0] * 3,
+        "ativo_total": [2000.0] * 3,
+        "patrimonio_liquido": [900.0] * 3,
+    }
+    return Demonstracoes(
+        empresa="Teste", valores=pd.DataFrame(base, index=anos).T
+    )
+
+
+def test_a_margem_sugerida_tira_o_que_nao_se_repete():
+    """Ganho de R$ 100 num EBIT de R$ 300 e evento, nao regime.
+
+    Sem o ajuste a sugestao projetaria 35% de margem EBITDA para sempre; com
+    ele, os 25% que o negocio entrega.
+    """
+    analise = analisar(_com_nao_recorrente([100.0, 100.0, 100.0]))
+    assert analise.mediana("Margem EBITDA") == pytest.approx(0.35)
+    assert analise.mediana("Margem EBITDA recorrente") == pytest.approx(0.25)
+
+    sugestao = sugerir_premissas(analise)
+    assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.25)
+    assert "recorrente" in sugestao.justificativas["margem_ebitda"]
+
+
+def test_o_ajuste_vai_nos_dois_sentidos():
+    """Quando o item foi **perda**, a recorrente e maior que a reportada.
+
+    E o caso da Vale, onde o item foi impairment: reportada de 38,7% contra
+    51,9% recorrente na mediana de 2020-2024.
+    """
+    analise = analisar(_com_nao_recorrente([-80.0, -80.0, -80.0]))
+    assert analise.mediana("Margem EBITDA") == pytest.approx(0.17)
+    assert analise.mediana("Margem EBITDA recorrente") == pytest.approx(0.25)
+    assert sugerir_premissas(analise).operacionais.margem_ebitda[0] == pytest.approx(0.25)
+
+
+def test_a_diferenca_relevante_vira_alerta():
+    """Trocar a base da projecao sem avisar e mudar o numero em silencio."""
+    sugestao = sugerir_premissas(analisar(_com_nao_recorrente([100.0] * 3)))
+    assert any("recorrente" in a and "reportada" in a for a in sugestao.alertas), (
+        sugestao.alertas
+    )
+
+
+def test_sem_item_nao_recorrente_a_sugestao_nao_muda():
+    """Quem nao publica os itens tem reportada e recorrente iguais."""
+    analise = analisar(_com_nao_recorrente([0.0, 0.0, 0.0]))
+    assert "Margem EBITDA recorrente" not in analise.indicadores.index
+    sugestao = sugerir_premissas(analise)
+    assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.25)
+    assert not any("recorrente" in a and "reportada" in a for a in sugestao.alertas)
