@@ -340,3 +340,57 @@ def test_arrendamento_que_cresce_e_nao_e_projetado_vira_alerta(empresa_exemplo):
     # Arrendamento encolhendo nao levanta o achado: nao ha adicao a projetar.
     encolhe = diagnosticar(resultado, analise=analisar(demonstracoes(100.0)))
     assert "arrendamento_cresce_e_nao_e_projetado" not in {a.codigo for a in encolhe.achados}
+
+
+# ---------------------------------------------------------------------------
+# A perpetuidade do arrendamento
+# ---------------------------------------------------------------------------
+
+
+def test_o_valor_terminal_supoe_abertura_de_pontos_para_sempre(empresa_exemplo):
+    """O fluxo que entra no Gordon já vem líquido da adição de arrendamento.
+
+    Como a adição acompanha a receita e a receita cresce a ``g``, a hipótese
+    embutida é que a razão arrendamento/receita fica constante **para sempre**.
+    É consistente — quem cresce mantendo intensidade de aluguel precisa mesmo de
+    contrato novo — e é o padrão por isso. Mas não é neutra, e ninguém a escolheu.
+
+    Medido em companhias reais, a distância para a leitura alternativa (a rede
+    para de crescer em área no fim do horizonte) vai de **+6,9%** de equity nas
+    Lojas Renner a **+96,7%** no Grupo SBF.
+    """
+    horizonte = len(empresa_exemplo.operacionais.crescimento_receita)
+    com_aluguel = substituir_varios(
+        empresa_exemplo,
+        {"operacionais.arrendamento_pct_receita": [0.20] * horizonte},
+    )
+    diagnostico = diagnosticar(avaliar(com_aluguel))
+    assert "arrendamento_cresce_para_sempre" in _codigos(diagnostico)
+
+    achado = next(
+        a for a in diagnostico.achados if a.codigo == "arrendamento_cresce_para_sempre"
+    )
+    assert "para sempre" in achado.titulo
+    # Diz **quanto custa**, que é o que permite escolher.
+    assert "maior" in achado.detalhe
+
+
+def test_sem_arrendamento_projetado_nao_ha_o_que_avisar(empresa_exemplo):
+    """Quem não aluga nada não pode receber um alerta sobre aluguel."""
+    diagnostico = diagnosticar(avaliar(empresa_exemplo))
+    assert "arrendamento_cresce_para_sempre" not in _codigos(diagnostico)
+
+
+def test_adicao_pequena_nao_vira_achado(empresa_exemplo):
+    """Abaixo de 10% do FCFF terminal é detalhe do fluxo, e não premissa de valor.
+
+    Sinal que dispara em todo mundo não dirige atenção, gasta.
+    """
+    horizonte = len(empresa_exemplo.operacionais.crescimento_receita)
+    pouco = substituir_varios(
+        empresa_exemplo,
+        {"operacionais.arrendamento_pct_receita": [0.005] * horizonte},
+    )
+    assert "arrendamento_cresce_para_sempre" not in _codigos(
+        diagnosticar(avaliar(pouco))
+    )

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 846 testes
+pytest                        # 849 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -666,7 +666,7 @@ não é verificação.
 
 ## Estado atual
 
-846 testes passando. Verificado de verdade: contas financeiras, identidades,
+849 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -882,9 +882,24 @@ Em ordem de valor:
    quando o arrendamento passa de 2% da receita. Medido: Raia Drogasil perde
    10,2% de equity value com a linha ligada; Smart Fit, 48,7%.
 
-   O que ainda **não** está fechado: a perpetuidade cresce o FCFF já líquido da
-   adição, o que assume implicitamente que a razão arrendamento/receita fica
-   constante para sempre. É defensável e não foi verificado contra alternativa.
+   **A perpetuidade foi verificada contra a alternativa, e a hipótese não é
+   barata.** O `fluxo_final` do Gordon já vem líquido da adição; como a adição
+   acompanha a receita e a receita cresce a `g`, isso supõe que a razão
+   arrendamento/receita fica constante **para sempre** — a rede continua abrindo
+   ponto no mesmo ritmo, eternamente. É internamente consistente, e é o padrão
+   por isso. A leitura alternativa é a rede parar de crescer em área no fim do
+   horizonte explícito:
+
+   | Companhia | Adição / FCFF terminal | Equity se a expansão parasse |
+   |---|---|---|
+   | Lojas Renner | 8,1% | **+6,9%** |
+   | Raia Drogasil | 13,1% | **+13,9%** |
+   | Pague Menos | 21,5% | **+27,9%** |
+   | Grupo SBF | 39,2% | **+96,7%** |
+
+   O diagnóstico `arrendamento_cresce_para_sempre` mostra o número acima de 10%
+   do FCFF terminal. **Não diz qual está certa** — diz quanto custa a que está
+   montada, que é o que o analista precisa para escolher.
 4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
    residual ou FCFE com capital regulatório.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte

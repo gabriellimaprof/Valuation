@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from .dcf import valor_terminal_gordon
 from .historico import AnaliseHistorica
 from .modelo import ResultadoValuation
 
@@ -188,6 +189,9 @@ def diagnosticar(
     achados += _checar_reinvestimento(resultado, g, wacc)
     achados += _checar_custo_de_capital(resultado, wacc)
     achados += _checar_estrutura_do_valor(resultado)
+    # Nao exige historico: a hipotese esta nas premissas e no resultado, e
+    # vale igual para quem modelou a mao sem importar demonstracao nenhuma.
+    achados += _checar_perpetuidade_do_arrendamento(resultado)
     if analise is not None:
         achados += _checar_contra_historico(resultado, analise)
     if retorno is not None:
@@ -886,6 +890,97 @@ def _checar_arrendamento_projetado(
                 "Some ao item de dívida bruta da ponte o valor presente dos "
                 "arrendamentos que a projeção implica, ou reduza o crescimento para "
                 "o que a empresa consegue sustentar sem abrir pontos novos."
+            ),
+            referencia="Damodaran, Investment Valuation, cap. 3 (lease adjustments)",
+        )
+    ]
+
+
+# A adicao perpetua de arrendamento acima disto deixa de ser detalhe do fluxo
+# terminal e passa a ser premissa de valor. Medido: a Raia Drogasil consome 13,1%
+# do FCFF terminal com adicao de arrendamento, e o Grupo SBF, 39,2%.
+ADICAO_PERPETUA_RELEVANTE = 0.10
+
+
+def _checar_perpetuidade_do_arrendamento(
+    resultado: ResultadoValuation,
+) -> list[Achado]:
+    """O valor terminal supoe que a rede abre loja para sempre, no mesmo ritmo.
+
+    O ``fluxo_final`` que entra no Gordon **ja vem liquido da adicao de
+    arrendamento**. Como a adicao e proporcional a receita e a receita cresce a
+    ``g``, a hipotese embutida e que a razao arrendamento/receita fica constante
+    ate o infinito. E internamente consistente -- quem cresce mantendo
+    intensidade de aluguel precisa mesmo de contrato novo -- e por isso e o
+    padrao. Mas nao e neutra, e ninguem a escolheu.
+
+    A leitura alternativa e a rede parar de crescer em area no fim do horizonte
+    explicito. Medido, a distancia entre as duas nao e pequena:
+
+        Lojas Renner    adicao 8,1% do FCFF terminal   equity +6,9%
+        Raia Drogasil          13,1%                          +13,9%
+        Pague Menos            21,5%                          +27,9%
+        Grupo SBF              39,2%                          +96,7%
+
+    O achado nao diz qual esta certa. Diz quanto custa a que esta montada, que e
+    o que o analista precisa para escolher.
+    """
+    projecao = resultado.projecao
+    variacao = getattr(projecao, "variacao_arrendamento", None)
+    if variacao is None or not len(variacao):
+        return []
+
+    adicao = float(variacao[-1])
+    fcff_final = float(projecao.fcff[-1])
+    if not (np.isfinite(adicao) and np.isfinite(fcff_final)) or fcff_final <= 0:
+        return []
+    peso = adicao / fcff_final
+    if peso < ADICAO_PERPETUA_RELEVANTE:
+        return []
+
+    # Quanto o valor terminal subiria se a adicao parasse no fim do horizonte.
+    dcf = resultado.dcf
+    fator = 1 / (1 + dcf.taxa_desconto) ** projecao.horizonte
+    perpetuidade = resultado.empresa.perpetuidade
+    if perpetuidade.metodo != "gordon":
+        return []
+    try:
+        vt_sem = valor_terminal_gordon(
+            fluxo_final=fcff_final + adicao,
+            taxa=dcf.taxa_desconto,
+            crescimento=perpetuidade.crescimento_perpetuo,
+            nopat_final=float(projecao.nopat[-1]),
+            roic=perpetuidade.roic_perpetuidade,
+        )
+    except ValueError:  # inclui CombinacaoInviavel
+        return []
+    folga = (vt_sem * fator - dcf.valor_presente_terminal)
+    if resultado.equity_value:
+        folga_relativa = folga / abs(resultado.equity_value)
+    else:
+        return []
+
+    return [
+        Achado(
+            codigo="arrendamento_cresce_para_sempre",
+            severidade=INFORMACAO,
+            titulo=(
+                f"O valor terminal supõe abertura de pontos para sempre "
+                f"({_pct(peso, 0)} do FCFF final vai em contrato novo)"
+            ),
+            detalhe=(
+                "O fluxo que entra na perpetuidade já está líquido da adição de "
+                "arrendamento. Como a adição acompanha a receita e a receita cresce "
+                f"a {_pct(perpetuidade.crescimento_perpetuo, 1)}, isso supõe que a "
+                "razão arrendamento/receita fica constante **para sempre** — a rede "
+                "continua abrindo ponto no mesmo ritmo, eternamente. É consistente, "
+                "e é o padrão por isso. Mas se a rede parasse de crescer em área no "
+                f"fim do horizonte, o equity seria {_pct(folga_relativa, 1)} maior."
+            ),
+            acao=(
+                "Decida qual das duas descreve o negócio. Rede madura que só repõe "
+                "contrato vencido está mais perto da segunda; rede em expansão, da "
+                "primeira. O modelo não escolhe sozinho."
             ),
             referencia="Damodaran, Investment Valuation, cap. 3 (lease adjustments)",
         )
