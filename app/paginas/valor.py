@@ -21,6 +21,12 @@ from ..graficos import cascata_ponte, composicao_do_valor, fluxos_projetados
 def render() -> None:
     etapa("Passo 5", "Valor", "O resultado, e de onde cada parte dele vem")
 
+    # A configuracao vem **antes** do resultado. Escolher FCFE sem cronograma
+    # deixava o modelo sem fechar, e o editor que resolveria isso ficava atras
+    # da mensagem de erro -- o usuario via "nao fecha" sem alcance ao que
+    # faltava.
+    _configuracao()
+
     resultado = estado.resultado()
     if resultado is None:
         aviso_sem_modelo(estado.erro_do_modelo())
@@ -30,7 +36,6 @@ def render() -> None:
     unidade = empresa.unidade
     dcf = resultado.dcf
 
-    _configuracao()
     _cartoes(resultado, unidade)
 
     st.divider()
@@ -91,6 +96,75 @@ def _configuracao() -> None:
 
     with colunas[2]:
         conceito("fcff" if config["tipo_fluxo"] == "fcff" else "fcfe")
+
+    if config["tipo_fluxo"] == "fcfe":
+        _cronograma_de_divida(config)
+
+
+def _cronograma_de_divida(config) -> None:
+    """O saldo de dívida ao fim de cada ano projetado.
+
+    **O FCFE não existe sem ele.** `FCFE = FCFF − juros × (1 − t) + variação da
+    dívida`, e a variação da dívida só se conhece com o saldo ano a ano. O motor
+    sempre suportou; faltava onde informar, e a tela oferecia o FCFE sem ter como
+    calculá-lo.
+
+    O padrão é dívida constante — a hipótese que a maioria dos modelos assume sem
+    dizer. Ela não é neutra: com dívida constante a variação é zero e o FCFE fica
+    abaixo do FCFF pelo juro depois de imposto. Amortizar derruba mais ainda o
+    fluxo do acionista nos anos de pagamento.
+    """
+    empresa = estado.empresa()
+    if empresa is None or empresa.operacionais is None:
+        return
+    anos = [
+        empresa.operacionais.ano_base + i + 1
+        for i in range(len(empresa.operacionais.crescimento_receita))
+    ]
+    inicial = float(empresa.ponte.divida_bruta)
+
+    with st.expander(
+        "Cronograma da dívida — obrigatório para o FCFE",
+        expanded=not config.get("divida_por_ano"),
+    ):
+        st.caption(
+            f"Saldo de dívida bruta ao fim de cada ano. O saldo de partida é "
+            f"{formatar(inicial, 'moeda')}, o da ponte. O juro de cada ano incide "
+            "sobre o saldo de **abertura**, e a variação do saldo entra no fluxo "
+            "do acionista: amortizar consome caixa do acionista, captar devolve."
+        )
+
+        salvos = config.get("divida_por_ano")
+        if not salvos or len(salvos) != len(anos):
+            salvos = [inicial] * len(anos)
+
+        tabela = st.data_editor(
+            pd.DataFrame({"Dívida ao fim do ano": salvos}, index=[str(a) for a in anos]),
+            width="stretch",
+            key="editor_divida",
+        )
+        valores = [float(v) for v in tabela["Dívida ao fim do ano"]]
+
+        colunas = st.columns([1, 1, 3])
+        if colunas[0].button("Manter constante"):
+            config["divida_por_ano"] = [inicial] * len(anos)
+            st.rerun()
+        if colunas[1].button("Amortizar até zero"):
+            passo = inicial / len(anos)
+            config["divida_por_ano"] = [
+                max(inicial - passo * (i + 1), 0.0) for i in range(len(anos))
+            ]
+            st.rerun()
+
+        if valores != list(config.get("divida_por_ano") or []):
+            config["divida_por_ano"] = valores
+            st.rerun()
+
+        if any(v < 0 for v in valores):
+            st.error(
+                "Saldo de dívida negativo não é caixa líquido: é dívida negativa, "
+                "que não existe. Use zero e leve o caixa para a ponte."
+            )
 
 
 def _cartoes(resultado, unidade: str) -> None:

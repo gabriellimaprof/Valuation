@@ -526,6 +526,35 @@ def _processar(arquivo, nome_empresa: str, anos_maximos: int, escala: str) -> No
     st.rerun()
 
 
+# Ordem em que a companhia publica, que e a ordem em que se le.
+DEMONSTRACOES = (
+    ("dre", "Resultado"),
+    ("bp", "Balanço"),
+    ("dfc", "Fluxo de caixa"),
+    ("dva", "Valor adicionado"),
+    ("dra", "Resultado abrangente"),
+    ("dmpl", "Mutações do PL"),
+)
+
+
+def _tem(dfs, chave: str) -> bool:
+    """A demonstracao tem algo a mostrar?
+
+    Aba vazia e pior que aba ausente: ela promete conteudo e nao entrega, e o
+    usuario nao sabe se o app nao leu ou se a companhia nao publicou. Planilha
+    importada nao tem DVA nem DMPL, e nao deve ganhar tres abas vazias.
+    """
+    try:
+        if not dfs.arvore(chave).empty:
+            return True
+    except Exception:
+        pass
+    try:
+        return not dfs.tabela(chave).empty
+    except Exception:
+        return False
+
+
 def _mostrar_importacao_atual() -> None:
     dfs = estado.demonstracoes()
     if dfs is None:
@@ -540,14 +569,19 @@ def _mostrar_importacao_atual() -> None:
     for aviso in dfs.avisos:
         st.warning(aviso)
 
-    aba_dre, aba_bp, aba_dfc, aba_conferencia = st.tabs(
-        ["Resultado", "Balanço", "Fluxo de caixa", "O que o app entendeu"]
-    )
-    for aba, chave in ((aba_dre, "dre"), (aba_bp, "bp"), (aba_dfc, "dfc")):
+    # As seis demonstrações, e não três. Medido na WEG de 2024: o zip traz 574
+    # linhas consolidadas, e DRE, BP e DFC somam 276 — as outras 298 estão em
+    # DMPL, DVA e DRA. Mais da metade do que a companhia publica ficava fora da
+    # tela mesmo já sendo lida. A DVA é a que responde o que a DRE padronizada
+    # não abre: receita bruta, folha de pessoal e o total pago ao governo.
+    disponiveis = [(chave, rotulo) for chave, rotulo in DEMONSTRACOES if _tem(dfs, chave)]
+    rotulos = [rotulo for _, rotulo in disponiveis] + ["O que o app entendeu"]
+    abas = st.tabs(rotulos)
+    for aba, (chave, _) in zip(abas, disponiveis):
         with aba:
             _demonstracao(dfs, chave)
 
-    with aba_conferencia:
+    with abas[-1]:
         _conferencia(dfs)
 
     st.divider()

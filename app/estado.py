@@ -96,7 +96,16 @@ def iniciar() -> None:
     st.session_state.setdefault(CHAVE_ALVO, None)
     st.session_state.setdefault(
         CHAVE_CONFIG,
-        {"meio_de_ano": True, "tipo_fluxo": "fcff", "setor": None, "pais": "Brasil"},
+        {
+            "meio_de_ano": True,
+            "tipo_fluxo": "fcff",
+            "setor": None,
+            "pais": "Brasil",
+            # Saldo de divida bruta ao fim de cada ano projetado. So o FCFE
+            # o usa, e sem ele o FCFE nao existe: e a variacao da divida que
+            # separa o fluxo do acionista do fluxo da firma.
+            "divida_por_ano": None,
+        },
     )
 
 
@@ -148,7 +157,35 @@ def convencoes() -> dict[str, Any]:
     o numero principal e o modelo perde credibilidade na primeira conferencia.
     """
     c = config()
-    return {"meio_de_ano": c["meio_de_ano"], "tipo_fluxo": c["tipo_fluxo"]}
+    convencoes: dict[str, Any] = {
+        "meio_de_ano": c["meio_de_ano"],
+        "tipo_fluxo": c["tipo_fluxo"],
+    }
+    # O cronograma so viaja quando o fluxo e o do acionista. Mandar junto no
+    # FCFF nao mudaria o numero, mas faria a sensibilidade carregar uma premissa
+    # que a tela nao mostra -- e premissa invisivel e a que ninguem confere.
+    if c["tipo_fluxo"] == "fcfe":
+        convencoes["divida_por_ano"] = c.get("divida_por_ano") and list(
+            c["divida_por_ano"]
+        ) or _divida_constante()
+    return convencoes
+
+
+def _divida_constante() -> list[float] | None:
+    """Divida parada no saldo de hoje, por todo o horizonte.
+
+    E o padrao porque o FCFE **nao existe sem cronograma**: sem ele a tela
+    oferecia a opcao e o modelo respondia que nao fecha, sem dizer que faltava.
+    Divida constante e a hipotese que a maioria dos modelos assume sem dizer, e
+    ela nao e neutra -- com variacao zero, o FCFE fica abaixo do FCFF pelo juro
+    depois de imposto. O editor na tela de Valor existe para trocar isso por um
+    cronograma de verdade.
+    """
+    e = empresa()
+    if e is None or e.operacionais is None:
+        return None
+    anos = len(e.operacionais.crescimento_receita)
+    return [float(e.ponte.divida_bruta)] * anos
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +323,16 @@ def aplicar_projeto(projeto: Projeto) -> None:
     definir_comparaveis(list(projeto.comparaveis))
     definir_alvo(projeto.alvo)
     st.session_state[CHAVE_CONFIG] = {
-        **{"meio_de_ano": True, "tipo_fluxo": "fcff", "setor": None, "pais": "Brasil"},
+        **{
+            "meio_de_ano": True,
+            "tipo_fluxo": "fcff",
+            "setor": None,
+            "pais": "Brasil",
+            # Saldo de divida bruta ao fim de cada ano projetado. So o FCFE
+            # o usa, e sem ele o FCFE nao existe: e a variacao da divida que
+            # separa o fluxo do acionista do fluxo da firma.
+            "divida_por_ano": None,
+        },
         **projeto.config,
     }
     # Analises derivadas pertencem ao modelo anterior e ficariam desatualizadas.

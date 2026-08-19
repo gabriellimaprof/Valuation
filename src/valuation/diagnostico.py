@@ -53,7 +53,12 @@ def _num(valor: float, casas: int = 1) -> str:
 BETA_MINIMO, BETA_MAXIMO = 0.3, 2.5
 WACC_MINIMO_BRL, WACC_MAXIMO_BRL = 0.07, 0.30
 PESO_PERPETUIDADE_ALTO = 0.75
-ALAVANCAGEM_ALTA = 3.5
+# Duas grandezas diferentes, que por descuido dividiam o mesmo corte: D/E mede
+# divida sobre patrimonio, ND/EBITDA mede divida sobre geracao de caixa. Que os
+# dois numeros calhassem de ser 3,5 era coincidencia, nao calibracao -- e o corte
+# unico dava a impressao de que uma medicao valia para os dois.
+DIVIDA_EBITDA_ALTA = 3.5
+DIVIDA_PL_ALTA = 2.0
 MARGEM_ROIC_WACC_EXCEPCIONAL = 0.10
 # Acima disto, o retorno passa a depender mais do mercado do que da empresa.
 PESO_RERATING_ALTO = 0.40
@@ -536,7 +541,7 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             )
         )
 
-    if premissas.divida_pl_alvo > ALAVANCAGEM_ALTA:
+    if premissas.divida_pl_alvo > DIVIDA_PL_ALTA:
         achados.append(
             Achado(
                 codigo="alavancagem_alvo_alta",
@@ -802,7 +807,7 @@ def _checar_contra_historico(
         )
 
     alavancagem = analise.ultimo("Divida liquida / EBITDA")
-    if np.isfinite(alavancagem) and alavancagem > ALAVANCAGEM_ALTA:
+    if np.isfinite(alavancagem) and alavancagem > DIVIDA_EBITDA_ALTA:
         achados.append(
             Achado(
                 codigo="alavancagem_historica_alta",

@@ -77,9 +77,14 @@ def test_tela_desenha_as_tres_demonstracoes(weg):
 
 
 def test_o_botao_de_abrir_a_arvore_existe_em_cada_demonstracao(weg):
+    """Uma alavanca por demonstracao com arvore -- hoje as seis da CVM."""
+    from app.paginas.dados import DEMONSTRACOES, _tem
+
     teste = _rodar(weg)
     rotulos = [t.label for t in teste.toggle]
-    assert rotulos.count("Demonstração publicada, com a abertura") == 3
+    esperadas = sum(1 for chave, _ in DEMONSTRACOES if _tem(weg, chave))
+    assert rotulos.count("Demonstração publicada, com a abertura") == esperadas
+    assert esperadas == 6, "a WEG publica as seis demonstracoes"
 
 
 def test_desligar_a_arvore_mostra_so_as_contas_do_modelo(weg):
@@ -112,3 +117,56 @@ def test_a_escala_escolhida_chega_na_arvore(weg):
     )
     ativo = balanco.iloc[0, -1]
     assert 30_000 < float(str(ativo).replace(".", "").replace(",", ".")) < 60_000
+
+
+# ---------------------------------------------------------------------------
+# As seis demonstracoes, e nao tres
+# ---------------------------------------------------------------------------
+
+
+def test_as_seis_demonstracoes_ganham_aba(weg):
+    """Medido na WEG de 2024: o zip traz 574 linhas consolidadas.
+
+    DRE, balanco e DFC somam 276; as outras 298 estao em DMPL, DVA e DRA. Mais
+    da metade do que a companhia publica ficava fora da tela mesmo ja sendo
+    lida pelo importador.
+    """
+    teste = _rodar(weg)
+    rotulos = [aba.label for aba in teste.tabs if aba.label]
+    for esperado in (
+        "Resultado",
+        "Balanço",
+        "Fluxo de caixa",
+        "Valor adicionado",
+        "Resultado abrangente",
+        "Mutações do PL",
+        "O que o app entendeu",
+    ):
+        assert esperado in rotulos, f"faltou a aba {esperado}: {rotulos}"
+
+
+def test_demonstracao_ausente_nao_ganha_aba_vazia(weg):
+    """Aba vazia promete conteudo e nao entrega.
+
+    Planilha importada nao tem DMPL nem DRA, e o usuario nao teria como saber se
+    o app deixou de ler ou se a companhia nao publicou.
+    """
+    sem_arvore = type(weg)(**{**weg.__dict__, "detalhe": None})
+    teste = _rodar(sem_arvore)
+    rotulos = [aba.label for aba in teste.tabs if aba.label]
+    assert "Mutações do PL" not in rotulos
+    assert "Resultado abrangente" not in rotulos
+    # As que tem conta canonica continuam.
+    assert "Resultado" in rotulos and "O que o app entendeu" in rotulos
+
+
+def test_a_dva_traz_o_que_a_dre_nao_abre(weg):
+    """Receita bruta, folha e o total pago ao governo so existem na DVA.
+
+    Sao 450 das 467 companhias. Contra a receita liquida do 3.01, a diferenca
+    para a bruta do 7.01.01 sao impostos sobre vendas e devolucoes -- 9,0% na
+    WEG.
+    """
+    arvore = weg.arvore("dva")
+    assert not arvore.empty
+    assert weg.valor("receita_bruta", 2024) > weg.valor("receita_liquida", 2024)

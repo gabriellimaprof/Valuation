@@ -260,6 +260,12 @@ def _giro(analise: AnaliseHistorica) -> Sinal:
         )
 
     texto = f"O capital de giro consumiu {giro:.1%} da receita ao ano, na mediana."
+    # Mesma regra da conversao: o corte absoluto diz o que a conta significa, o
+    # percentil diz se o numero e incomum aqui. A mediana brasileira consome
+    # 2,8% da receita em giro, entao 5% nao e o exagero que a intuicao sugere.
+    onde = referencias.descrever("Investimento em giro (DFC) / Receita", giro)
+    if onde:
+        texto += f" Isso a coloca {onde}."
     if giro <= 0:
         return Sinal(
             "giro", BOM, "O giro liberou caixa",
