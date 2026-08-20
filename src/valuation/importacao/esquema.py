@@ -61,6 +61,10 @@ CONTAS_DRE: tuple[Conta, ...] = (
             "receita liquida",
             "receita liquida de vendas",
             "receita de venda de bens e/ou servicos",
+            # Plano financeiro: para um banco a receita e o que ele cobra
+            # para emprestar. Sao 17 companhias que escrevem assim.
+            "receitas de intermediacao financeira",
+            "receitas da intermediacao financeira",
             "receita operacional liquida",
             "vendas liquidas",
             "receita liquida de vendas e servicos",
@@ -80,6 +84,8 @@ CONTAS_DRE: tuple[Conta, ...] = (
         demonstracao="dre",
         sinonimos=(
             "custo dos bens e/ou servicos vendidos",
+            "despesas de intermediacao financeira",
+            "despesas da intermediacao financeira",
             "custo dos produtos vendidos",
             "custo das mercadorias vendidas",
             "custo dos servicos prestados",
@@ -98,7 +104,9 @@ CONTAS_DRE: tuple[Conta, ...] = (
         chave="lucro_bruto",
         rotulo="Lucro bruto",
         demonstracao="dre",
-        sinonimos=("resultado bruto", "lucro bruto", "gross profit"),
+        sinonimos=("resultado bruto",
+            "resultado bruto de intermediacao financeira",
+            "resultado bruto intermediacao financeira", "lucro bruto", "gross profit"),
         codigos_cvm=("3.03",),
         ajuda="Mede o quanto sobra da venda antes das despesas de estrutura.",
     ),
@@ -225,6 +233,7 @@ CONTAS_DRE: tuple[Conta, ...] = (
         demonstracao="dre",
         sinonimos=(
             "lucro/prejuizo consolidado do periodo",
+            "lucro ou prejuizo liquido consolidado do periodo",
             "lucro/prejuizo do periodo",
             "lucro liquido do periodo",
             "lucro liquido",

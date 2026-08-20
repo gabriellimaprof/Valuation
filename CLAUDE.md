@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 849 testes
+pytest                        # 863 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -113,6 +113,23 @@ código muda de conta entre eles: `3.06` é "Resultado Financeiro" em 450
 companhias e "IR e CSLL" em 17. O plano é detectado uma vez por companhia pelo
 topo da DRE; fora do industrial o reconhecimento passa a ser só pelo rótulo e a
 tela avisa. Confiar no código sem isso põe número errado na conta certa, calado.
+
+**E o plano financeiro também não é um só.** Medido nas 20 companhias que o usam
+em 2024: `2.07` é "Patrimônio Líquido Consolidado" em 10 delas e **"Passivos
+sobre Ativos Não Correntes a Venda" nas outras 7** — Itaú, BTG, Pine e as demais
+que abrem o passivo por critério de mensuração IFRS 9, onde o patrimônio está em
+`2.08`. O mapa de códigos punha **zero no patrimônio líquido do maior banco do
+país**, e nenhuma identidade denunciava, porque zero é um número tão válido
+quanto qualquer outro.
+
+A regra agora é que **o código só vale com o aval do rótulo**: quando o rótulo
+reconhece outra conta, ele ganha; quando não reconhece nada, a linha fica sem
+conta — que é o erro visível, porque ela aparece na lista de não reconhecidas em
+vez de preencher a conta errada calada. Para o aval não derrubar a cobertura, o
+vocabulário ganhou os rótulos que o plano financeiro usa: "Receitas de/da
+Intermediação Financeira" (17 companhias), "Despesas de/da Intermediação
+Financeira", "Resultado Bruto de Intermediação Financeira" e "Lucro ou Prejuízo
+Líquido Consolidado do Período" (10).
 
 **A D&A não estava sendo lida, e isso era o maior erro da base.** O rótulo da
 CVM vem no plural ("Depreciações e Amortizações") e o vocabulário declarava no
@@ -672,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-849 testes passando. Verificado de verdade: contas financeiras, identidades,
+863 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

@@ -1185,11 +1185,34 @@ def _reconhecer_na_demonstracao(
     elif linha.codigo in CODIGOS_PLANO_FINANCEIRO:
         from .esquema import Reconhecimento
 
-        resultado = Reconhecimento(
-            CODIGOS_PLANO_FINANCEIRO[linha.codigo],
-            1.0,
-            f"codigo {linha.codigo} do plano financeiro",
-        )
+        # **O plano financeiro tambem nao e um so.** Ha ao menos dois layouts:
+        # num deles ``2.07`` e o patrimonio liquido, no outro -- o de Itau, BTG e
+        # Pine, com passivos abertos por criterio de mensuracao IFRS 9 -- ``2.07``
+        # e "Passivos sobre Ativos Nao Correntes a Venda" e o patrimonio esta em
+        # ``2.08``. Confiar so no codigo punha **zero** no patrimonio liquido do
+        # maior banco do pais, calado.
+        #
+        # Entao o codigo vale, mas o rotulo tem **direito de veto**: quando ele
+        # reconhece outra conta, e o rotulo que ganha. Codigo e convencao de
+        # arquivo; rotulo e o que a companhia diz que a linha e.
+        chave = CODIGOS_PLANO_FINANCEIRO[linha.codigo]
+        por_rotulo = reconhecer(linha.descricao, None, linha.demonstracao)
+        if por_rotulo.chave == chave:
+            resultado = Reconhecimento(
+                chave, 1.0, f"codigo {linha.codigo} do plano financeiro"
+            )
+        else:
+            # O codigo **so vale com o aval do rotulo**. Medido nas 20
+            # companhias do plano em 2024: ``2.07`` e "Patrimonio Liquido
+            # Consolidado" em 10 delas e "Passivos sobre Ativos Nao Correntes a
+            # Venda" nas outras 7 -- estas ultimas poem o patrimonio em
+            # ``2.08``. Sem o aval, o app punha **zero** no patrimonio liquido
+            # do Itau, do BTG e do Pine, e nenhuma identidade denunciava.
+            #
+            # Quando o rotulo diz outra coisa, ele ganha; quando nao diz nada, a
+            # linha fica sem conta, que e o erro visivel -- ela aparece na lista
+            # de nao reconhecidas em vez de preencher a conta errada calada.
+            resultado = por_rotulo
     else:
         resultado = reconhecer(linha.descricao, None, linha.demonstracao)
 

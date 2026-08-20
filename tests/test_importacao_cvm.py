@@ -2116,3 +2116,78 @@ def test_a_regra_somada_da_da_nao_varre_o_direto():
     """
     dfs = importar_cvm(DIRETA, [2024], cache=DADOS)
     assert "depreciacao_dfc" not in dfs.mapeamento
+
+
+# ---------------------------------------------------------------------------
+# O plano financeiro tambem nao e um so
+# ---------------------------------------------------------------------------
+
+
+def test_o_codigo_do_plano_financeiro_so_vale_com_o_aval_do_rotulo():
+    """``2.07`` é o patrimônio líquido em 10 companhias e outra coisa em 7.
+
+    As 7 usam o layout com passivos abertos por critério de mensuração IFRS 9 —
+    Itaú, BTG, Pine — onde ``2.07`` é "Passivos sobre Ativos Não Correntes a
+    Venda" e o patrimônio está em ``2.08``. Confiar só no código punha **zero**
+    no patrimônio líquido do maior banco do país, e nenhuma identidade
+    denunciava, porque zero é um número tão válido quanto qualquer outro.
+    """
+    from valuation.importacao.cvm import (
+        CODIGOS_PLANO_FINANCEIRO,
+        LinhaCVM,
+        PLANO_FINANCEIRO,
+        _reconhecer_na_demonstracao,
+    )
+
+    assert CODIGOS_PLANO_FINANCEIRO["2.07"] == "patrimonio_liquido"
+
+    def linha(codigo: str, descricao: str) -> LinhaCVM:
+        return LinhaCVM(
+            codigo=codigo,
+            descricao=descricao,
+            valor=1.0,
+            ano=2024,
+            demonstracao="bp",
+            escala="MIL",
+            escopo="con",
+        )
+
+    # Layout em que o código está certo: o rótulo confirma.
+    concorda = _reconhecer_na_demonstracao(
+        linha("2.07", "Patrimônio Líquido Consolidado"), PLANO_FINANCEIRO
+    )
+    assert concorda.chave == "patrimonio_liquido"
+
+    # Layout em que não está: o rótulo não avaliza, e a linha fica sem conta.
+    discorda = _reconhecer_na_demonstracao(
+        linha("2.07", "Passivos sobre Ativos Não Correntes a Venda e Descontinuados"),
+        PLANO_FINANCEIRO,
+    )
+    assert discorda.chave != "patrimonio_liquido"
+
+    # E o 2.08 daquele layout é alcançado pelo rótulo.
+    outro = _reconhecer_na_demonstracao(
+        linha("2.08", "Patrimônio Líquido Consolidado"), PLANO_FINANCEIRO
+    )
+    assert outro.chave == "patrimonio_liquido"
+
+
+def test_o_vocabulario_alcanca_os_rotulos_de_banco():
+    """Sem eles o aval do rótulo derrubaria a cobertura em vez de corrigi-la.
+
+    Medido nas 20 companhias do plano financeiro de 2024: 17 escrevem
+    "Receitas de/da Intermediação Financeira" onde a indústria escreve "Receita
+    de Venda de Bens e/ou Serviços", e 10 fecham a DRE com "Lucro ou Prejuízo
+    Líquido Consolidado do Período".
+    """
+    from valuation.importacao.esquema import reconhecer
+
+    esperado = {
+        ("Receitas de Intermediação Financeira", "dre"): "receita_liquida",
+        ("Receitas da Intermediação Financeira", "dre"): "receita_liquida",
+        ("Despesas de Intermediação Financeira", "dre"): "custo_produtos_vendidos",
+        ("Resultado Bruto de Intermediação Financeira", "dre"): "lucro_bruto",
+        ("Lucro ou Prejuízo Líquido Consolidado do Período", "dre"): "lucro_liquido",
+    }
+    for (rotulo, demonstracao), chave in esperado.items():
+        assert reconhecer(rotulo, None, demonstracao).chave == chave, rotulo
