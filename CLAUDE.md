@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 863 testes
+pytest                        # 866 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-863 testes passando. Verificado de verdade: contas financeiras, identidades,
+866 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -704,6 +704,26 @@ importando a WEG de 2019 a 2025 pela tela nova.
 investimento + financiamento + câmbio = variação de caixa; arrendamento e
 debênture nunca excedem a dívida de que são parte. São 62 contas canônicas por
 companhia, ante 26 antes.
+
+**E a verificação mais forte foi estendida da amostra para a base inteira.**
+`test_cada_conta_bate_com_a_linha_publicada` volta ao CSV bruto, acha a linha
+pelo código que o app registrou no de-para, aplica escala e sinal à mão e
+compara — mas rodava só nas 6 companhias do fixture. Rodada nas 467:
+
+| | |
+|---|---|
+| Pares conta × linha publicada conferidos | **29.096** |
+| Batem exatamente (até 1e-9 relativo) | **29.095 — 99,997%** |
+| Companhias sem nenhuma divergência | **466 de 467** |
+
+A única que sobra é `fluxo_financiamento` de uma concessionária onde o app move
+R$ 840,4 mi de outorga para o investimento — reclassificação deliberada, que o
+app **anuncia em aviso na tela**, e que o verificador é que não tinha listado.
+
+Fora da conferência ficam, de propósito: 400 contas derivadas (não vêm de linha
+nenhuma), 6.243 reclassificadas por decisão documentada (juro no FCO, arrendamento
+fora da subárvore de dívida, D&A da DFC, sinal do IR pela identidade) e 1.065 cujo
+código não existe naquele arquivo.
 
 **Não verificado, e é honesto dizer:**
 

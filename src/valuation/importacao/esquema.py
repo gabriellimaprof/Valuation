@@ -1246,19 +1246,6 @@ DERIVACOES: tuple[Derivacao, ...] = (
         formula="lucro_antes_impostos - lucro_liquido",
         explicacao="IR/CSLL = LAIR - lucro liquido",
     ),
-    # Companhia sem minoritario costuma **zerar as duas filhas** de 3.11 e
-    # deixar o resultado so no pai: medido no DFP de 2024, **102 das 467
-    # publicam 3.11.01 = 0 e 3.11.02 = 0 com 3.11 diferente de zero**. Lido ao
-    # pe da letra, o lucro dos controladores da CESP seria zero em vez dos
-    # R$ 1.078 mi que ela ganhou. E o mesmo caso da D&A: zero publicado que quer
-    # dizer "nao abri", e nao "nao tem".
-    Derivacao(
-        chave="lucro_controladores",
-        requer=("lucro_liquido", "lucro_nao_controladores"),
-        formula="lucro_liquido - lucro_nao_controladores",
-        explicacao="Lucro dos controladores = consolidado - minoritarios",
-        substitui_zero=True,
-    ),
 )
 
 

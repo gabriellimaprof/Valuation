@@ -2191,3 +2191,30 @@ def test_o_vocabulario_alcanca_os_rotulos_de_banco():
     }
     for (rotulo, demonstracao), chave in esperado.items():
         assert reconhecer(rotulo, None, demonstracao).chave == chave, rotulo
+
+
+def test_linha_publicada_duas_vezes_nao_conta_duas_vezes():
+    """A CVM publica linhas **idênticas em todos os campos** para 2 companhias.
+
+    Não é versão do documento nem período diferente: é a mesma linha duas vezes,
+    byte a byte. Medido no DFP consolidado de 2024, são o Grupo Salta (662
+    linhas) e a CPX Distribuidora (626), espalhadas por todas as demonstrações.
+
+    O estrago é seletivo, e por isso passou despercebido: conta reconhecida por
+    código único não muda — a segunda leitura sobrescreve a primeira com o mesmo
+    número —, mas **regra somada conta as duas**. Nenhuma identidade denuncia,
+    porque as seções da DFC dobram todas na mesma proporção.
+    """
+    import pandas as pd
+
+    from valuation.importacao.cvm import _sem_linhas_repetidas
+
+    linha = {"CD_CONTA": "6.01.03.02", "VL_CONTA": "-207306.0", "ORDEM_EXERC": "ÚLTIMO"}
+    repetido = pd.DataFrame([linha, linha, {**linha, "CD_CONTA": "6.01.03.01"}])
+
+    limpo = _sem_linhas_repetidas(repetido, "dfc")
+    assert len(limpo) == 2
+
+    # A DMPL fica de fora: nela a mesma conta aparece uma vez por componente do
+    # patrimônio, e é a soma por COLUNA_DF que resolve.
+    assert len(_sem_linhas_repetidas(repetido, "dmpl")) == 3

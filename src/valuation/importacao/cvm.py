@@ -443,6 +443,31 @@ class LinhaCVM:
     grupo: str = ""
 
 
+def _sem_linhas_repetidas(recorte: pd.DataFrame, demonstracao: str) -> pd.DataFrame:
+    """Descarta linhas **identicas em todos os campos** do arquivo da CVM.
+
+    Nao e versao do documento nem periodo diferente: e a mesma linha publicada
+    duas vezes, byte a byte -- mesma ``VERSAO``, mesmas datas, mesmo valor.
+    Medido no DFP consolidado de 2024, sao **2 companhias das 467**, o Grupo
+    Salta e a CPX Distribuidora, com 662 e 626 linhas repetidas cada, espalhadas
+    por todas as demonstracoes.
+
+    O estrago e seletivo, e por isso passou tanto tempo despercebido: conta
+    reconhecida por codigo unico nao muda (a segunda leitura sobrescreve a
+    primeira com o mesmo numero), mas **regra somada conta as duas** -- o juro
+    pago do Grupo Salta virava R$ 414,6 mi contra os R$ 207,3 mi publicados, e a
+    D&A dobrava junto. Nenhuma identidade denuncia, porque as secoes da DFC
+    dobram todas na mesma proporcao.
+
+    A DMPL fica de fora: nela a mesma conta aparece legitimamente uma vez por
+    componente do patrimonio, e a soma por ``COLUNA_DF`` logo adiante e que
+    resolve.
+    """
+    if demonstracao in _DEMONSTRACOES_COM_COLUNA:
+        return recorte
+    return recorte.drop_duplicates()
+
+
 def _nome_no_zip(grupo: str, escopo: str, ano: int, documento: str = "dfp") -> str:
     return f"{documento}_cia_aberta_{grupo}_{escopo}_{ano}.csv"
 
@@ -643,6 +668,7 @@ def _linhas_da_demonstracao(
         recorte = _filtrar_empresa(dados, codigo_cvm)
         if recorte.empty:
             continue
+        recorte = _sem_linhas_repetidas(recorte, demonstracao)
         if demonstracao in _DEMONSTRACOES_COM_COLUNA and "COLUNA_DF" in recorte.columns:
             # A mesma conta aparece uma vez por componente do patrimonio. Somar
             # devolve o movimento total, que e o que a arvore mostra; manter as

@@ -551,6 +551,12 @@ def _derivar(
             "sinal corrigido pela identidade LAIR - lucro liquido em "
             f"{corrigidos}: a companhia publicou credito de imposto, e nao despesa"
         )
+    controladores = _completar_controladores(tabela, anos)
+    if controladores:
+        derivadas["lucro_controladores"] = (
+            f"derivado do consolidado menos minoritarios em {controladores}: a "
+            "companhia zerou 3.11.01 nesses anos"
+        )
     trocados = _preferir_a_da_do_fluxo_de_caixa(tabela, anos)
     if trocados:
         origem_dre = (mapeamento or {}).get("depreciacao_amortizacao", "a linha da DRE")
@@ -624,6 +630,49 @@ def _corrigir_sinal_dos_impostos(
             impostos[ano] = identidade
             corrigidos.append(ano)
     return ", ".join(str(ano) for ano in corrigidos)
+
+
+def _completar_controladores(
+    tabela: dict[str, dict[int, float]], anos: list[int]
+) -> str:
+    """Companhia sem minoritario zera as duas filhas de ``3.11`` e so preenche o pai.
+
+    Medido no DFP consolidado de 2024: **102 das 467 publicam ``3.11.01 = 0`` e
+    ``3.11.02 = 0`` com ``3.11`` diferente de zero**. Lido ao pe da letra, o lucro
+    dos controladores da CESP seria zero em vez dos R$ 1.078 mi que ela ganhou.
+
+    **A correcao e por ano, e nao pela serie inteira.** A primeira versao disto
+    era uma ``Derivacao`` com ``substitui_zero``, que so dispara quando **todos**
+    os anos sao zero -- e perde justamente quem muda de pratica no meio. A Viveo
+    publica ``3.11.01`` cheio em 2023 (R$ 359,9 mi) e zerado em 2024, e ficava com
+    lucro dos controladores zero num ano de prejuizo de R$ 1,4 bilhao.
+
+    Zero legitimo sobrevive: se os minoritarios levaram tudo, ``lucro_liquido -
+    lucro_nao_controladores`` da zero de novo.
+    """
+    controladores = tabela.get("lucro_controladores")
+    lucro = tabela.get("lucro_liquido")
+    if not lucro:
+        return ""
+    nao_controladores = tabela.get("lucro_nao_controladores") or {}
+    if controladores is None:
+        controladores = tabela["lucro_controladores"] = {}
+
+    def numero(fonte: dict[int, float], ano: int) -> float | None:
+        valor = fonte.get(ano)
+        return valor if valor is not None and np.isfinite(valor) else None
+
+    completados: list[int] = []
+    for ano in anos:
+        consolidado = numero(lucro, ano)
+        if consolidado is None or consolidado == 0:
+            continue
+        atual = numero(controladores, ano)
+        if atual not in (None, 0.0):
+            continue
+        controladores[ano] = consolidado - (numero(nao_controladores, ano) or 0.0)
+        completados.append(ano)
+    return ", ".join(str(ano) for ano in completados)
 
 
 def _preferir_a_da_do_fluxo_de_caixa(
