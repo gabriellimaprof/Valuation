@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 894 testes
+pytest                        # 898 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-894 testes passando. Verificado de verdade: contas financeiras, identidades,
+898 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -736,9 +736,35 @@ código não existe naquele arquivo.
 4. Bancos e seguradoras (19 das 467) são detectados e avisados, mas o
    reconhecimento só por rótulo cobre bem menos contas, e o FCFF/WACC não se
    aplica a eles de qualquer forma.
-5. As contas somadas por regra — capex, juros pagos, dividendos pagos — cobrem
-   88%, 80% e 74% das companhias. O resto usa rótulo que nenhuma regra alcança
-   e cai na lista de não reconhecidas, para mapeamento manual.
+5. **A cobertura das contas somadas estava sendo medida com o denominador
+   errado.** Dividir "quantas têm a conta" pelo total da base conta como falha da
+   regra a companhia que **não tem o conceito** — e em dividendos pagos isso é
+   quase todo o problema. Medido em 2024, separando "ausente de verdade" (nenhuma
+   linha da DFC menciona) de "escapou" (há linha e a regra não pegou):
+
+   | Conta | Aparente | **Real** | O que explica a diferença |
+   |---|---|---|---|
+   | `capex` | 88% | **96%** | 35 companhias sem capex nenhum |
+   | `juros_pagos` | 76% | **86%** | 55 não abrem juro pago |
+   | `dividendos_pagos` | 61% | **96%** | **172 não pagaram dividendo** |
+
+   E **a maior parte do que ainda escapa é a regra recusando certo**: venda de
+   imobilizado não é capex, JCP não é juro, dividendo recebido não é dividendo
+   pago. Dos 12 escapes de dividendos, 10 são "recebidos".
+
+   O que sobra de fixável é pequeno e arriscado. Em juros, os rótulos sem verbo
+   de pagamento ("Juros sobre empréstimos") são tentadores — mas **104 das 131
+   linhas assim estão em `6.01.01`**, a seção de ajustes ao lucro, onde juro é
+   **competência e não caixa**. Somá-las contaria despesa que nunca virou
+   desembolso, e o total em jogo nas seções de caixa é de R$ 0,17 bi. Em capex os
+   escapes reais são linhas **líquidas** ("Variação do Ativo Imobilizado",
+   "(Aquisição) Alienação de imobilizado"), e valem R$ 0,00 bi.
+
+   `auditoria.medir_cobertura_somada` repete a medição, e **uma armadilha ficou
+   travada em teste**: linha publicada com valor **zero** não é escape. Muita
+   companhia publica "Dividendos pagos" zerado no ano em que não pagou, e
+   contá-la repõe o mesmo erro por outro caminho — sem o filtro, os escapes de
+   dividendos passam de 12 para 90.
 
 ## Estressar macro, e o efeito que eu previ errado
 

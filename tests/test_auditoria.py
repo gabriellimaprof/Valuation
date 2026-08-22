@@ -238,3 +238,96 @@ def test_a_decomposicao_usa_outros_operacionais():
         fluxo_operacional=250.0,
     )
     assert [a for a in auditar(sem_o_termo) if "explicam o FCO" in a.verificacao]
+
+
+# ---------------------------------------------------------------------------
+# Cobertura de regra somada: o denominador certo
+# ---------------------------------------------------------------------------
+
+
+def _arvore(linhas: list[tuple[str, str, float]], ano: int = 2024):
+    """Uma DFC de brinquedo, no formato de ``Demonstracoes.detalhe``."""
+    import pandas as pd
+
+    return pd.DataFrame(
+        [
+            {
+                "codigo": codigo,
+                "demonstracao": "dfc",
+                "nivel": codigo.count(".") + 1,
+                "ordem": tuple(int(p) for p in codigo.split(".")),
+                "rotulo": rotulo,
+                ano: valor,
+            }
+            for codigo, rotulo, valor in linhas
+        ]
+    )
+
+
+def test_linha_zerada_nao_e_escape():
+    """Companhia que não pagou dividendo publica a linha zerada.
+
+    Contá-la como "a regra não pegou" repõe, por outro caminho, o mesmo erro que
+    esta medição existe para corrigir. Sem o filtro, os escapes de dividendos
+    passam de 12 para 90 na base de 2024.
+    """
+    from valuation.auditoria import MENCIONA, _linhas_que_mencionam
+
+    padrao, prefixos = MENCIONA["dividendos_pagos"]
+    arvore = _arvore(
+        [
+            ("6.03.01", "Dividendos pagos", 0.0),
+            ("6.03.02", "Captação de empréstimos", 500.0),
+        ]
+    )
+    assert _linhas_que_mencionam(arvore, 2024, padrao, prefixos) == []
+
+    com_valor = _arvore([("6.03.01", "Dividendos pagos", -120.0)])
+    assert _linhas_que_mencionam(com_valor, 2024, padrao, prefixos) == [
+        "Dividendos pagos"
+    ]
+
+
+def test_so_conta_linha_da_secao_certa():
+    """Dividendo recebido mora no operacional e não é dividendo pago.
+
+    A busca é larga de propósito — a pergunta é "a companhia fala disso?" —, mas
+    fora da seção o assunto não quer dizer a mesma coisa.
+    """
+    from valuation.auditoria import MENCIONA, _linhas_que_mencionam
+
+    padrao, prefixos = MENCIONA["capex"]
+    arvore = _arvore(
+        [
+            ("6.02.01", "Aquisição de imobilizado", -300.0),
+            ("6.01.05", "Baixa de imobilizado no resultado", 40.0),
+        ]
+    )
+    assert _linhas_que_mencionam(arvore, 2024, padrao, prefixos) == [
+        "Aquisição de imobilizado"
+    ]
+
+
+def test_a_cobertura_real_tem_outro_denominador():
+    """"A regra falhou" e "a companhia não tem isso" são coisas diferentes.
+
+    Medido no DFP consolidado de 2024, a diferença não é detalhe: em dividendos
+    pagos, **172 das 467 companhias simplesmente não pagaram dividendo**, e a
+    cobertura vai de 61% aparente para **96%** real.
+    """
+    from valuation.auditoria import CoberturaSomada
+
+    c = CoberturaSomada(conta="dividendos_pagos", achou=283, ausente=172, escapou=12)
+    assert c.cobertura_aparente == pytest.approx(283 / 467)
+    assert c.cobertura == pytest.approx(283 / 295)
+    assert c.cobertura > c.cobertura_aparente
+
+
+def test_sem_ninguem_com_o_conceito_a_cobertura_nao_inventa_numero():
+    """Dividir por zero devolvendo 100% diria que a regra acertou tudo."""
+    import numpy as np
+
+    from valuation.auditoria import CoberturaSomada
+
+    c = CoberturaSomada(conta="capex", achou=0, ausente=10, escapou=0)
+    assert not np.isfinite(c.cobertura)

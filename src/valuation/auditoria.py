@@ -36,6 +36,7 @@ defensaveis. Ela mostra a divergencia e quem decide e quem le.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -361,3 +362,159 @@ def auditar_base(
     return Auditoria(
         achados=achados, companhias=medidas, origens=origens, cobertura=cobertura
     )
+
+
+# ---------------------------------------------------------------------------
+# Cobertura de regra somada: o que a conta bruta mede errado
+# ---------------------------------------------------------------------------
+
+# Capex, juros pagos e dividendos pagos nao existem como linha unica na CVM --
+# abaixo dos totais de secao o plano e conta livre --, e sao remontados por soma
+# em ``REGRAS_SOMADAS``. Medir a cobertura dividindo "quantas tem a conta" pelo
+# total da base **mede a coisa errada**: companhia que nao pagou dividendo nao
+# tem linha de dividendo, e contar isso como falha da regra infla o problema e
+# esconde o de verdade.
+#
+# ``MENCIONA`` e deliberadamente largo: a pergunta aqui e "a companhia fala
+# disso?", e nao "isto e a conta". Falso positivo vira caso para olhar, que e o
+# resultado desejado.
+MENCIONA: dict[str, tuple[re.Pattern, tuple[str, ...]]] = {
+    "capex": (re.compile(r"imobiliz|intang[ií]|ativo fixo|permanente", re.I), ("6.02",)),
+    "juros_pagos": (re.compile(r"juro|encargo financeir", re.I), ("6.01", "6.03")),
+    "dividendos_pagos": (
+        re.compile(r"dividendo|capital pr[óo]prio|\bjcp\b", re.I),
+        ("6.01", "6.03"),
+    ),
+}
+
+
+@dataclass(frozen=True)
+class CoberturaSomada:
+    """Cobertura de uma conta remontada por soma, com o denominador certo.
+
+    ``ausente`` sao as companhias em que **nenhuma linha da DFC menciona o
+    conceito** -- nao ha o que achar, e elas nao pertencem ao denominador.
+    ``escapou`` sao aquelas em que ha linha mencionando e a regra nao pegou. So
+    esta ultima e defeito.
+    """
+
+    conta: str
+    achou: int
+    ausente: int
+    escapou: int
+    rotulos_que_escapam: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def cobertura(self) -> float:
+        """Sobre quem tem o conceito, e nao sobre a base inteira."""
+        com_conceito = self.achou + self.escapou
+        return self.achou / com_conceito if com_conceito else float("nan")
+
+    @property
+    def cobertura_aparente(self) -> float:
+        """A conta ingenua, guardada para mostrar o quanto ela engana."""
+        total = self.achou + self.ausente + self.escapou
+        return self.achou / total if total else float("nan")
+
+
+def medir_cobertura_somada(
+    codigos: list[int],
+    ano: int,
+    cache=None,
+    catalogo=None,
+    progresso=None,
+) -> list[CoberturaSomada]:
+    """Separa "a regra falhou" de "a companhia nao tem isso".
+
+    Medido no DFP consolidado de 2024, a diferenca entre as duas leituras nao e
+    detalhe -- em dividendos pagos, **172 das 467 companhias simplesmente nao
+    pagaram dividendo**:
+
+    ======================  ==========  =========  =======================
+    conta                   aparente    real       o que explica a diferenca
+    ======================  ==========  =========  =======================
+    capex                   88%         **96%**    35 sem capex nenhum
+    juros_pagos             76%         **86%**    55 nao abrem juro pago
+    dividendos_pagos        61%         **96%**    172 nao pagaram dividendo
+    ======================  ==========  =========  =======================
+
+    E a maior parte do que ainda escapa e a regra **recusando certo**: venda de
+    imobilizado nao e capex, JCP nao e juro, dividendo recebido nao e dividendo
+    pago. Das 131 linhas de "juros sobre emprestimos" que sobram, **104 estao em
+    ``6.01.01``** -- ajuste ao lucro, competencia e nao caixa. Soma-las contaria
+    despesa que nunca virou desembolso.
+    """
+    from .importacao.cvm import importar_cvm
+
+    resultado: dict[str, dict] = {
+        chave: {"achou": 0, "ausente": 0, "escapou": 0, "rotulos": {}}
+        for chave in MENCIONA
+    }
+
+    for i, codigo in enumerate(codigos, 1):
+        if progresso is not None:
+            progresso(i, len(codigos))
+        try:
+            dfs = importar_cvm(codigo, [ano], cache=cache, catalogo=catalogo)
+        except Exception:
+            continue
+        arvore = dfs.detalhe
+        if arvore is None or arvore.empty:
+            continue
+
+        for chave, (padrao, prefixos) in MENCIONA.items():
+            valor = _valor(dfs, chave, ano)
+            if np.isfinite(valor) and valor != 0:
+                resultado[chave]["achou"] += 1
+                continue
+
+            candidatas = _linhas_que_mencionam(arvore, ano, padrao, prefixos)
+            if not candidatas:
+                resultado[chave]["ausente"] += 1
+                continue
+            resultado[chave]["escapou"] += 1
+            for rotulo in candidatas:
+                r = resultado[chave]["rotulos"]
+                r[rotulo.strip()] = r.get(rotulo.strip(), 0) + 1
+
+    return [
+        CoberturaSomada(
+            conta=chave,
+            achou=dados["achou"],
+            ausente=dados["ausente"],
+            escapou=dados["escapou"],
+            rotulos_que_escapam=dados["rotulos"],
+        )
+        for chave, dados in resultado.items()
+    ]
+
+
+def _linhas_que_mencionam(
+    arvore, ano: int, padrao: re.Pattern, prefixos: tuple[str, ...]
+) -> list[str]:
+    """Rotulos da arvore que falam do conceito, **com valor**, na secao certa.
+
+    **Linha zerada nao e escape.** Muita companhia publica "Dividendos pagos"
+    com valor zero no ano em que nao pagou; conta-la como "a regra nao pegou"
+    repoe, por outro caminho, o mesmo erro que esta medicao existe para corrigir
+    -- os escapes de dividendos passam de 12 para 90 sem este filtro.
+    """
+    if ano not in arvore.columns:
+        return []
+    codigos = arvore["codigo"].astype(str)
+    na_secao = codigos.str.startswith(tuple(p + "." for p in prefixos))
+    detalhada = codigos.str.count(r"\.") >= 2
+    fala = arvore["rotulo"].astype(str).str.contains(padrao)
+    valores = pd.to_numeric(arvore[ano], errors="coerce")
+    tem_valor = valores.notna() & (valores != 0)
+    return [
+        str(r).strip()
+        for r in arvore.loc[na_secao & detalhada & fala & tem_valor, "rotulo"]
+    ]
+
+
+def _valor(dfs, chave: str, ano: int) -> float:
+    try:
+        return float(dfs.valor(chave, ano))
+    except Exception:
+        return float("nan")
