@@ -317,3 +317,35 @@ def test_a_ponte_prefere_o_par_de_impostos_que_reconcilia():
     conferencia = incoerente.conferir_dre_gerencial()
     pior = float(np.nanmax(conferencia.to_numpy(dtype=float)))
     assert pior < 1e-9, conferencia.to_string()
+
+
+def test_o_ano_movel_le_as_seis_demonstracoes():
+    """O ITR lia três; o zip trimestral traz as mesmas seis do anual.
+
+    Medido no ITR de 2025: DVA com 116.854 linhas de 460 companhias, DRA com
+    32.114 e DMPL com 623.847. Fora dali ficavam **sete contas canônicas que só
+    existem na DVA** — receita bruta, pessoal, impostos e taxas, aluguel, juros e
+    o valor adicionado —, que respondem o que a DRE padronizada não abre e sumiam
+    do ano móvel sem que nada dissesse.
+    """
+    ltm = importar_ltm(WEG, cache=DADOS, ano=2025)
+    assert ltm.detalhe is not None and not ltm.detalhe.empty
+    presentes = set(ltm.detalhe["demonstracao"])
+    for demonstracao in ("dre", "bp", "dfc", "dva"):
+        assert demonstracao in presentes, presentes
+
+
+def test_a_dva_do_ano_movel_traz_a_receita_bruta():
+    """Contra a líquida do ``3.01``, a diferença são impostos sobre vendas.
+
+    Na WEG dá 9,3% no ano móvel, contra os 9,0% medidos no exercício fechado — a
+    conta atravessa o ano móvel sem perder o sentido.
+    """
+    import numpy as np
+
+    ltm = importar_ltm(WEG, cache=DADOS, ano=2025)
+    bruta = ltm.valor("receita_bruta")
+    liquida = ltm.valor("receita_liquida")
+    assert np.isfinite(bruta) and np.isfinite(liquida)
+    assert bruta > liquida
+    assert 0.05 < (bruta - liquida) / bruta < 0.15

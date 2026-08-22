@@ -205,7 +205,35 @@ def test_o_focus_nasce_desligado():
     assert alavanca.value is False
 
 
-def test_ligar_a_comparacao_nao_altera_premissa_nenhuma():
+@pytest.fixture
+def focus_offline(monkeypatch):
+    """Serve o recorte real do Olinda no lugar da rede.
+
+    Sem isto o teste alcanca o Banco Central de verdade: passa ou falha conforme
+    o servico responde, e a suite inteira passou de 100s para 237s numa execucao
+    em que ele demorou. Teste que depende de terceiro nao esta testando o app.
+    """
+    import json
+    import urllib.parse
+
+    from valuation import mercado
+
+    recorte = json.loads(
+        (Path(__file__).parent / "dados" / "mercado" / "focus.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    def falso(url: str, cabecalhos=None) -> bytes:
+        for indicador, dados in recorte.items():
+            if urllib.parse.quote(f"Indicador eq '{indicador}'") in url:
+                return json.dumps(dados).encode("utf-8")
+        raise AssertionError(f"pedido inesperado: {url}")
+
+    monkeypatch.setattr(mercado, "_buscar", falso)
+
+
+def test_ligar_a_comparacao_nao_altera_premissa_nenhuma(focus_offline):
     """O padrão do app é a prática de quem o construiu; o consenso é referência.
 
     Aplicar tem que ser um segundo clique, explícito: IPCA de 5% contra os 3,5%
@@ -218,6 +246,7 @@ def test_ligar_a_comparacao_nao_altera_premissa_nenhuma():
     alavanca.set_value(True).run()
     assert not teste.exception, [str(e.value) for e in teste.exception]
 
-    # Com rede, mostra os números; sem rede, avisa e segue. Nos dois casos a
-    # premissa não pode ter mudado sozinha.
+    # Os números aparecem — e mesmo assim a premissa não mudou sozinha.
     assert teste.session_state["empresa"].macro.inflacao_brl == antes
+    rotulos = {m.label for m in teste.metric}
+    assert "Selic (Focus)" in rotulos, rotulos

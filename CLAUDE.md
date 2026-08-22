@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 912 testes
+pytest                        # 914 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -266,6 +266,14 @@ período do exercício anterior, a metade que falta do ano móvel), e no balanç
 é o fim do exercício anterior, não o mesmo trimestre — comparar os dois casaria
 saldo de setembro com saldo de dezembro.
 
+**O ITR lia três demonstrações; o anual lê seis.** O zip trimestral traz as
+mesmas seis, e ficavam de fora **sete contas canônicas que só existem na DVA** —
+receita bruta, pessoal, impostos e taxas, aluguel, juros e o valor adicionado.
+Medido no ITR de 2025: DVA com 116.854 linhas de 460 companhias, DRA com 32.114
+e DMPL com 623.847. Na WEG o ano móvel agora traz receita bruta de R$ 45.211,7 mi
+contra líquida de R$ 41.379,6 — os **9,3%** de impostos sobre vendas, contra os
+9,0% do exercício fechado: a conta atravessa o ano móvel sem perder o sentido.
+
 **O ITR nunca tinha passado pela varredura que a DFP passou, e três coisas
 faltavam.** O leitor é o mesmo, mas o caminho do ano móvel nunca fora medido:
 
@@ -377,6 +385,10 @@ As regras que valem:
 - **As fórmulas do Excel são validadas célula a célula** contra o motor Python
   (`tests/test_excel_formulas.py`, usando o pacote `formulas`). Planilha que
   calcula diferente do motor é pior que planilha nenhuma.
+- **Nenhum teste alcança a rede.** O da comparação com o Focus alcançava, e a
+  suíte passou de 100 s para **237 s** numa execução em que o Banco Central
+  demorou — e falhou. Teste que depende de terceiro não está testando o app: ele
+  serve o mesmo recorte real do Olinda que os testes do módulo já usam.
 - **O app é verificado no navegador**, com Playwright, percorrendo o fluxo real:
   `python tools/navegador.py <porta>`, com o app rodando. Ele importa a WEG pela
   própria interface, percorre as doze telas e todas as abas de cada uma, e acusa
@@ -736,7 +748,7 @@ não é verificação.
 
 ## Estado atual
 
-912 testes passando. Verificado de verdade: contas financeiras, identidades,
+914 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

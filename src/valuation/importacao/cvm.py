@@ -1811,7 +1811,14 @@ def _demonstracoes_do_itr(
 ) -> Demonstracoes:
     avisos: list[str] = []
     linhas: list[LinhaCVM] = []
-    for demonstracao in ("dre", "bp", "dfc"):
+    # **As seis demonstracoes, como no anual.** O ITR lia so tres, e o zip
+    # trimestral traz as mesmas seis do DFP -- medido no de 2025: DVA com 116.854
+    # linhas de 460 companhias, DRA com 32.114 e DMPL com 623.847. Fora dali
+    # ficavam **sete contas canonicas que so existem na DVA**: receita bruta,
+    # pessoal, impostos e taxas, aluguel, juros e o valor adicionado. Elas
+    # respondem o que a DRE padronizada nao abre, e sumiam do ano movel sem que
+    # nada dissesse.
+    for demonstracao in GRUPOS:
         linhas.extend(
             _linhas_do_itr(
                 zip_path, ano, demonstracao, codigo_cvm, avisos, escopo, data_refer, ordem
