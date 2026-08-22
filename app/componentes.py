@@ -122,6 +122,79 @@ def tabela_formatada(
     return dados.map(lambda v: formatar(v, formato, unidade))
 
 
+_ESCAPES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}
+
+
+def _texto_seguro(valor: object) -> str:
+    texto = str(valor)
+    for cru, escapado in _ESCAPES.items():
+        texto = texto.replace(cru, escapado)
+    return texto
+
+
+NIVEL_MAXIMO_COM_ESTILO = 5
+
+
+def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
+    """A demonstracao publicada em HTML, com a hierarquia visivel.
+
+    ``st.dataframe`` desenha em canvas e trata toda linha igual: "Ativo Total" e
+    "JSCP a receber" saiam com o mesmo peso, e achar os totais exigia ler os 210
+    rotulos. O peso do texto e o nivel do plano de contas -- que e a informacao
+    que o recuo ja carregava e que ninguem via.
+
+    Vai como HTML porque **e o que sabe fazer o que se pede aqui**: o Styler do
+    pandas so atravessa cor de texto e de fundo para o ``st.dataframe``, e nao
+    peso nem tamanho de fonte, que sao justamente a diferenca entre um total e
+    um item folha. De quebra o texto passa a existir no DOM -- a varredura do
+    navegador nao consegue ler numero dentro do canvas.
+
+    ``linhas`` e o que :meth:`Demonstracoes.linhas_publicadas` devolve: codigo,
+    rotulo, nivel e uma coluna por ano.
+    """
+    from valuation.importacao.cvm import e_conta_por_acao
+
+    anos = [c for c in linhas.columns if isinstance(c, int)]
+    cabecalho = "".join(f"<th>{ano}</th>" for ano in anos)
+    corpo = []
+    for _, linha in linhas.iterrows():
+        # O bloco do lucro por acao fica em reais por acao enquanto o resto da
+        # tabela esta em milhoes. O rotulo tem de dizer: um "1,4" sem marca, na
+        # coluna de um balanco em R$ milhoes, se le como um milhao e meio.
+        por_acao = e_conta_por_acao(linha["codigo"])
+        profundidade = max(int(linha["nivel"]) - 1, 0)
+        nivel = min(int(linha["nivel"]) or 1, NIVEL_MAXIMO_COM_ESTILO)
+        # O recuo continua sendo a hierarquia, agora em CSS: o peso do texto
+        # diz "isto e um total" e o recuo diz "dentro de quem". As duas leituras
+        # nao se substituem -- num nivel 4 longo, so o peso perderia o caminho.
+        recuo = f"padding-left: calc(0.75rem + {profundidade} * 0.85rem)"
+        marca = '<span class="unidade">R$/ação</span>' if por_acao else ""
+        celulas = [
+            f'<td class="conta" style="{recuo}" '
+            f'title="{_texto_seguro(linha["codigo"])}">'
+            f'{_texto_seguro(linha["rotulo"])}{marca}</td>'
+        ]
+        for ano in anos:
+            valor = linha[ano]
+            vazio = valor is None or (
+                isinstance(valor, float) and not np.isfinite(valor)
+            )
+            classe = "nulo" if vazio or valor == 0 else ""
+            if not vazio and valor < 0:
+                classe = "negativo"
+            atributo = f' class="{classe}"' if classe else ""
+            formato = "numero" if por_acao else "moeda"
+            celulas.append(f"<td{atributo}>{formatar(valor, formato)}</td>")
+        corpo.append(f'<tr class="n{nivel}">{"".join(celulas)}</tr>')
+
+    rotulo_conta = f"Conta ({unidade})" if unidade else "Conta"
+    return (
+        '<div class="df-publicada"><table><thead><tr>'
+        f'<th class="conta">{_texto_seguro(rotulo_conta)}</th>{cabecalho}'
+        f'</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
+    )
+
+
 def aviso_sem_modelo(erro: str | None) -> None:
     """Mensagem padrao quando as premissas nao fecham."""
     st.error(

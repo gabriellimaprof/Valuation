@@ -190,5 +190,120 @@ CSS = """
 """
 
 
+# A demonstracao publicada nao e uma tabela qualquer: ela e uma **arvore**, e o
+# nivel de cada linha e informacao contabil, nao enfeite. "Ativo Total" e
+# "JSCP a receber" ocupavam o mesmo peso visual, entao o olho tinha de ler os
+# 210 rotulos para achar os totais.
+#
+# O peso vai no texto e a cor de fundo so nos dois primeiros niveis. Os niveis
+# fracos sao feitos com **opacidade sobre a cor do tema**, e nao com um cinza
+# fixo: cinza escolhido para o modo claro vira ilegivel no escuro, e a mesma
+# regra tem de servir aos dois.
+TABELA_CSS = """
+<style>
+  .df-publicada {{
+    max-height: 74vh;
+    overflow: auto;
+    border: 1px solid {grade};
+    border-radius: 8px;
+  }}
+  .df-publicada table {{
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+  }}
+  .df-publicada thead th {{
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: {cabecalho};
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: right;
+    padding: 0.55rem 0.75rem;
+    white-space: nowrap;
+  }}
+  .df-publicada thead th.conta {{
+    text-align: left;
+    left: 0;
+    z-index: 4;
+  }}
+  .df-publicada td {{
+    padding: 0.3rem 0.75rem;
+    border-top: 1px solid {grade};
+    text-align: right;
+    white-space: nowrap;
+  }}
+  .df-publicada td.conta {{
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    text-align: left;
+    background: inherit;
+    min-width: 20rem;
+    white-space: normal;
+  }}
+  .df-publicada tr {{ background: {superficie}; color: {texto}; }}
+  .df-publicada tr.n1 {{
+    background: {tinta_forte};
+    font-weight: 700;
+    font-size: 0.9rem;
+  }}
+  .df-publicada tr.n1 td {{ border-top: 2px solid {cabecalho}; }}
+  .df-publicada tr.n2 {{ background: {tinta_fraca}; font-weight: 600; }}
+  .df-publicada tr.n3 {{ font-weight: 500; }}
+  .df-publicada tr.n4 {{ font-weight: 400; color: {texto_fraco}; font-size: 0.8rem; }}
+  .df-publicada tr.n5 {{ font-weight: 400; color: {texto_suave}; font-size: 0.78rem; }}
+  .df-publicada tr:hover {{ background: {realce}; }}
+  .df-publicada td.negativo {{ color: {negativo}; }}
+  .df-publicada td.nulo {{ color: {texto_suave}; }}
+  .df-publicada .unidade {{
+    margin-left: 0.45rem;
+    padding: 0.05rem 0.35rem;
+    border: 1px solid {grade};
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: {texto_suave};
+    white-space: nowrap;
+  }}
+</style>
+"""
+
+# Fundos **opacos**, e nao tinta translucida. A primeira coluna e grudada
+# (``position: sticky``) para o rotulo nao sumir ao rolar os anos de lado, e ela
+# herda o fundo da propria linha: com fundo semitransparente os numeros passariam
+# por tras do rotulo durante a rolagem. Sao a superficie do tema misturada ao
+# azul da paleta a 14% e a 6%, ja compostas.
+FUNDOS = {
+    "claro": {"n1": "#dfeaf6", "n2": "#eff4f9", "realce": "#faefd8"},
+    "escuro": {"n1": "#203042", "n2": "#1d242b", "realce": "#3a2d15"},
+}
+
+
+def tabela_css() -> str:
+    """CSS da demonstracao publicada, com as cores do modo em vigor."""
+    p = paleta()
+    fundos = FUNDOS["escuro" if p is ESCURO else "claro"]
+    return TABELA_CSS.format(
+        grade=p.grade,
+        superficie=p.superficie,
+        texto=p.texto_primario,
+        texto_fraco=p.texto_secundario,
+        texto_suave=p.texto_suave,
+        cabecalho=p.serie(0),
+        tinta_forte=fundos["n1"],
+        tinta_fraca=fundos["n2"],
+        realce=fundos["realce"],
+        negativo=p.critico,
+    )
+
+
 def aplicar_css() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
+    st.markdown(tabela_css(), unsafe_allow_html=True)

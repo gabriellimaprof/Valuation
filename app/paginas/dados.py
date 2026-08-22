@@ -28,7 +28,12 @@ from valuation.importacao.cvm import (
 from valuation.importacao.esquema import extrair_codigo_cvm
 
 from .. import estado
-from ..componentes import etapa, formatar, tabela_formatada
+from ..componentes import (
+    etapa,
+    formatar,
+    tabela_de_demonstracao,
+    tabela_formatada,
+)
 
 ESCALAS = {
     "Os valores já estão na unidade que quero usar": (1, None),
@@ -768,19 +773,48 @@ def _demonstracao(dfs, chave: str) -> None:
     )
 
     if completa:
-        st.caption(
-            f"{len(arvore)} linhas. O recuo é o nível do plano de contas — cada "
-            "conta é a soma das que aparecem recuadas abaixo dela."
-        )
-        st.dataframe(
-            tabela_formatada(arvore, "moeda"),
-            width="stretch",
-            height=min(760, 40 + 35 * len(arvore)),
-        )
+        _arvore_publicada(dfs, chave)
     elif canonicas.empty:
         st.info("Nenhuma conta do modelo veio desta demonstração.")
     else:
         st.dataframe(tabela_formatada(canonicas, "moeda"), width="stretch")
+
+
+def _arvore_publicada(dfs, chave: str) -> None:
+    """A demonstração como a companhia publicou, com as linhas mortas fora.
+
+    A companhia entrega o plano de contas inteiro e marca com zero o que não
+    tem. Medido em 40 companhias de 2019 a 2025: **37,1% das linhas publicadas
+    são zero em todos os anos** — 51,6% no balanço, 47,8% na DMPL, contra 8,8%
+    no fluxo de caixa. São linhas que não dizem nada e empurram para fora da
+    tela as que dizem.
+
+    Some por padrão, e o número do que sumiu fica escrito: linha escondida sem
+    aviso é o app decidindo pelo analista o que ele pode ver.
+    """
+    todas = dfs.linhas_publicadas(chave)
+    linhas = dfs.linhas_publicadas(chave, ocultar_vazias=True)
+    ocultas = len(todas) - len(linhas)
+
+    if ocultas and st.toggle(
+        f"Mostrar também as {ocultas} linhas zeradas em todos os anos",
+        value=False,
+        key=f"vazias_{chave}",
+        help=(
+            "A companhia publica o plano de contas inteiro e marca com zero o "
+            "que não tem. Ligado: a demonstração como veio do arquivo, linha "
+            "por linha."
+        ),
+    ):
+        linhas = todas
+        ocultas = 0
+
+    st.caption(
+        f"{len(linhas)} linhas. O peso do texto é o nível do plano de contas — "
+        "cada conta é a soma das que aparecem abaixo dela, mais fracas."
+        + (f" {ocultas} zeradas em todo o período ficaram de fora." if ocultas else "")
+    )
+    st.html(tabela_de_demonstracao(linhas, dfs.unidade))
 
 
 

@@ -533,6 +533,31 @@ def _ler_csv_do_zip(
     )
 
 
+# O bloco ``3.99`` da DRE e **por acao**, e nao carrega a escala do arquivo. A
+# CVM declara ``ESCALA_MOEDA = MIL`` para a demonstracao inteira e escreve o
+# lucro por acao em reais na mesma linha -- o proprio rotulo diz, "Lucro por
+# Acao - (Reais / Acao)". Multiplicar por mil transformava o R$ 1,44 da WEG em
+# R$ 1.440,26.
+#
+# Medido no DRE consolidado de 2024: 889 linhas de **384 companhias**, com
+# mediana de |valor| bruto em 1,31 e 99% abaixo de 1.000 -- a ordem de grandeza
+# de reais por acao, nao de milhares deles. No ITR de 2025, 3.858 linhas de 388.
+CODIGO_POR_ACAO = "3.99"
+
+
+def e_conta_por_acao(codigo: str) -> bool:
+    """A conta e cotada por acao, e nao na moeda escalada do arquivo?"""
+    codigo = str(codigo or "")
+    return codigo == CODIGO_POR_ACAO or codigo.startswith(CODIGO_POR_ACAO + ".")
+
+
+def _fator_da_linha(codigo: str, escala, avisos: list[str]) -> float:
+    """Multiplicador que leva ``VL_CONTA`` a reais, respeitando o por acao."""
+    if e_conta_por_acao(codigo):
+        return 1.0
+    return _fator_escala(escala, avisos)
+
+
 def _fator_escala(escala: str, avisos: list[str]) -> float:
     """Converte ``ESCALA_MOEDA`` no multiplicador que leva ``VL_CONTA`` a reais."""
     chave = unicodedata.normalize("NFKD", str(escala or "").strip().upper())
@@ -696,7 +721,9 @@ def _linhas_da_demonstracao(
                     codigo=_texto(linha.get("CD_CONTA")),
                     descricao=_texto(linha.get("DS_CONTA")),
                     valor=float(valor)
-                    * _fator_escala(linha.get("ESCALA_MOEDA"), avisos),
+                    * _fator_da_linha(
+                        linha.get("CD_CONTA"), linha.get("ESCALA_MOEDA"), avisos
+                    ),
                     ano=ano_exercicio,
                     demonstracao=demonstracao,
                     escala=_texto(linha.get("ESCALA_MOEDA")),
@@ -1759,7 +1786,10 @@ def _linhas_do_itr(
                 LinhaCVM(
                     codigo=_texto(linha.get("CD_CONTA")),
                     descricao=_texto(linha.get("DS_CONTA")),
-                    valor=float(valor) * _fator_escala(linha.get("ESCALA_MOEDA"), avisos),
+                    valor=float(valor)
+                    * _fator_da_linha(
+                        linha.get("CD_CONTA"), linha.get("ESCALA_MOEDA"), avisos
+                    ),
                     ano=ano_exercicio,
                     demonstracao=demonstracao,
                     escala=_texto(linha.get("ESCALA_MOEDA")),

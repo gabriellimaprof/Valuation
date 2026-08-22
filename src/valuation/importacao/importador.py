@@ -42,13 +42,59 @@ HOLDING_SEM_RECEITA = 0.10
 RECUO = "\u2007" * 3
 
 
+def linhas_vazias(tabela: pd.DataFrame, anos: list) -> np.ndarray:
+    """Quais linhas sao zero em todo ano **e nao escondem filha com valor**.
+
+    A companhia entrega o plano de contas inteiro, marcando com zero o que ela
+    nao tem: medido em 40 companhias de 2019 a 2025, **37,1% das linhas
+    publicadas sao zero em todos os anos** -- 51,6% no balanco e 47,8% na DMPL,
+    contra 8,8% no fluxo de caixa. Sao linhas que nao dizem nada e empurram o
+    que diz para fora da tela.
+
+    A ressalva veio da mesma medicao: **97 linhas zeradas tem filha com valor**,
+    e todas sao o bloco ``3.99`` (lucro por acao). Ali o pai e um titulo sem
+    valor proprio -- o numero esta em ``3.99.01.01`` --, e esconder pela leitura
+    da propria linha apagaria o lucro por acao de quem o publica, junto com o
+    caminho ate ele. Por isso a regra olha a subarvore, e nao a linha.
+    """
+    if tabela.empty or not anos:
+        return np.zeros(len(tabela), dtype=bool)
+
+    valores = tabela[anos].to_numpy(dtype=float)
+    propria = np.all(~np.isfinite(valores) | (valores == 0.0), axis=1)
+
+    codigos = tabela["codigo"].astype(str)
+    ancestrais_de_quem_tem_valor: set[str] = set()
+    for codigo, vazia in zip(codigos, propria):
+        if vazia:
+            continue
+        partes = codigo.split(".")
+        for corte in range(1, len(partes)):
+            ancestrais_de_quem_tem_valor.add(".".join(partes[:corte]))
+
+    guarda_filha = codigos.isin(ancestrais_de_quem_tem_valor).to_numpy()
+    return propria & ~guarda_filha
+
+
 def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFrame | None:
-    """Divide so as colunas de ano da arvore; codigo e nivel nao sao valores."""
+    """Divide so as colunas de ano da arvore; codigo e nivel nao sao valores.
+
+    E o **lucro por acao tambem nao e**. Trocar a unidade da demonstracao para
+    R$ milhoes nao muda o que "reais por acao" quer dizer: dividir o R$ 1,44 da
+    WEG por um milhao devolve 0,0 na tela, que e um numero errado com cara de
+    numero pequeno.
+    """
     if detalhe is None or detalhe.empty:
         return detalhe
+    from .cvm import e_conta_por_acao
+
     copia = detalhe.copy()
     anos = [c for c in copia.columns if isinstance(c, int)]
-    copia[anos] = copia[anos] / divisor
+    if "codigo" not in copia.columns:
+        copia[anos] = copia[anos] / divisor
+        return copia
+    na_moeda = ~copia["codigo"].astype(str).map(e_conta_por_acao)
+    copia.loc[na_moeda, anos] = copia.loc[na_moeda, anos] / divisor
     return copia
 
 
@@ -89,11 +135,18 @@ class Demonstracoes:
     # Colunas: codigo, rotulo, demonstracao, nivel e uma por ano.
     detalhe: pd.DataFrame | None = None
 
-    def arvore(self, demonstracao: str | None = None) -> pd.DataFrame:
-        """A demonstracao publicada inteira, na ordem e na hierarquia do plano.
+    def linhas_publicadas(
+        self, demonstracao: str | None = None, ocultar_vazias: bool = False
+    ) -> pd.DataFrame:
+        """A demonstracao publicada com estrutura: codigo, rotulo, nivel e anos.
 
-        O recuo do rotulo vem do nivel do codigo, entao a tabela se le como a
-        demonstracao se le: o pai acima, as filhas abaixo dele, somando de volta.
+        E a mesma coisa que :meth:`arvore` mostra, sem achatar a hierarquia no
+        recuo do rotulo. Quem desenha a tabela precisa do **nivel como numero**
+        para diferenciar total de subtotal e de item folha; ler isso de volta
+        contando espacos no texto seria decodificar o que ja se sabia.
+
+        ``ocultar_vazias`` deixa de fora as linhas que a companhia publica
+        zeradas em todos os anos -- ver :func:`linhas_vazias`.
         """
         if self.detalhe is None or self.detalhe.empty:
             return pd.DataFrame()
@@ -105,6 +158,23 @@ class Demonstracoes:
             return pd.DataFrame()
 
         tabela = tabela.sort_values("ordem")
+        if ocultar_vazias:
+            anos = [c for c in tabela.columns if isinstance(c, int)]
+            tabela = tabela[~linhas_vazias(tabela, anos)]
+        return tabela
+
+    def arvore(
+        self, demonstracao: str | None = None, ocultar_vazias: bool = False
+    ) -> pd.DataFrame:
+        """A demonstracao publicada inteira, na ordem e na hierarquia do plano.
+
+        O recuo do rotulo vem do nivel do codigo, entao a tabela se le como a
+        demonstracao se le: o pai acima, as filhas abaixo dele, somando de volta.
+        """
+        tabela = self.linhas_publicadas(demonstracao, ocultar_vazias)
+        if tabela.empty:
+            return pd.DataFrame()
+
         anos = [c for c in tabela.columns if isinstance(c, int)]
         rotulos = [
             RECUO * (int(nivel) - 1) + str(rotulo)
