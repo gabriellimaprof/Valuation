@@ -207,12 +207,24 @@ class Demonstracoes:
         corrente = s("imposto_corrente").fillna(0)
         diferido = s("imposto_diferido").fillna(0)
         impostos = s("impostos")
-        if (corrente.abs() + diferido.abs()).sum() == 0 and impostos.notna().any():
-            # ``impostos`` (3.08) e guardado com despesa positiva, e o sinal ja
-            # veio da identidade da companhia (ver
-            # ``_corrigir_sinal_dos_impostos``), entao quem teve credito entra
-            # aqui somando -- que e como ele foi publicado.
-            corrente = -impostos.fillna(0)
+
+        # **Vale o par que reconcilia com o total.** A abertura em corrente e
+        # diferido e preferida, mas nao quando ela nao fecha com ``3.08``: no ano
+        # movel a Magalu soma as filhas de tres fontes, e na de 2024 elas vem
+        # **zeradas** com o imposto todo no pai -- a soma perdia R$ 361,3 mi e a
+        # ponte quebrava por essa diferenca exata. A condicao anterior era so
+        # "as duas filhas sao zero", que nao alcanca a mistura de fontes.
+        if impostos.notna().any():
+            abertura = corrente.add(diferido, fill_value=0)
+            total = -impostos.fillna(0)
+            escala = total.abs().replace(0, np.nan)
+            desvio = ((abertura - total).abs() / escala).max()
+            if not np.isfinite(desvio) or desvio > 0.01:
+                # ``impostos`` (3.08) e guardado com despesa positiva, e o sinal
+                # ja veio da identidade da companhia (ver
+                # ``_corrigir_sinal_dos_impostos``), entao quem teve credito
+                # entra aqui somando -- que e como ele foi publicado.
+                corrente, diferido = total, pd.Series(0.0, index=total.index)
 
         # ``LAIR - impostos`` da o resultado das operacoes **continuadas**, e nao
         # o lucro consolidado. Quem teve operacao descontinuada no ano tem os

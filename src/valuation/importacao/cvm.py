@@ -1107,6 +1107,10 @@ def detectar_plano(linhas: list[LinhaCVM]) -> str:
 # ``variacao_capital_giro``. **As 5 unicas companhias em que a decomposicao do
 # FCO nao fechava eram todas do metodo direto** -- a auditoria estava apontando
 # para isto sem que ninguem tivesse ligado a causa.
+# O texto do aviso, num lugar so: a deteccao de troca de metodo no ano
+# movel procura por ele, e duas grafias divergiriam em silencio.
+MARCA_METODO_DIRETO = "metodo direto"
+
 _MARCA_METODO_DIRETO = re.compile(
     r"recebimento[s]? de (consumidor|client)|recebido[s]? de (consumidor|client)",
     re.I,
@@ -1340,7 +1344,7 @@ def montar_demonstracoes(
     metodo_dfc = detectar_metodo_da_dfc(linhas)
     if metodo_dfc == "direto":
         avisos.append(
-            "Esta companhia publica a DFC pelo **metodo direto**, em que os codigos "
+            f"Esta companhia publica a DFC pelo **{MARCA_METODO_DIRETO}**, em que os codigos "
             "de 6.01 nomeiam recebimentos e pagamentos em vez da reconciliacao do "
             "lucro: 6.01.01 e 'Recebimento de Consumidores' e nao 'Caixa Gerado "
             "pelas Operacoes'. Deixei em branco caixa gerado, variacao de capital "
@@ -1719,6 +1723,10 @@ def _linhas_do_itr(
         recorte = recorte[recorte["DT_REFER"].map(_texto) == data_refer]
         if recorte.empty:
             continue
+        # A mesma guarda do anual: linha publicada duas vezes, byte a byte, faz a
+        # regra somada contar as duas. Faltava aqui, e o ITR le os mesmos
+        # arquivos das mesmas companhias.
+        recorte = _sem_linhas_repetidas(recorte, demonstracao)
 
         # Periodo: fica o acumulado, que e a linha mais longa de cada conta.
         if "DT_INI_EXERC" in recorte.columns:
@@ -1744,6 +1752,10 @@ def _linhas_do_itr(
                     demonstracao=demonstracao,
                     escala=_texto(linha.get("ESCALA_MOEDA")),
                     escopo=escopo,
+                    # Sem isto, ``detectar_metodo_da_dfc`` nao ve o ``DFC_MD`` do
+                    # trimestral, e a DFC direta e lida com os codigos do
+                    # indireto -- o mesmo defeito que o anual ja tinha corrigido.
+                    grupo=grupo,
                 )
             )
     return coletadas
@@ -1811,6 +1823,46 @@ def _demonstracoes_do_itr(
         )
     return montar_demonstracoes(
         linhas, empresa=empresa, origem=f"ITR {data_refer} ({ordem})", avisos=avisos
+    )
+
+
+def _avisar_se_a_dre_do_ano_movel_nao_fecha(
+    tabela: pd.DataFrame, rotulo: int, avisos: list[str]
+) -> None:
+    """Confere as identidades da DRE sobre a coluna ja montada do ano movel.
+
+    As correcoes de leitura -- sinal do imposto, lucro dos controladores quando a
+    filha vem zerada -- rodam **por fonte**, e o ano movel combina tres. Uma
+    correcao que fecha em cada parte pode nao fechar na soma, e isso nao e
+    defeito de leitura: e propriedade da aritmetica.
+    """
+    from .importador import Demonstracoes
+
+    try:
+        conferencia = Demonstracoes(
+            empresa="", valores=tabela
+        ).conferir_dre_gerencial()
+    except Exception:
+        return
+    if conferencia.empty or rotulo not in conferencia.columns:
+        return
+
+    quebrados = [
+        str(subtotal)
+        for subtotal, desvio in conferencia[rotulo].items()
+        if np.isfinite(desvio) and desvio > 0.01
+    ]
+    if not quebrados:
+        return
+    avisos.append(
+        "No ano movel, "
+        + ", ".join(quebrados)
+        + " nao fecha com a soma das linhas acima. O ano movel soma tres periodos, "
+        "e quando as partes atribuem diferente -- tipicamente a divisao com "
+        "minoritarios, que muda entre trimestres -- a identidade nao sobrevive a "
+        "soma. Nao da para saber qual atribuicao descreve o periodo movel, entao o "
+        "app avisa em vez de derivar por diferenca: a conta que nao fecha e a "
+        "informacao."
     )
 
 
@@ -1939,6 +1991,44 @@ def importar_ltm(
         f"saldo em {data_refer}, não uma soma."
     ]
     avisos += [a for a in atual.avisos if "ORDEM_EXERC" not in a]
+
+    # **Companhia que troca de metodo da DFC entre o anual e o trimestre nao tem
+    # ano movel para as contas de reconciliacao.** O ano movel e
+    # ``anual + acumulado - mesmo periodo do ano anterior``, e caixa gerado,
+    # variacao de giro e D&A da DFC so existem no metodo indireto: se um dos
+    # lados publica pelo direto, a subtracao nao tem as duas metades e o
+    # resultado sai NaN, calado. Medido entre o DFP de 2024 e o ultimo ITR de
+    # 2025: **6 das 454 companhias trocam**, todas de direto para indireto --
+    # entre elas Santander, BRB e Axia Energia Nordeste.
+    #
+    # A deteccao reusa o aviso que cada lado ja carrega, em vez de refazer a
+    # leitura: um segundo caminho para a mesma pergunta divergiria do primeiro no
+    # dia em que um dos dois mudasse.
+    direto_no_anual = any(MARCA_METODO_DIRETO in a for a in anual.avisos)
+    direto_no_trimestre = any(MARCA_METODO_DIRETO in a for a in atual.avisos)
+    if direto_no_anual != direto_no_trimestre:
+        de, para = (
+            ("direto", "indireto") if direto_no_anual else ("indireto", "direto")
+        )
+        avisos.append(
+            f"A DFC muda de metodo entre o exercicio fechado ({de}) e o trimestre "
+            f"({para}). Caixa gerado pelas operacoes, variacao de capital de giro "
+            "e D&A da DFC so existem no metodo indireto, entao o ano movel dessas "
+            "contas nao tem as duas metades para subtrair e sai vazio. O total do "
+            "operacional, o investimento e o financiamento continuam validos."
+        )
+
+    # **O ano movel e soma de tres periodos, e identidade da DRE nao sobrevive a
+    # soma quando as partes atribuem diferente.** Medido no ITR de 2025: a ponte
+    # fecha em 430 das 454 companhias, e das 24 que sobram **18 quebram no lucro
+    # dos controladores** -- a Melhoramentos de Sao Paulo reconcilia no exercicio
+    # fechado e nao no ano movel, porque a divisao com minoritarios mudou entre
+    # os trimestres.
+    #
+    # Nao da para saber qual das duas atribuicoes descreve o periodo movel, entao
+    # o app **avisa em vez de plugar**: derivar o controlador por diferenca aqui
+    # esconderia que a soma nao fecha, e a conta que nao fecha e a informacao.
+    _avisar_se_a_dre_do_ano_movel_nao_fecha(tabela, rotulo, avisos)
 
     return Demonstracoes(
         empresa=anual.empresa,

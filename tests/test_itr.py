@@ -177,3 +177,143 @@ def test_o_ano_movel_se_junta_a_serie_anual_sem_duplicar_coluna():
     assert len(set(juntas.anos)) == len(juntas.anos), "coluna duplicada"
     assert juntas.valor("receita_liquida", 2025) > juntas.valor("receita_liquida", 2024)
     assert any("exercício social" in aviso for aviso in juntas.avisos)
+
+
+# ---------------------------------------------------------------------------
+# A varredura de qualidade, aplicada ao trimestral
+# ---------------------------------------------------------------------------
+
+
+def test_o_metodo_direto_e_detectado_tambem_no_trimestral():
+    """``grupo`` não viajava na ``LinhaCVM`` do ITR.
+
+    Sem ele ``detectar_metodo_da_dfc`` não vê o ``DFC_MD`` do trimestral, e a DFC
+    direta é lida com os códigos do indireto — o mesmo defeito que o anual já
+    tinha corrigido. Medido no ITR de 2025: a detecção passou de 3 para 12
+    companhias.
+    """
+    from valuation.importacao.cvm import LinhaCVM, detectar_metodo_da_dfc
+
+    def linha(grupo: str) -> LinhaCVM:
+        return LinhaCVM(
+            codigo="6.01.01",
+            descricao="Recebimentos proprios",
+            valor=1.0,
+            ano=2025,
+            demonstracao="dfc",
+            escala="MIL",
+            escopo="con",
+            grupo=grupo,
+        )
+
+    assert detectar_metodo_da_dfc([linha("DFC_MD")]) == "direto"
+    assert detectar_metodo_da_dfc([linha("DFC_MI")]) == "indireto"
+
+
+def test_a_ponte_que_nao_fecha_no_ano_movel_vira_aviso():
+    """O ano móvel soma três períodos, e a identidade não sobrevive à soma.
+
+    Medido no ITR de 2025: a ponte fecha em 430 das 454, e das 24 que sobram
+    **18 quebram no lucro dos controladores** — a Melhoramentos de São Paulo
+    reconcilia no exercício fechado e não no ano móvel, porque a divisão com
+    minoritários mudou entre os trimestres. Não dá para saber qual atribuição
+    descreve o período móvel, então o app avisa em vez de derivar por diferença.
+    """
+    import pandas as pd
+
+    from valuation.importacao.cvm import _avisar_se_a_dre_do_ano_movel_nao_fecha
+
+    quebrada = pd.DataFrame(
+        {
+            2025: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "lucro_bruto": 400.0,
+                "ebit": 200.0,
+                "lucro_antes_impostos": 170.0,
+                "impostos": 50.0,
+                "lucro_liquido": 120.0,
+                # A atribuicao nao fecha: 40 + 0 != 120.
+                "lucro_controladores": 40.0,
+                "lucro_nao_controladores": 0.0,
+            }
+        }
+    )
+    avisos: list[str] = []
+    _avisar_se_a_dre_do_ano_movel_nao_fecha(quebrada, 2025, avisos)
+    assert avisos and "Controladores" in avisos[0]
+    assert "avisa em vez de derivar" in avisos[0]
+
+
+def test_ano_movel_que_fecha_nao_gera_aviso():
+    """Aviso que dispara em quem está certo treina o leitor a ignorar."""
+    import pandas as pd
+
+    from valuation.importacao.cvm import _avisar_se_a_dre_do_ano_movel_nao_fecha
+
+    inteira = pd.DataFrame(
+        {
+            2025: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "lucro_bruto": 400.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "resultado_financeiro": -30.0,
+                "receitas_financeiras": 20.0,
+                "despesas_financeiras": 50.0,
+                "lucro_antes_impostos": 170.0,
+                "imposto_corrente": -40.0,
+                "imposto_diferido": -10.0,
+                "impostos": 50.0,
+                "lucro_liquido": 120.0,
+                "lucro_controladores": 120.0,
+                "lucro_nao_controladores": 0.0,
+            }
+        }
+    )
+    avisos: list[str] = []
+    _avisar_se_a_dre_do_ano_movel_nao_fecha(inteira, 2025, avisos)
+    assert not avisos, avisos
+
+
+def test_a_ponte_prefere_o_par_de_impostos_que_reconcilia():
+    """No ano móvel a abertura vem de fontes diferentes e pode não somar o total.
+
+    Na Magalu, a de 2024 traz ``3.08.01`` e ``3.08.02`` **zerados** com o imposto
+    todo no pai; somar as filhas das três fontes perdia R$ 361,3 mi e a ponte
+    quebrava por essa diferença exata. A condição anterior era só "as duas filhas
+    são zero", que não alcança a mistura de fontes.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    incoerente = Demonstracoes(
+        empresa="Teste",
+        valores=pd.DataFrame(
+            {
+                2025: {
+                    "receita_liquida": 1000.0,
+                    "custo_produtos_vendidos": 600.0,
+                    "lucro_bruto": 400.0,
+                    "ebit": 200.0,
+                    "resultado_financeiro": -30.0,
+                    "receitas_financeiras": 20.0,
+                    "despesas_financeiras": 50.0,
+                    "lucro_antes_impostos": 170.0,
+                    # A abertura soma -10, mas o total diz -50.
+                    "imposto_corrente": -8.0,
+                    "imposto_diferido": -2.0,
+                    "impostos": 50.0,
+                    "lucro_liquido": 120.0,
+                    "lucro_controladores": 120.0,
+                    "lucro_nao_controladores": 0.0,
+                }
+            }
+        ),
+    )
+    conferencia = incoerente.conferir_dre_gerencial()
+    pior = float(np.nanmax(conferencia.to_numpy(dtype=float)))
+    assert pior < 1e-9, conferencia.to_string()

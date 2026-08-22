@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 908 testes
+pytest                        # 912 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -265,6 +265,38 @@ Duas diferenças em relação ao DFP: o `PENÚLTIMO` do ITR **é dado útil** (o
 período do exercício anterior, a metade que falta do ano móvel), e no balanço ele
 é o fim do exercício anterior, não o mesmo trimestre — comparar os dois casaria
 saldo de setembro com saldo de dezembro.
+
+**O ITR nunca tinha passado pela varredura que a DFP passou, e três coisas
+faltavam.** O leitor é o mesmo, mas o caminho do ano móvel nunca fora medido:
+
+| | Antes | Depois |
+|---|---|---|
+| Ponte da DRE fecha (de 454) | 419 | **430** |
+| Método direto detectado | 3 | **12** |
+| Quebras no lucro líquido | 16 | **4** |
+
+- **`grupo` não viajava na `LinhaCVM` do ITR**, então `detectar_metodo_da_dfc`
+  não via o `DFC_MD` do trimestral e a DFC direta era lida com os códigos do
+  indireto — o mesmo defeito que o anual já corrigira.
+- **Faltava a guarda de linha duplicada**, que o anual ganhou.
+- **A ponte preferia a abertura do imposto mesmo quando ela não fecha com o
+  total.** No ano móvel a Magalu soma `3.08.01` e `3.08.02` de três fontes, e na
+  de 2024 elas vêm **zeradas** com o imposto todo no pai: a soma perdia
+  R$ 361,3 mi. A condição era "as duas filhas são zero", que não alcança a
+  mistura de fontes; agora **vale o par que reconcilia**.
+
+**E uma coisa que não se conserta, só se declara.** Das 24 que ainda não fecham,
+**18 quebram no lucro dos controladores**: a Melhoramentos de São Paulo
+reconcilia no exercício fechado e não no ano móvel, porque a divisão com
+minoritários mudou entre os trimestres. Não dá para saber qual atribuição
+descreve o período móvel — derivar por diferença esconderia que a soma não fecha,
+e **a conta que não fecha é a informação**. O app avisa.
+
+Junto, **6 das 454 companhias trocam de método da DFC entre o anual e o
+trimestre** — todas de direto para indireto, entre elas Santander, BRB e Axia
+Energia Nordeste. Caixa gerado, variação de giro e D&A da DFC só existem no
+indireto, então o ano móvel dessas contas não tem as duas metades para subtrair e
+sai vazio. Também vira aviso, em vez de `NaN` calado.
 
 `importar_ltm` monta o ano móvel: `exercício fechado + acumulado − mesmo período
 do ano anterior`, para contas de resultado e de caixa; balanço é o **saldo do
@@ -704,7 +736,7 @@ não é verificação.
 
 ## Estado atual
 
-908 testes passando. Verificado de verdade: contas financeiras, identidades,
+912 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
