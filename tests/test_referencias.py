@@ -83,3 +83,64 @@ def test_a_qualidade_cita_a_posicao_na_base():
 
     assert "percentil" in conversao.detalhe or "5%" in conversao.detalhe
     assert "companhias brasileiras" in conversao.detalhe
+
+
+# ---------------------------------------------------------------------------
+# A safra da medicao
+# ---------------------------------------------------------------------------
+
+
+def test_a_safra_acusa_quando_a_base_publicada_avancou():
+    """``BASE`` é um instantâneo colado: não se atualiza quando sai DFP nova.
+
+    Sem o aviso, o app cita percentis de uma safra antiga **com a mesma aparência
+    de atual** — o pior tipo de número desatualizado é o que não se anuncia.
+    """
+    from valuation.referencias import SafraDaMedicao
+
+    atrasada = SafraDaMedicao(ano_medido=2024, ano_mais_novo=2025, companhias=447)
+    assert atrasada.desatualizada
+    assert atrasada.exercicios_atras == 1
+    assert "1 exercício atrás" in atrasada.resumo()
+
+    dois = SafraDaMedicao(ano_medido=2023, ano_mais_novo=2025, companhias=447)
+    assert "2 exercícios atrás" in dois.resumo()
+
+
+def test_safra_em_dia_nao_vira_alarme():
+    """Alarme que dispara sem motivo treina o leitor a ignorar."""
+    from valuation.referencias import SafraDaMedicao
+
+    em_dia = SafraDaMedicao(ano_medido=2025, ano_mais_novo=2025, companhias=447)
+    assert not em_dia.desatualizada
+    assert em_dia.exercicios_atras == 0
+    assert "mais nova publicada" in em_dia.resumo()
+
+
+def test_sem_dfp_no_cache_nao_ha_o_que_afirmar(tmp_path):
+    """Sem base local não dá para dizer que a medição envelheceu.
+
+    Afirmar assim mesmo seria inventar — e quem nunca baixou nada também não tem
+    com o que comparar.
+    """
+    from valuation.referencias import safra
+
+    assert safra(cache=tmp_path) is None
+
+
+def test_zip_vazio_nao_conta_como_exercicio_publicado(tmp_path):
+    """Em janeiro o arquivo do exercício já existe e não tem companhia nenhuma.
+
+    Contá-lo faria a tela anunciar atraso por um exercício que ainda não saiu —
+    é a mesma armadilha de ``_itr_vazio``, e o custo de errar é o mesmo.
+    """
+    import zipfile
+
+    from valuation.pares import _anos_de_dfp_no_cache
+
+    for ano, conteudo in ((2024, "x" * 5000), (2025, "CNPJ_CIA;DT_REFER\n")):
+        caminho = tmp_path / f"dfp_cia_aberta_{ano}.zip"
+        with zipfile.ZipFile(caminho, "w") as zf:
+            zf.writestr(f"dfp_cia_aberta_DRE_con_{ano}.csv", conteudo)
+
+    assert _anos_de_dfp_no_cache(tmp_path) == [2024]

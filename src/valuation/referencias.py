@@ -52,6 +52,8 @@ descrevia uma leitura que hoje se sabe incompleta.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
 
@@ -63,6 +65,64 @@ MEDIDO_EM = (
     "companhia zera 3.11.01"
 )
 COMPANHIAS_MEDIDAS = 447
+
+# O ultimo exercicio que entrou na medicao, em forma de numero e nao de prosa.
+# ``BASE`` e um instantaneo **colado**: ela nao se atualiza quando sai DFP nova,
+# e nada na tela dizia isso. O app passava a citar percentis de uma safra antiga
+# com a mesma aparencia de atual, que e o pior tipo de numero desatualizado --
+# o que nao se anuncia. Ao regenerar ``BASE``, atualize tambem esta linha.
+ANO_MAIS_RECENTE_MEDIDO = 2024
+
+
+def safra(cache=None):
+    """Se os percentis citados ainda descrevem a base publicada.
+
+    Devolve ``None`` quando nao ha DFP no cache para comparar -- sem base local
+    nao ha como afirmar que a medicao envelheceu, e afirmar assim mesmo seria
+    inventar.
+    """
+    from .pares import _anos_de_dfp_no_cache
+
+    disponiveis = _anos_de_dfp_no_cache(cache)
+    if not disponiveis:
+        return None
+    mais_novo = disponiveis[-1]
+    return SafraDaMedicao(
+        ano_medido=ANO_MAIS_RECENTE_MEDIDO,
+        ano_mais_novo=mais_novo,
+        companhias=COMPANHIAS_MEDIDAS,
+    )
+
+
+@dataclass(frozen=True)
+class SafraDaMedicao:
+    """A idade dos percentis que a tela cita."""
+
+    ano_medido: int
+    ano_mais_novo: int
+    companhias: int
+
+    @property
+    def desatualizada(self) -> bool:
+        return self.ano_mais_novo > self.ano_medido
+
+    @property
+    def exercicios_atras(self) -> int:
+        return max(0, self.ano_mais_novo - self.ano_medido)
+
+    def resumo(self) -> str:
+        if not self.desatualizada:
+            return (
+                f"Percentis medidos em {self.companhias} companhias, exercício "
+                f"{self.ano_medido} — a safra mais nova publicada."
+            )
+        plural = "exercícios" if self.exercicios_atras > 1 else "exercício"
+        return (
+            f"**Os percentis estão {self.exercicios_atras} {plural} atrás.** Eles "
+            f"foram medidos até {self.ano_medido} e a CVM já publicou "
+            f"{self.ano_mais_novo}. A comparação continua útil como ordem de "
+            "grandeza, mas o número exato descreve a base antiga."
+        )
 
 QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 

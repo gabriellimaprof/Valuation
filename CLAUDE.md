@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 917 testes
+pytest                        # 925 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -748,7 +748,7 @@ não é verificação.
 
 ## Estado atual
 
-917 testes passando. Verificado de verdade: contas financeiras, identidades,
+925 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1176,9 +1176,21 @@ Em ordem de valor:
    que os dados não alcançam e o campo do analista em branco. Ameaça de
    substitutos aparece **sem nenhum número** — omiti-la faria parecer que a
    pergunta não existe.
-9. **A projeção não modela adições de arrendamento** (ver acima), e o universo
-   de pares precisa ser reconstruído quando sai DFP nova — não há detecção
-   automática.
+9. **O universo de pares e os percentis avisam quando ficam para trás.** Eles são
+   construídos uma vez e lidos muitas, e não se atualizam sozinhos: quando sai
+   DFP nova o app passava a comparar contra uma base antiga **com a mesma
+   aparência de atual**, que é o pior tipo de número desatualizado — o que não se
+   anuncia. `pares.safra_do_universo` e `referencias.safra` comparam a safra com
+   os exercícios já baixados no cache, e a aba de qualidade mostra a idade.
+
+   A verificação olha o **cache e não o portal**: ela roda a cada abertura de
+   tela, e por um alerta de safra não se põe a rede no caminho crítico. E **zip
+   vazio não conta** — em janeiro o arquivo do exercício já existe sem companhia
+   nenhuma, e contá-lo anunciaria atraso por um exercício que ainda não saiu. É
+   a mesma armadilha de `_itr_vazio`.
+
+   Ao escrever isto, a própria medição estava **um exercício atrás**: `BASE` vai
+   até 2024 e a CVM já publicou 2025, com 437 companhias.
 
 ## Como trabalhar neste projeto
 

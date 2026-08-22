@@ -108,10 +108,37 @@ def test_o_veredito_e_o_pior_sinal_e_a_tela_diz_isso(weg):
         assert qualidade.veredito == pior
 
 
-def test_os_cortes_sao_apresentados_como_convencao(weg):
-    """Nao calibrados contra a base da CVM -- e a tela nao pode esconder isso."""
+def test_os_cortes_sao_apresentados_como_quartis_medidos(weg):
+    """Este teste travava uma afirmação que deixou de ser verdade.
+
+    A legenda dizia "90% e 60% de conversão, 2 p.p. de descolamento no juro,
+    convenções calibradas na mão e ainda não medidas contra a base". Os três
+    números mudaram — os cortes viraram os quartis da base, e o de juro só foi
+    calibrado porque 2 p.p. acusava **82,3%** das companhias. Um teste que pina
+    texto velho o mantém vivo.
+    """
+    from valuation.qualidade import CONVERSAO_BOA, CONVERSAO_FRACA
+
     teste = _rodar(weg)
-    assert any("convenções de leitura" in c.value for c in teste.caption)
+    legendas = " ".join(c.value for c in teste.caption)
+    assert "quartis medidos" in legendas, legendas
+    assert "convenções de leitura" not in legendas
+    # E os números citados são os que o motor usa, e não literais no texto.
+    assert f"{CONVERSAO_FRACA * 100:.1f}".replace(".", ",") in legendas
+    assert f"{CONVERSAO_BOA * 100:.1f}".replace(".", ",") in legendas
+
+
+def test_a_tela_diz_a_idade_dos_percentis_que_cita(weg):
+    """``referencias.BASE`` é um instantâneo colado: não se atualiza sozinha.
+
+    Sem este aviso o app cita percentis de uma safra antiga com a mesma aparência
+    de atual — o pior tipo de número desatualizado é o que não se anuncia.
+    """
+    teste = _rodar(weg)
+    texto = " ".join(
+        [c.value for c in teste.caption] + [w.value for w in teste.warning]
+    )
+    assert "Percentis medidos" in texto or "percentis estão" in texto, texto
 
 
 # ---------------------------------------------------------------------------

@@ -434,11 +434,41 @@ def _qualidade(analise) -> None:
             if np.isfinite(sinal.valor):
                 st.caption(f"Medido: {formatar(sinal.valor, 'pct2')}")
 
+    # Este texto dizia que os cortes eram "90% e 60% de conversao, 2 p.p. de
+    # descolamento no juro, convencoes calibradas na mao e ainda nao medidas
+    # contra a base". Os tres numeros mudaram e a afirmacao ficou falsa: os
+    # cortes sao os quartis da base, e o de juro so foi calibrado porque o de
+    # 2 p.p. acusava 82,3% das companhias.
+    from valuation.qualidade import CONVERSAO_BOA, CONVERSAO_FRACA, JURO_DESCOLADO
+
     st.caption(
-        "Os cortes (90% e 60% de conversão, 2 p.p. de descolamento no juro) são "
-        "convenções de leitura, calibradas na mão e ainda não medidas contra a base "
-        "inteira da CVM. Servem para dirigir atenção, não para decidir."
+        f"Os cortes de conversão ({formatar(CONVERSAO_FRACA, 'pct')} e "
+        f"{formatar(CONVERSAO_BOA, 'pct')}) e o de descolamento do juro "
+        f"({formatar(JURO_DESCOLADO, 'pct')}) são os **quartis medidos** na "
+        "base da CVM, e não convenção de mercado. Servem para dirigir atenção, "
+        "não para decidir."
     )
+    _safra_dos_percentis()
+
+
+
+def _safra_dos_percentis() -> None:
+    """A idade dos percentis que esta aba cita.
+
+    ``referencias.BASE`` é um instantâneo **colado**: ela não se atualiza quando
+    sai DFP nova. Sem este aviso, o app cita percentis de uma safra antiga com a
+    mesma aparência de atual — que é o pior tipo de número desatualizado, o que
+    não se anuncia.
+    """
+    from valuation import referencias
+
+    safra = referencias.safra()
+    if safra is None:
+        return
+    if safra.desatualizada:
+        st.warning(safra.resumo())
+    else:
+        st.caption(safra.resumo())
 
 
 COMPOSICOES = (

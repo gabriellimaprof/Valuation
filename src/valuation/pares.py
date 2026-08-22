@@ -432,3 +432,104 @@ def universo_mais_proximo(anos: list[int]) -> tuple[Universo, list[int]] | None:
     )
     anos_do_universo, caminho = escolhido
     return carregar_universo(anos_do_universo, caminho=caminho), anos_do_universo
+
+
+# Um CSV com so o cabecalho tem algumas centenas de bytes. O corte e folgado
+# de proposito: o objetivo e separar 'vazio' de 'publicado', e nao medir.
+TAMANHO_DE_ARQUIVO_VAZIO = 2_000
+
+
+@dataclass(frozen=True)
+class SafraDoUniverso:
+    """Se o universo de comparaveis ainda descreve a base de hoje.
+
+    O universo e construido uma vez e lido muitas. Quando sai DFP nova ele nao
+    se atualiza sozinho -- e como nada avisa, o app passa a comparar a companhia
+    contra uma base de dois anos atras **com a mesma aparencia de atual**. As
+    referencias de ``referencias.py`` saem dele, entao a safra velha contamina
+    tambem os percentis que a tela cita.
+    """
+
+    anos: list[int]
+    construido_em: str
+    ano_mais_novo_disponivel: int | None
+    caminho: Path
+
+    @property
+    def desatualizado(self) -> bool:
+        if self.ano_mais_novo_disponivel is None or not self.anos:
+            return False
+        return self.ano_mais_novo_disponivel > self.anos[-1]
+
+    @property
+    def exercicios_atras(self) -> int:
+        if not self.desatualizado:
+            return 0
+        return int(self.ano_mais_novo_disponivel) - int(self.anos[-1])
+
+    def resumo(self) -> str:
+        periodo = f"{self.anos[0]}–{self.anos[-1]}" if self.anos else "desconhecido"
+        if not self.desatualizado:
+            return (
+                f"Universo de {periodo}, construído em {self.construido_em}. "
+                "É a safra mais nova disponível."
+            )
+        plural = "exercícios" if self.exercicios_atras > 1 else "exercício"
+        return (
+            f"**O universo de comparáveis está {self.exercicios_atras} {plural} "
+            f"atrás.** Ele cobre {periodo} e a CVM já publicou "
+            f"{self.ano_mais_novo_disponivel}. Os pares e os percentis que a tela "
+            "cita saem daqui, então continuam descrevendo a base antiga — "
+            "reconstrua com `python -m valuation.pares`."
+        )
+
+
+def _anos_de_dfp_no_cache(cache: Path | None = None) -> list[int]:
+    """Exercicios com zip de DFP ja baixado.
+
+    Olha o cache e nao o portal: a verificacao roda a cada abertura de tela, e
+    por um alerta de safra nao se coloca a rede no caminho critico. Quem nunca
+    baixou nada tambem nao tem universo para comparar.
+    """
+    pasta = Path(cache) if cache else Path.home() / ".cache" / "valuation" / "cvm"
+    if not pasta.exists():
+        return []
+    import zipfile
+
+    anos = []
+    for arquivo in pasta.glob("dfp_cia_aberta_*.zip"):
+        rotulo = arquivo.stem.split("_")[-1]
+        if not rotulo.isdigit():
+            continue
+        # **Zip vazio nao conta.** Em janeiro o arquivo do exercicio ja existe e
+        # nao tem companhia nenhuma; conta-lo faria a tela anunciar que o
+        # universo esta atrasado por um exercicio que ainda nao foi publicado.
+        # E a mesma armadilha de ``_itr_vazio``, e o custo de errar e o mesmo:
+        # alarme que dispara sem motivo treina o leitor a ignorar.
+        try:
+            with zipfile.ZipFile(arquivo) as zf:
+                nome = f"dfp_cia_aberta_DRE_con_{rotulo}.csv"
+                if nome not in zf.namelist():
+                    continue
+                if zf.getinfo(nome).file_size <= TAMANHO_DE_ARQUIVO_VAZIO:
+                    continue
+        except (OSError, zipfile.BadZipFile):
+            continue
+        anos.append(int(rotulo))
+    return sorted(anos)
+
+
+def safra_do_universo(anos: list[int], cache: Path | None = None) -> SafraDoUniverso | None:
+    """Quando o universo foi construido, e se ja ficou para tras."""
+    from datetime import date
+
+    caminho = caminho_do_universo(sorted(anos))
+    if not caminho.exists():
+        return None
+    disponiveis = _anos_de_dfp_no_cache(cache)
+    return SafraDoUniverso(
+        anos=sorted(anos),
+        construido_em=date.fromtimestamp(caminho.stat().st_mtime).isoformat(),
+        ano_mais_novo_disponivel=disponiveis[-1] if disponiveis else None,
+        caminho=caminho,
+    )

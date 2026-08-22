@@ -262,3 +262,61 @@ def test_perfil_de_usa_mediana_e_nao_ultimo_ano():
     )
     perfil = perfil_de(analisar(Demonstracoes(empresa="X", valores=valores)))
     assert perfil["Margem EBITDA"] == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------------------
+# A safra do universo de comparaveis
+# ---------------------------------------------------------------------------
+
+
+def test_o_universo_avisa_quando_fica_para_tras():
+    """Ele é construído uma vez e lido muitas, e não se atualiza sozinho.
+
+    Quando sai DFP nova o app passa a comparar a companhia contra uma base de
+    dois anos atrás **com a mesma aparência de atual** — e as referências saem
+    dele, então a safra velha contamina os percentis que a tela cita.
+    """
+    from pathlib import Path
+
+    from valuation.pares import SafraDoUniverso
+
+    atrasado = SafraDoUniverso(
+        anos=[2020, 2021, 2022, 2023, 2024],
+        construido_em="2026-08-19",
+        ano_mais_novo_disponivel=2025,
+        caminho=Path("perfis.csv"),
+    )
+    assert atrasado.desatualizado
+    assert atrasado.exercicios_atras == 1
+    assert "1 exercício atrás" in atrasado.resumo()
+    assert "python -m valuation.pares" in atrasado.resumo()
+
+
+def test_universo_na_safra_mais_nova_nao_alarma():
+    from pathlib import Path
+
+    from valuation.pares import SafraDoUniverso
+
+    em_dia = SafraDoUniverso(
+        anos=[2021, 2022, 2023, 2024, 2025],
+        construido_em="2026-08-22",
+        ano_mais_novo_disponivel=2025,
+        caminho=Path("perfis.csv"),
+    )
+    assert not em_dia.desatualizado
+    assert "safra mais nova" in em_dia.resumo()
+
+
+def test_sem_dfp_no_cache_o_universo_nao_e_julgado():
+    """Sem base local não há como afirmar que ele envelheceu."""
+    from pathlib import Path
+
+    from valuation.pares import SafraDoUniverso
+
+    sem_referencia = SafraDoUniverso(
+        anos=[2020, 2024],
+        construido_em="2026-08-19",
+        ano_mais_novo_disponivel=None,
+        caminho=Path("perfis.csv"),
+    )
+    assert not sem_referencia.desatualizado
