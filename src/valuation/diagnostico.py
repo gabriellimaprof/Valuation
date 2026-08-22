@@ -84,10 +84,15 @@ CONVERSAO_CAIXA_BAIXA = 0.15
 #
 # Era 0,02, e disparava em **82,3% das 368 companhias** que publicam os dois
 # numeros: a linha 3.06.02 da CVM junta variacao cambial e monetaria de todo o
-# passivo, entao a mediana brasileira ja descola 8,2 p.p. sem nada de anormal.
-# O corte agora e o P75 observado (16,9 p.p.), o que reserva o achado para o
-# quartil que de fato destoa. Ver ``referencias.DESCOLAMENTO_DO_JURO``.
-JUROS_CAPITALIZADOS = 0.169
+# passivo, entao a mediana brasileira ja descola sem nada de anormal.
+#
+# O corte e o **P75 da safra corrente**, e ele se move: em 2020-2024 era 16,9
+# p.p., e em 2021-2025 e **10,0 p.p.** A distribuicao encolheu quando 2020 saiu
+# da janela -- ano de desvalorizacao forte do real -- e as correcoes de leitura
+# do juro pago entraram. Mantido o corte antigo, ele acusaria 4,2% da amostra
+# nova, e o de severidade alta acusaria **zero**: sinal que nunca dispara e tao
+# inutil quanto o que dispara sempre. Ver ``referencias.DESCOLAMENTO_DO_JURO``.
+JUROS_CAPITALIZADOS = 0.100
 # A partir daqui o arrendamento deixa de ser detalhe da divida e passa a mudar a
 # leitura do EBITDA e da alavancagem. Em Petrobras chega a metade.
 #

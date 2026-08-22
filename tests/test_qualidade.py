@@ -73,12 +73,21 @@ def test_conversao_baixa_com_crescimento_e_so_atencao():
 
 
 def test_juro_que_nao_sai_do_caixa_e_atencao():
-    """Descolamento acima do P75 da base, com Kd ainda plausivel."""
+    """Descolamento entre o P75 e o P90 da base, com Kd ainda plausivel.
+
+    Os dois cortes se movem entre safras -- o P75 caiu de 16,9 para 10,0 p.p. de
+    2020-2024 para 2021-2025 --, entao o caso e montado **a partir deles** e nao
+    de um numero fixo. Com 0,22 fixo, este teste virou "ruim" sozinho quando a
+    calibracao mudou, sem que nada estivesse errado.
+    """
+    from valuation.qualidade import JURO_DESCOLADO, JURO_MUITO_DESCOLADO
+
+    entre_os_dois = (JURO_DESCOLADO + JURO_MUITO_DESCOLADO) / 2
     q = avaliar_qualidade(
         _analise(
             **{
                 "Conversao de caixa (FCO / EBITDA)": 1.0,
-                "Custo da divida efetivo": 0.22,
+                "Custo da divida efetivo": 0.03 + entre_os_dois,
                 "Custo da divida pelo caixa": 0.03,
             }
         )
@@ -91,24 +100,33 @@ def test_juro_que_nao_sai_do_caixa_e_atencao():
 
 
 def test_descolamento_normal_do_mercado_nao_vira_acusacao():
-    """A mediana brasileira descola 8,2 p.p.; isso nao pode acusar ninguem.
+    """A mediana brasileira descola alguns pontos; isso nao pode acusar ninguem.
 
-    O corte anterior era 2 p.p. e disparava em 82,3% das 368 companhias que
+    O corte original era 2 p.p. e disparava em 82,3% das 368 companhias que
     publicam os dois numeros. Sinal que dispara em quatro de cada cinco nao
     dirige atencao: gasta ela.
+
+    **A mediana se move entre safras**, e o teste nao pode pinar o numero: em
+    2020-2024 era 8,2 p.p. e em 2021-2025 e 5,9. O que ele trava e a propriedade
+    -- descolamento na mediana da base nao acusa -- e o fato de a frase citar a
+    referencia, sem a qual o leitor toma o normal do mercado por irregularidade.
     """
+    from valuation.referencias import DESCOLAMENTO_DO_JURO, DESCOLAMENTO_QUANTIS
+
+    mediana = DESCOLAMENTO_DO_JURO[1][DESCOLAMENTO_QUANTIS.index(0.50)]
     q = avaliar_qualidade(
         _analise(
             **{
                 "Conversao de caixa (FCO / EBITDA)": 1.0,
-                "Custo da divida efetivo": 0.14,
+                "Custo da divida efetivo": 0.06 + mediana,
                 "Custo da divida pelo caixa": 0.06,
             }
         )
     )
     juros = next(s for s in q.sinais if s.codigo == "juros")
     assert juros.veredito == BOM
-    assert "8,2 p.p." in juros.detalhe
+    assert f"{mediana * 100:.1f}".replace(".", ",") in juros.detalhe
+    assert f"{DESCOLAMENTO_DO_JURO[0]} companhias" in juros.detalhe
 
 
 def test_despesa_financeira_alta_demais_nao_e_medivel():

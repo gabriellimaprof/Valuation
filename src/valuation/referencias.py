@@ -144,10 +144,21 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
 # todo o passivo, nao so juro. Um corte em 2 p.p. -- que era o do app -- acusa
 # 82,3% da base, e sinal que dispara em quatro de cada cinco companhias nao e
 # sinal. Os cortes agora sao os quartis observados.
-# **Esta linha ainda e da safra 2020-2024**, e nao foi remedida junto com
-# ``BASE``. Fica declarado porque safra parcial que se apresenta como inteira e
-# exatamente o problema que ``safra()`` existe para evitar.
-DESCOLAMENTO_DO_JURO = (368, (-0.006, 0.036, 0.082, 0.169, 0.345, 0.633))
+# Medido na safra 2021-2025, nas 260 companhias que publicam os dois juros **e**
+# tem denominador que significa custo de credito -- 90 ficam de fora por Kd acima
+# de ``KD_MAXIMO_PLAUSIVEL`` e 85 por nao abrirem juro pago.
+#
+# A distribuicao **encolheu** em relacao a 2020-2024: a mediana caiu de 8,2 para
+# 5,9 p.p. e o P90 de 34,5 para 13,8. Duas causas plausiveis, e nenhuma medida
+# em separado: 2020 saiu da janela -- foi ano de desvalorizacao forte do real, e
+# a linha 3.06.02 carrega variacao cambial de todo o passivo -- e as correcoes de
+# leitura do juro pago entraram.
+#
+# O efeito nos cortes antigos e que eles **pararam de disparar**: 16,9 p.p.
+# acusava 4,2% da amostra nova e 34,5 p.p. acusava **zero**. Sinal que nunca
+# dispara e tao inutil quanto o que dispara sempre, que foi o problema oposto do
+# corte original de 2 p.p. (82,3%).
+DESCOLAMENTO_DO_JURO = (260, (-0.001, 0.026, 0.059, 0.100, 0.138, 0.160))
 DESCOLAMENTO_QUANTIS = (0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 def tabela() -> pd.DataFrame:

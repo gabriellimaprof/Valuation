@@ -55,8 +55,8 @@ CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 #
 # Os cortes agora sao o P75 (16,9 p.p.) e o P90 (34,5 p.p.) medidos em 368
 # companhias -- ver ``referencias.DESCOLAMENTO_DO_JURO``.
-JURO_DESCOLADO = 0.169
-JURO_MUITO_DESCOLADO = 0.345
+JURO_DESCOLADO = 0.100
+JURO_MUITO_DESCOLADO = 0.138
 # Acima disto, o resultado depende demais de coligada que nao gera caixa aqui.
 EQUIVALENCIA_RELEVANTE = 0.20
 
@@ -225,7 +225,7 @@ def _juros(analise: AnaliseHistorica) -> Sinal:
     # A mediana brasileira descola 8,2 p.p., entao a frase precisa dizer isso:
     # sem a referencia, o leitor toma o normal do mercado por irregularidade.
     normal = (
-        " A mediana de 368 companhias brasileiras descola 8,2 p.p., porque a linha "
+        " A mediana de 260 companhias brasileiras descola 5,9 p.p., porque a linha "
         "de despesa financeira da CVM junta variação cambial e monetária de todo o "
         "passivo — descolar não é, por si, sinal de nada."
     )

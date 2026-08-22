@@ -243,14 +243,37 @@ da correção da D&A; depois dela, ainda 30%; a padronização do juro derrubou 
 mediana de 64% para 54%; e trazer a D&A da DFC subiu o EBITDA da cauda, o que
 baixou a conversão de 53,9% para 51,4% e o P75 de 77,6% para 75,5%.
 
-**Corte de leitura sem medição vira ruído.** O sinal de juro descolado usava
-2 p.p. de diferença entre a despesa financeira da DRE e o juro pago da DFC.
-Medido em 368 companhias: **a mediana brasileira descola 8,2 p.p.**, porque a
-linha `3.06.02` junta variação cambial e monetária de todo o passivo. O corte
-antigo acusava **82,3% da base** — sinal que dispara em quatro de cada cinco não
-dirige atenção, gasta. Os cortes agora são o P75 (16,9 p.p.) e o P90 (34,5 p.p.),
-e acima de `KD_MAXIMO_PLAUSIVEL` o sinal se recusa a medir: com pouca dívida, a
-razão deixa de ser custo de dívida (WEG dá 45%). Ver `referencias.py`.
+**Corte de leitura sem medição vira ruído — e a medição envelhece.** O sinal de
+juro descolado usava 2 p.p. de diferença entre a despesa financeira da DRE e o
+juro pago da DFC, e isso acusava **82,3% da base**: a linha `3.06.02` junta
+variação cambial e monetária de todo o passivo, então a mediana brasileira
+descola sem nada de anormal. Sinal que dispara em quatro de cada cinco não dirige
+atenção, gasta.
+
+Recalibrado para os quartis, o corte passou a acertar — **e depois errou para o
+outro lado**, sozinho, quando a safra mudou:
+
+| | 2020-2024 (n=368) | 2021-2025 (n=260) |
+|---|---|---|
+| Mediana | 8,2 p.p. | **5,9 p.p.** |
+| P75 → `JURO_DESCOLADO` | 16,9 p.p. | **10,0 p.p.** |
+| P90 → `JURO_MUITO_DESCOLADO` | 34,5 p.p. | **13,8 p.p.** |
+
+Mantidos os cortes antigos, o primeiro acusaria **4,2%** da amostra nova e o
+segundo, **zero**. Sinal que nunca dispara é tão inútil quanto o que dispara
+sempre — é o mesmo defeito, do lado oposto. Duas causas plausíveis para o
+encolhimento, nenhuma medida em separado: **2020 saiu da janela** (ano de
+desvalorização forte do real) e as correções de leitura do juro pago entraram.
+
+Acima de `KD_MAXIMO_PLAUSIVEL` o sinal se recusa a medir: com pouca dívida a
+razão deixa de ser custo de dívida (WEG dá 45%). São 90 das 435 companhias
+excluídas por isso, e 85 por não abrirem juro pago.
+
+**Os testes deixaram de pinar os números.** Dois deles travavam `8,2 p.p.` e
+`0,22` como literais, e viraram falha sozinhos quando a calibração mudou sem que
+nada estivesse errado. Agora montam o caso **a partir das constantes** — o que
+se trava é a propriedade (descolamento na mediana não acusa; entre P75 e P90 é
+atenção), não o valor da safra.
 
 **O ITR tem uma pegadinha própria, e ela é de período.** Para `DT_REFER` de
 30/09, a DRE traz **duas linhas da mesma conta**: o acumulado do exercício
