@@ -30,6 +30,12 @@ from .leitura import Grade, carregar_abas, linhas_da_grade, localizar_grade
 
 CONFIANCA_MINIMA = 0.6
 
+# Abaixo disto -- receita sobre lucro, em modulo -- a demonstracao e de holding e
+# nao de operacao. Medido no consolidado de 2024: pega 11 das 467 companhias
+# (2,4%), o que e sinal dirigido; a 20% ja entram empresas em recuperacao com
+# receita encolhida, que e outro caso e pede outro texto.
+HOLDING_SEM_RECEITA = 0.10
+
 # Recuo da arvore publicada. E o espaco de figura (U+2007), e nao o comum:
 # o espaco normal colapsa quando o rotulo e renderizado como HTML, e a
 # hierarquia -- que e a informacao -- desapareceria na tela.
@@ -788,6 +794,36 @@ def _conferir(demonstracoes_valores: pd.DataFrame, avisos: list[str]) -> None:
     receita = serie("receita_liquida")
     if receita is not None and (receita.dropna() < 0).any():
         avisos.append("Ha receita liquida negativa; confira o sinal da planilha de origem.")
+
+    # **Demonstracao sem receita operacional e de holding**, e ali margem, giro e
+    # capex sobre receita nao querem dizer nada -- o resultado vem de
+    # equivalencia patrimonial. Medido no consolidado de 2024: com o corte em
+    # 10% do lucro, 11 companhias das 467 (2,4%), entre elas BB Seguridade e
+    # Caixa Seguridade. Um corte mais largo pegaria empresa em recuperacao com
+    # receita encolhida, que e outro caso.
+    lucro = serie("lucro_liquido")
+    if lucro is not None:
+        ultimo_lucro = lucro.dropna()
+        # Receita **ausente** conta como zero aqui, e nao como "nao da para
+        # saber": e o caso da BB Seguridade, que da lucro de R$ 8,7 bi sem
+        # nenhuma linha de receita reconhecida.
+        ultima_receita = receita.dropna() if receita is not None else None
+        if not ultimo_lucro.empty:
+            r = (
+                abs(float(ultima_receita.iloc[-1]))
+                if ultima_receita is not None and not ultima_receita.empty
+                else 0.0
+            )
+            l = abs(float(ultimo_lucro.iloc[-1]))
+            if l > 0 and r <= l * HOLDING_SEM_RECEITA:
+                avisos.append(
+                    "Esta demonstracao quase nao tem receita operacional e mesmo "
+                    "assim da lucro: e o formato de **holding**, em que o "
+                    "resultado vem de equivalencia patrimonial das investidas. "
+                    "Margem, giro e capex sobre receita nao descrevem nada aqui, "
+                    "e o FCFF projetado a partir de margem tambem nao. Se voce "
+                    "queria a operacao, procure a demonstracao consolidada."
+                )
 
     # A DFC tem uma identidade propria, e ela e o teste mais direto de que as
     # secoes foram classificadas certo: se capex caiu no financiamento ou os

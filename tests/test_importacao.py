@@ -434,3 +434,68 @@ def test_grade_e_localizada_com_ruido_no_topo(terminal):
     assert grade is not None
     assert grade.anos == ANOS
     assert grade.coluna_rotulos == 0
+
+
+# ---------------------------------------------------------------------------
+# Demonstracao de holding: sem receita operacional
+# ---------------------------------------------------------------------------
+
+
+def _conferido(**contas) -> list[str]:
+    """Roda ``_conferir`` sobre um quadro montado a mão e devolve os avisos."""
+    import pandas as pd
+
+    from valuation.importacao.importador import _conferir
+
+    avisos: list[str] = []
+    _conferir(pd.DataFrame({2024: contas}), avisos)
+    return avisos
+
+
+def test_demonstracao_sem_receita_com_lucro_e_de_holding():
+    """Margem, giro e capex sobre receita não descrevem nada aqui.
+
+    O resultado vem de equivalência patrimonial das investidas. Medido no
+    consolidado de 2024, o corte em 10% do lucro pega 11 das 467 companhias —
+    entre elas BB Seguridade (lucro de R$ 8,7 bi **sem nenhuma linha de
+    receita**) e Caixa Seguridade.
+    """
+    avisos = _conferido(receita_liquida=0.0, lucro_liquido=3_765_000_000.0)
+    assert any("holding" in a for a in avisos), avisos
+
+
+def test_receita_ausente_conta_como_zero():
+    """Não é "não dá para saber": é o caso mais forte do mesmo sinal.
+
+    A BB Seguridade dá lucro de R$ 8,7 bi sem nenhuma linha de receita
+    reconhecida, e tratar isso como dado faltante deixaria passar justamente a
+    companhia em que o aviso mais importa.
+    """
+    avisos = _conferido(lucro_liquido=8_703_000_000.0)
+    assert any("holding" in a for a in avisos), avisos
+
+
+def test_operacao_de_verdade_nao_dispara_o_sinal():
+    """Sinal que dispara em quem opera não dirige atenção, gasta.
+
+    A Itaúsa tem lucro maior que a receita e **não** entra: o consolidado dela
+    tem R$ 8,2 bi de receita de verdade, das controladas operacionais. Ela é
+    coberta pelo sinal de item não recorrente, que é outro assunto.
+    """
+    assert not any(
+        "holding" in a
+        for a in _conferido(
+            receita_liquida=8_235_000_000.0, lucro_liquido=14_887_000_000.0
+        )
+    )
+    assert not any(
+        "holding" in a
+        for a in _conferido(
+            receita_liquida=37_986_941_000.0, lucro_liquido=6_318_800_000.0
+        )
+    )
+
+
+def test_sem_lucro_nao_ha_o_que_afirmar():
+    """Companhia sem receita e sem lucro não é holding — é papel em branco."""
+    assert not any("holding" in a for a in _conferido(receita_liquida=0.0, lucro_liquido=0.0))

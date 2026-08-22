@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 904 testes
+pytest                        # 908 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -506,6 +506,21 @@ aluguel saiu dessa linha e virou depreciação mais juros; sobra ali o
 arrendamento de curto prazo e de baixo valor, que a norma dispensa. Usá-la na
 leitura ex-IFRS 16 subestimaria o aluguel em cerca de 80%. Há teste travando.
 
+**Demonstração sem receita operacional é de holding, e ali margem não quer dizer
+nada.** Receita ~zero com lucro relevante significa resultado vindo de
+equivalência patrimonial das investidas — margem, giro e capex sobre receita não
+descrevem coisa alguma, e um FCFF projetado a partir de margem também não. O
+corte é `|receita| ≤ 10% do |lucro|`, medido: pega **11 das 467 companhias
+(2,4%)**, entre elas BB Seguridade (lucro de R$ 8,7 bi **sem nenhuma linha de
+receita**) e Caixa Seguridade. A 20% já entrariam empresas em recuperação com
+receita encolhida, que é outro caso e pede outro texto.
+
+Receita **ausente** conta como zero ali, e não como "não dá para saber" — é o
+caso mais forte do mesmo sinal, e tratá-la como dado faltante deixaria passar
+justamente a companhia em que o aviso mais importa. A Itaúsa **não** dispara: o
+consolidado dela tem R$ 8,2 bi de receita de verdade, das controladas
+operacionais, e ela é coberta pelo sinal de item não recorrente.
+
 **Lucro líquido acima do lucro bruto é contábil, e é um sinal.** Reversão de
 impairment, venda de ativo, ganho tributário e ganho judicial entram na DRE **do
 SG&A para baixo** e podem levar EBIT, LAIR e lucro líquido acima do lucro bruto.
@@ -689,7 +704,7 @@ não é verificação.
 
 ## Estado atual
 
-904 testes passando. Verificado de verdade: contas financeiras, identidades,
+908 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -733,6 +748,18 @@ código não existe naquele arquivo.
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
 3. Do ITR, só o **consolidado** é lido, e o ano móvel exige o exercício anterior
    fechado — companhia que abriu capital há menos de um ano não o tem.
+
+   **Ler o consolidado não é limitação, é a escolha certa — e agora medida.**
+   Das 467 companhias de 2024, **462 publicam os dois escopos**, e a individual é
+   outra entidade: a receita individual é **0,40x a consolidada na mediana**,
+   fica abaixo de 10% dela em **173 companhias** e é **zero** em boa parte. Na
+   WEG a individual não tem receita nenhuma, e o lucro de R$ 6,0 bi vem todo de
+   equivalência patrimonial — a entidade legal é uma holding, e a operação está
+   nas controladas. Só 20% das companhias têm as duas dentro de 5% uma da outra.
+
+   O app prefere o consolidado e só cai na individual quando ela falta, avisando.
+   O aviso agora carrega o número, porque "não somam as controladas" subestima:
+   elas podem ser **zero**.
 4. Bancos e seguradoras (19 das 467) são detectados e avisados, mas o
    reconhecimento só por rótulo cobre bem menos contas, e o FCFF/WACC não se
    aplica a eles de qualquer forma.

@@ -1614,8 +1614,13 @@ def importar_cvm(
     if "ind" in escopos:
         avisos.append(
             "Esta companhia nao publica demonstracao consolidada em ao menos um "
-            "dos anos; usei a individual. Numeros individuais nao somam as "
-            "controladas."
+            "dos anos; usei a **individual**, e ela costuma ser outra entidade. "
+            "Medido nas 462 companhias que publicam os dois escopos em 2024: a "
+            "receita individual e **0,40x a consolidada na mediana**, fica abaixo "
+            "de 10% dela em 173 companhias e e **zero** em boa parte -- na WEG a "
+            "individual nao tem receita nenhuma, e o lucro de R$ 6,0 bi vem todo "
+            "de equivalencia patrimonial. Margem, giro e capex sobre receita nao "
+            "querem dizer nada nesse caso."
         )
     if len(escalas) > 1:
         avisos.append(
