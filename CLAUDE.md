@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 898 testes
+pytest                        # 904 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-898 testes passando. Verificado de verdade: contas financeiras, identidades,
+904 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -995,7 +995,25 @@ Em ordem de valor:
 
    A barra lateral também desvia: anunciar ali um Equity Value e um WACC que a
    tela de Valor acabou de recusar seria contradizer, no canto do olho, o que a
-   tela principal explica.
+   tela principal explica. **E o relatório também** — ele é o que sobra depois
+   que a tela fecha, e descrever ali um Enterprise Value, um WACC e uma ponte que
+   ninguém calculou contradiria o número que o usuário viu.
+
+   Duas seções do relatório industrial saíram do caminho do banco porque
+   **descreviam outra companhia**, e a substituta diz o que ficou de fora em vez
+   de simplesmente sumir com ele:
+
+   - a **evidência qualitativa** citava percentis do universo de comparáveis, que
+     **exclui bancos e seguradoras de propósito** — comparar contra 445
+     companhias a que a instituição não pertence produz um percentil que parece
+     informação e não é;
+   - o **diagnóstico automático** verifica a coerência do DCF, e o DCF não foi
+     usado. Ele chegava a reclamar de "margem EBITDA projetada abaixo do pior ano
+     histórico" num modelo que não projeta margem nenhuma.
+
+   O histórico também trocou de indicadores: patrimônio, lucro, ROE e payout no
+   lugar de margem EBITDA e capex sobre receita. A seção industrial mostrava
+   **margem EBITDA de −8,3% para o Bradesco**, número que não descreve nada.
 
    **E o beta de um banco não se realavanca.** Hamada supõe que a dívida é
    escolha de financiamento que acrescenta risco ao acionista; num banco o

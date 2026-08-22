@@ -195,3 +195,120 @@ def test_a_tela_avisa_que_perfil_parecido_nao_e_negocio_parecido(monkeypatch, tm
     avisos = " ".join(w.value for w in teste.warning)
     assert "Perfil parecido não é negócio parecido" in avisos
     assert any("Dimensões" in list(d.value.columns) for d in teste.dataframe)
+
+
+# ---------------------------------------------------------------------------
+# O relatorio de instituicao financeira
+# ---------------------------------------------------------------------------
+
+
+def _banco_para_relatorio():
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    anos = [2021, 2022, 2023, 2024]
+    return Demonstracoes(
+        empresa="Banco Teste",
+        unidade="R$ milhões",
+        valores=pd.DataFrame(
+            {
+                "patrimonio_liquido": [1000.0, 1100.0, 1210.0, 1331.0],
+                "lucro_liquido": [180.0, 198.0, 217.8, 239.6],
+                "dividendos_pagos": [-80.0, -88.0, -96.8, -106.5],
+                "receita_liquida": [900.0, 990.0, 1089.0, 1197.9],
+                "ebit": [250.0, 275.0, 302.5, 332.8],
+                "ativo_total": [9000.0, 9900.0, 10890.0, 11979.0],
+            },
+            index=anos,
+        ).T,
+        avisos=[
+            "Esta companhia publica no plano de contas de instituicao financeira "
+            "ou seguradora."
+        ],
+    )
+
+
+def test_o_relatorio_do_banco_nao_descreve_um_dcf():
+    """O relatório é o que sobra depois que a tela fecha.
+
+    A tela de Valor recusou o DCF para esta companhia; descrever aqui um
+    Enterprise Value, um WACC e uma ponte que ninguém calculou contradiria o
+    número que o usuário viu.
+    """
+    teste = _rodar(TELA_EXPORTAR, dfs=_banco_para_relatorio())
+    texto = teste.session_state["relatorio"]
+
+    assert "## Valor, pelo lucro residual" in texto
+    assert "Enterprise Value" not in texto
+    assert "Do Enterprise Value ao Equity Value" not in texto
+    assert "Peso da perpetuidade no valor" not in texto
+
+
+def test_o_relatorio_do_banco_usa_os_indicadores_que_valem_nele():
+    """Margem EBITDA e capex sobre receita não dizem nada num banco.
+
+    A seção industrial mostrava margem EBITDA de −8,3% para o Bradesco, número
+    que não descreve coisa alguma.
+    """
+    teste = _rodar(TELA_EXPORTAR, dfs=_banco_para_relatorio())
+    texto = teste.session_state["relatorio"]
+
+    assert "## O que a instituição entregou" in texto
+    assert "ROE" in texto and "Payout" in texto
+    # A margem EBITDA nao pode aparecer em lugar nenhum: nem na tabela do
+    # historico, nem como percentil contra uma base que exclui bancos.
+    assert "Margem EBITDA" not in texto
+
+
+def test_o_relatorio_do_banco_declara_o_que_o_modelo_nao_faz():
+    """Capital regulatório não é modelado, e o entregável precisa dizer."""
+    teste = _rodar(TELA_EXPORTAR, dfs=_banco_para_relatorio())
+    texto = teste.session_state["relatorio"]
+    assert "capital regulatório" in texto
+    assert "P/VP implícito" in texto
+
+
+def test_o_relatorio_nao_diz_mais_que_os_cortes_sao_convencao():
+    """Texto velho no entregável vira afirmação falsa sobre o próprio trabalho.
+
+    Conversão de caixa, alavancagem, arrendamento e peso do não recorrente foram
+    calibrados contra as 467 companhias com DFP consolidada.
+    """
+    teste = _rodar(TELA_EXPORTAR)
+    texto = teste.session_state["relatorio"]
+    assert "ainda não calibradas contra a base da CVM" not in texto
+    assert "quartis medidos" in texto
+
+
+def test_o_relatorio_do_banco_declara_o_que_deixou_de_fora():
+    """Omitir em silêncio é pior que omitir dizendo.
+
+    Duas seções descreviam outra companhia: o percentil contra pares — universo
+    que **exclui bancos de propósito** — e o diagnóstico automático, que verifica
+    a coerência de um DCF que não foi usado. Ele chegava a reclamar de "margem
+    EBITDA projetada abaixo do pior ano histórico" num modelo que não projeta
+    margem nenhuma.
+    """
+    teste = _rodar(TELA_EXPORTAR, dfs=_banco_para_relatorio())
+    texto = teste.session_state["relatorio"]
+
+    assert "## O que não foi avaliado aqui" in texto
+    assert "exclui bancos" in texto
+    assert "o DCF não foi usado" in texto
+    # E as seções que descreviam outra companhia saíram de fato. A busca é pelo
+    # percentil **com número** — a explicação acima usa a palavra de propósito.
+    import re
+
+    assert not re.search(r"no percentil \d", texto), texto
+    assert "companhias brasileiras" not in texto
+    # O cabeçalho da seção de riscos, e não a menção a ela no texto acima.
+    assert "## O que pode dar errado" not in texto
+
+
+def test_a_industria_continua_com_as_duas_secoes():
+    """O corte só pode valer onde foi justificado."""
+    teste = _rodar(TELA_EXPORTAR)
+    texto = teste.session_state["relatorio"]
+    assert "## O que não foi avaliado aqui" not in texto
+    assert "## As perguntas que os números não respondem" in texto

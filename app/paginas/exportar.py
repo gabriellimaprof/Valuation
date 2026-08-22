@@ -152,6 +152,12 @@ def _relatorio(resultado) -> None:
             + "."
         )
 
+    # Instituicao financeira nao foi avaliada por DCF na tela de Valor, e o
+    # relatorio e o que sobra depois que a tela fecha: descrever aqui um
+    # Enterprise Value e uma ponte que ninguem calculou contradiria o numero que
+    # o usuario viu.
+    banco = _valuation_do_banco()
+
     with st.spinner("Montando o relatório..."):
         texto = montar(
             resultado,
@@ -162,6 +168,8 @@ def _relatorio(resultado) -> None:
             expectativas=expectativas,
             evidencias=reunir_evidencias(analise, resultado),
             ifrs16=ver_ex_ifrs16(analise) if analise is not None else None,
+            lucro_residual=banco[0] if banco else None,
+            historico_do_banco=banco[1] if banco else None,
         )
 
     st.session_state["relatorio"] = texto
@@ -272,6 +280,40 @@ def _guardar_na_biblioteca() -> None:
             return
         st.success(f"Guardado em `{caminho}`.")
     st.caption(f"Pasta: `{biblioteca.diretorio()}`")
+
+
+
+def _valuation_do_banco():
+    """O lucro residual e o histórico, quando a companhia é banco ou seguradora.
+
+    Devolve ``None`` para o resto, e aí o relatório segue pelo caminho do DCF.
+    Refaz a conta em vez de guardá-la na sessão de propósito: o relatório precisa
+    sair igual mesmo que o usuário nunca tenha aberto a tela de Valor.
+    """
+    from valuation import substituir_varios
+    from valuation.bancos import e_instituicao_financeira, sugerir_premissas_do_banco
+    from valuation.custo_capital import calcular_custo_capital
+    from valuation.lucro_residual import avaliar_lucro_residual
+
+    dfs = estado.demonstracoes()
+    if dfs is None or not e_instituicao_financeira(dfs):
+        return None
+
+    empresa = estado.empresa()
+    try:
+        sugestao = sugerir_premissas_do_banco(dfs)
+        ke = calcular_custo_capital(
+            substituir_varios(
+                empresa.custo_capital, {"instituicao_financeira": True}
+            ),
+            empresa.macro,
+        ).ke_brl
+        valuation = avaliar_lucro_residual(
+            sugestao.premissas, ke=ke, ano_base=int(dfs.anos[-1])
+        )
+    except ValueError:
+        return None
+    return valuation, sugestao.historico
 
 
 def _slug(nome: str) -> str:

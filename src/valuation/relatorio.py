@@ -375,6 +375,162 @@ def _ponte(resultado: ResultadoValuation) -> list[str]:
     return ["## Do Enterprise Value ao Equity Value", "", _tabela_markdown(tabela)]
 
 
+def _lucro_residual(valuation, ke_referencia: float | None = None) -> list[str]:
+    """A seção de valor quando a companhia é instituição financeira.
+
+    Existe porque o relatório inteiro é montado em torno do DCF, e para um banco
+    o DCF **não foi usado** — a tela mostrou lucro residual. Sem esta seção o
+    entregável final descreveria um Enterprise Value, um WACC e uma ponte que
+    ninguém calculou, contradizendo a tela em que o número foi visto.
+    """
+    if valuation is None:
+        return []
+
+    pvp = (
+        valuation.equity_value / valuation.patrimonio_inicial
+        if valuation.patrimonio_inicial
+        else float("nan")
+    )
+    linhas = [
+        "## Valor, pelo lucro residual",
+        "",
+        "**FCFF descontado ao WACC não se aplica a esta companhia.** Para uma "
+        "indústria a dívida financia o ativo e o custo dela entra na taxa de "
+        "desconto; para um banco a dívida — depósito, captação — **é o insumo do "
+        "negócio**, e o spread entre captar e emprestar é a receita. Descontar um "
+        "fluxo para a firma ao WACC somaria ao valor o que a instituição ganha "
+        "por tomar dinheiro e depois descontaria por ela tomar dinheiro.",
+        "",
+        "O valor aqui é o patrimônio contábil mais o valor presente do que a "
+        "instituição ganha **acima do custo de capital** sobre esse patrimônio.",
+        "",
+    ]
+    itens = [
+        ("Equity Value", _num(valuation.equity_value, 1)),
+        ("Patrimônio contábil", _num(valuation.patrimonio_inicial, 1)),
+        ("P/VP implícito", f"{_num(pvp, 2)}x"),
+        ("Ke", _pct(valuation.ke, 2)),
+        ("Do patrimônio", _pct(valuation.peso_do_patrimonio)),
+        ("Do valor terminal", _pct(valuation.peso_do_terminal)),
+    ]
+    linhas += [f"- **{rotulo}**: {valor}" for rotulo, valor in itens]
+
+    if valuation.equity_value < valuation.patrimonio_inicial:
+        linhas += [
+            "",
+            "**O modelo devolve menos que o patrimônio contábil.** Com retorno "
+            "sobre o patrimônio abaixo do custo de capital, cada real retido rende "
+            "menos que o Ke — a instituição destrói valor sobre o próprio livro.",
+        ]
+    else:
+        linhas += [
+            "",
+            "O modelo devolve mais que o patrimônio contábil: a instituição "
+            "entrega retorno acima do custo de capital sobre o livro que tem.",
+        ]
+
+    linhas += [
+        "",
+        f"O patrimônio contábil carrega {_pct(valuation.peso_do_patrimonio)} do "
+        "valor. **É a virtude do modelo:** no DCF de uma indústria o valor "
+        "terminal costuma valer 60% a 80% do total, e a premissa mais frágil "
+        "carrega quase tudo; aqui a âncora contábil segura a maior parte, e erro "
+        "na perpetuidade custa menos.",
+        "",
+        "A conta, ano a ano:",
+        "",
+        _tabela_markdown(
+            valuation.tabela().map(lambda v: _num(v, 1)).rename_axis("Item")
+        ),
+        "",
+        "**O que este modelo não faz:** não considera capital regulatório. Uma "
+        "instituição que cresce precisa de capital para sustentar o ativo "
+        "ponderado por risco, e crescimento alto com distribuição alta pode ser "
+        "inviável por Basileia sem que a aritmética acima reclame.",
+    ]
+    return linhas
+
+
+def _historico_do_banco(historico) -> list[str]:
+    """O passado de uma instituição financeira, nos indicadores que valem nela.
+
+    Margem EBITDA, capex sobre receita e conversão de caixa **não querem dizer
+    num banco o que querem dizer no resto** — a receita dele é spread, o ativo é
+    crédito e não fábrica. A seção industrial mostrava margem EBITDA de −8,3%
+    para o Bradesco, número que não descreve nada.
+    """
+    if historico is None:
+        return []
+    anos = historico.anos
+    linhas = [
+        "## O que a instituição entregou",
+        "",
+        f"Período apurado: {anos[0]} a {anos[-1]} ({len(anos)} exercícios).",
+        "",
+    ]
+    # Monta a tabela formatada do zero: escrever texto por cima de uma linha
+    # numerica faz o pandas recusar (``LossySetitemError``).
+    original = historico.tabela()
+    formatada = pd.DataFrame(
+        {
+            coluna: [
+                (_pct if rotulo in ("ROE", "Payout") else lambda v: _num(v, 1))(
+                    original.loc[rotulo, coluna]
+                )
+                for rotulo in original.index
+            ]
+            for coluna in original.columns
+        },
+        index=original.index,
+    )
+    formatada.index.name = "Indicador"
+    linhas.append(_tabela_markdown(formatada))
+    linhas += [
+        "",
+        "**O ROE sai sobre o patrimônio médio do ano**, e não sobre o de "
+        "fechamento: uma instituição que capitalizou no meio do ano apareceria "
+        "menos rentável do que foi.",
+    ]
+    return linhas
+
+
+def _nao_se_aplica_ao_banco() -> list[str]:
+    """O que o relatório deixou de fora por não valer para instituição financeira.
+
+    Duas seções descreviam outra companhia que não a avaliada:
+
+    * a **evidência qualitativa** cita percentis da base de pares, e o universo
+      de comparáveis **exclui bancos e seguradoras** de propósito — margem EBITDA
+      e capex sobre receita não querem dizer neles o que querem dizer no resto.
+      Comparar contra 445 companhias a que a instituição não pertence produz um
+      percentil que parece informação e não é;
+    * o **diagnóstico automático** roda sobre o DCF, e o DCF não foi usado. Ele
+      chegava a reclamar de "margem EBITDA projetada abaixo do pior ano
+      histórico" num modelo que não projeta margem nenhuma.
+
+    Omitir em silêncio seria pior: quem lê precisa distinguir "foi verificado e
+    está bem" de "não foi verificado".
+    """
+    return [
+        "## O que não foi avaliado aqui",
+        "",
+        "Duas seções que este relatório traz para empresa não financeira ficaram "
+        "de fora, porque descreveriam outra companhia:",
+        "",
+        "- **Comparação com pares** — o universo de comparáveis exclui bancos e "
+        "seguradoras de propósito: margem EBITDA e capex sobre receita não querem "
+        "dizer neles o que querem dizer no resto. Um percentil contra companhias "
+        "a que esta instituição não pertence parece informação e não é.",
+        "- **Diagnóstico automático do modelo** — ele verifica a coerência do DCF, "
+        "e o DCF não foi usado. As verificações que valeriam aqui seriam sobre "
+        "capital regulatório e composição da carteira, que este app não faz.",
+        "",
+        "O que **foi** verificado está nas seções acima: a leitura das "
+        "demonstrações contra o arquivo publicado, e a aritmética do lucro "
+        "residual ano a ano.",
+    ]
+
+
 def _expectativas(
     expectativas: pd.DataFrame | None, margem: MargemDeSeguranca | None
 ) -> list[str]:
@@ -510,9 +666,20 @@ def _limites(resultado: ResultadoValuation, analise, qualidade) -> list[str]:
         "- **Não valida as premissas.** O diagnóstico verifica coerência interna "
         "— se o crescimento cabe na economia, se o reinvestimento sustenta o "
         "crescimento — e não se a premissa vai se realizar.",
-        "- **Os cortes de leitura são convenção.** Conversão de caixa de 90% e "
-        "60%, margem exigida de 30%, spread mínimo de 2 p.p. entre WACC e g: são "
-        "faixas de mercado arbitradas, ainda não calibradas contra a base da CVM.",
+        # Este item dizia que os cortes eram "faixas de mercado arbitradas, ainda
+        # nao calibradas contra a base da CVM". Deixou de ser verdade: conversao
+        # de caixa, alavancagem, arrendamento e peso do nao recorrente foram
+        # medidos nas 467 companhias. O relatorio e o entregavel final, e texto
+        # velho ali vira afirmacao falsa sobre o proprio trabalho.
+        "- **Os cortes de leitura são quartis medidos, e não convenção** — "
+        "conversão de caixa, alavancagem, peso do arrendamento e do não "
+        "recorrente saem da distribuição das companhias com DFP consolidada. Os "
+        "que ainda não foram calibrados são a margem de segurança exigida e o "
+        "spread mínimo entre WACC e g, que continuam sendo escolha do analista.",
+        "- **Betas e prêmio de risco-país são valores de referência**, de ordem "
+        "de grandeza, e não a base oficial do Damodaran. Onde o beta carrega o "
+        "resultado sozinho — instituição financeira —, a seção de valor mostra "
+        "qual beta inverteria a conclusão.",
     ]
     if analise is None:
         linhas.append(
@@ -547,6 +714,8 @@ def montar(
     expectativas: pd.DataFrame | None = None,
     evidencias=None,
     ifrs16=None,
+    lucro_residual=None,
+    historico_do_banco=None,
     data: str = "",
 ) -> str:
     """Monta o relatorio completo em markdown.
@@ -557,7 +726,25 @@ def montar(
     ``evidencias`` vem de ``qualitativo.reunir_evidencias``. Elas nao respondem
     as perguntas de framework -- reunem o que os numeros dizem sobre cada uma e
     deixam a resposta para quem le.
+
+    ``lucro_residual`` troca a secao de valor pela do modelo de banco. Quando ele
+    vem, **as secoes do DCF saem**: descrever um Enterprise Value, um WACC e uma
+    ponte que ninguem calculou contradiria a tela em que o numero foi visto, e o
+    relatorio e justamente o que sobra depois que a tela fecha.
     """
+    if lucro_residual is not None:
+        blocos = [
+            _cabecalho(resultado, data),
+            _lucro_residual(lucro_residual),
+            _historico_do_banco(historico_do_banco)
+            if historico_do_banco is not None
+            else _historico(analise),
+            _qualidade(qualidade),
+            _nao_se_aplica_ao_banco(),
+            _limites(resultado, analise, qualidade),
+        ]
+        return "\n\n".join("\n".join(bloco) for bloco in blocos) + "\n"
+
     blocos = [
         _cabecalho(resultado, data),
         _resumo(resultado, margem),
