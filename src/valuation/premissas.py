@@ -86,6 +86,15 @@ class PremissasCustoCapital:
     premio_tamanho: float = 0.0
     custo_divida_brl: float | None = None
     spread_credito: float = 0.03
+    # Instituicao financeira **nao tem o beta realavancado**, e nao e detalhe.
+    # Hamada supoe que a divida e escolha de financiamento que acrescenta risco
+    # ao acionista; num banco o deposito e a **materia-prima**, e o risco dele ja
+    # esta dentro do beta observado do equity. Medido nas 18 instituicoes com
+    # balanco legivel em 2024: o passivo de terceiros e **11,2x o patrimonio na
+    # mediana**, e realavancar um beta de 0,95 por esse D/E daria beta 8,0 e Ke de
+    # **41% em dolar**. Banco nenhum tem isso -- os betas observados ficam perto
+    # de 1. Com esta marca ligada, o beta informado entra como **ja alavancado**.
+    instituicao_financeira: bool = False
 
     def __post_init__(self) -> None:
         if self.beta_alavancado_setor is None and self.beta_desalavancado is None:

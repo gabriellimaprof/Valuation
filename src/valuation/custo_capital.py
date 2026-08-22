@@ -101,7 +101,13 @@ def calcular_custo_capital(
         beta_u = desalavancar_beta(
             premissas.beta_alavancado_setor, premissas.divida_pl_setor, t
         )
-    beta_l = realavancar_beta(beta_u, premissas.divida_pl_alvo, t)
+    if premissas.instituicao_financeira:
+        # Sem Hamada: num banco o deposito e insumo, e nao financiamento. Ver a
+        # nota em ``PremissasCustoCapital.instituicao_financeira`` -- realavancar
+        # pelo D/E de verdade de um banco daria Ke de 41% em dolar.
+        beta_l = beta_u
+    else:
+        beta_l = realavancar_beta(beta_u, premissas.divida_pl_alvo, t)
 
     ke_usd = (
         premissas.rf_usd

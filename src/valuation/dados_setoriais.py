@@ -46,13 +46,19 @@ class Setor:
     divida_pl_tipico: float
     margem_ebitda_tipica: float
     observacao: str = ""
+    # Setor em que a divida e insumo, e nao financiamento. Nele o beta **nao se
+    # realavanca**: o risco do deposito ja esta dentro do beta observado do
+    # equity, e o D/E de um banco brasileiro (11,2x na mediana) levaria o Ke a
+    # 41% em dolar. Ver ``PremissasCustoCapital.instituicao_financeira``.
+    financeiro: bool = False
 
 
 SETORES: tuple[Setor, ...] = (
     Setor("Agronegocio", 0.75, 0.55, 0.20, "Ciclico, sensivel a commodity e cambio"),
     Setor("Alimentos e bebidas", 0.65, 0.45, 0.18, "Defensivo, demanda estavel"),
     Setor("Bancos e servicos financeiros", 0.95, 0.00, float("nan"),
-          "Valuation por FCFE ou por lucro residual; WACC nao se aplica"),
+          "Valuation por lucro residual; WACC nao se aplica, e o beta nao se realavanca",
+          financeiro=True),
     Setor("Bens de capital", 0.95, 0.40, 0.15, "Ciclico, ligado ao investimento"),
     Setor("Construcao civil", 1.05, 0.60, 0.16, "Muito ciclico e sensivel a juros"),
     Setor("Educacao", 0.80, 0.35, 0.22, ""),
@@ -169,6 +175,7 @@ def premissas_do_setor(
         beta_desalavancado=setor.beta_desalavancado,
         beta_alavancado_setor=None,
         divida_pl_alvo=alvo,
+        instituicao_financeira=setor.financeiro,
         **extras,
     )
 

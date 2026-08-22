@@ -135,3 +135,61 @@ def test_percentual_em_vez_de_decimal_e_rejeitado():
     """Digitar 34 no lugar de 0.34 e o erro de premissa mais comum e mais caro."""
     with pytest.raises(ValueError, match="decimais"):
         PremissasMacro(aliquota_ir=34)
+
+
+# ---------------------------------------------------------------------------
+# Banco: o beta nao se realavanca
+# ---------------------------------------------------------------------------
+
+
+def test_o_beta_de_banco_nao_e_realavancado():
+    """Hamada supõe que a dívida é escolha de financiamento; num banco não é.
+
+    O depósito e a captação são a **matéria-prima** do negócio, e o risco deles
+    já está dentro do beta observado do equity. Medido nas 18 instituições com
+    balanço legível em 2024: o passivo de terceiros é **11,2x o patrimônio na
+    mediana**, e realavancar um beta de 0,95 por esse D/E daria beta 8,0 e Ke de
+    **41% em dólar**. Banco nenhum tem isso.
+    """
+    from valuation.custo_capital import calcular_custo_capital
+    from valuation.premissas import PremissasCustoCapital, PremissasMacro
+
+    base = dict(beta_desalavancado=0.95, divida_pl_alvo=11.2)
+    industria = calcular_custo_capital(
+        PremissasCustoCapital(**base), PremissasMacro()
+    )
+    banco = calcular_custo_capital(
+        PremissasCustoCapital(**base, instituicao_financeira=True), PremissasMacro()
+    )
+
+    assert industria.beta_realavancado > 7.0, "o caso absurdo deixou de ser absurdo"
+    assert industria.ke_usd > 0.40
+    assert banco.beta_realavancado == pytest.approx(0.95)
+    assert 0.08 < banco.ke_usd < 0.16
+
+
+def test_a_marca_nao_muda_nada_para_quem_nao_e_banco():
+    """A regra só pode valer onde foi justificada."""
+    from valuation.custo_capital import calcular_custo_capital
+    from valuation.premissas import PremissasCustoCapital, PremissasMacro
+
+    sem_divida = dict(beta_desalavancado=0.9, divida_pl_alvo=0.0)
+    a = calcular_custo_capital(PremissasCustoCapital(**sem_divida), PremissasMacro())
+    b = calcular_custo_capital(
+        PremissasCustoCapital(**sem_divida, instituicao_financeira=True),
+        PremissasMacro(),
+    )
+    assert a.ke_brl == pytest.approx(b.ke_brl)
+
+
+def test_o_setor_de_bancos_ja_vem_marcado():
+    """Quem escolhe o setor na tela não precisa saber da regra para acertar."""
+    from valuation.dados_setoriais import buscar_setor, premissas_do_setor
+
+    assert buscar_setor("Bancos e servicos financeiros").financeiro
+    assert premissas_do_setor(
+        "Bancos e servicos financeiros", divida_pl_alvo=11.2
+    ).instituicao_financeira
+
+    assert not buscar_setor("Bens de capital").financeiro
+    assert not premissas_do_setor("Bens de capital").instituicao_financeira

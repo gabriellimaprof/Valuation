@@ -109,12 +109,21 @@ def _banco_em_vez_de_dcf() -> bool:
         "esse patrimônio."
     )
 
-    resultado_modelo = estado.resultado()
-    ke = (
-        resultado_modelo.custo_capital.ke_brl
-        if resultado_modelo is not None
-        else 0.145
-    )
+    ke, realavancava = _ke_de_instituicao_financeira()
+    if realavancava is not None:
+        st.warning(
+            f"**O beta desta empresa estava sendo realavancado, e isso não vale "
+            f"para banco.** Hamada supõe que a dívida é escolha de financiamento "
+            "que acrescenta risco ao acionista; num banco o depósito é a "
+            "**matéria-prima**, e o risco dele já está dentro do beta observado "
+            f"do equity. Com o D/E alvo que está em Custo de capital, o Ke sairia "
+            f"{formatar(realavancava, 'pct')}; sem realavancar, "
+            f"**{formatar(ke, 'pct')}**. Usei o segundo.\n\n"
+            "Medido nas 18 instituições com balanço legível em 2024: o passivo de "
+            "terceiros é **11,2x o patrimônio na mediana**, e realavancar um beta "
+            "de 0,95 por esse D/E daria beta 8,0 e Ke de **41% em dólar**. Banco "
+            "nenhum tem isso — os betas observados ficam perto de 1."
+        )
 
     try:
         sugestao = sugerir_premissas_do_banco(dfs)
@@ -232,6 +241,43 @@ def _banco_em_vez_de_dcf() -> bool:
             st.warning(alerta)
 
     return True
+
+
+
+def _ke_de_instituicao_financeira() -> tuple[float, float | None]:
+    """O Ke do banco, com o beta **não** realavancado.
+
+    Devolve ``(ke, ke_que_sairia_realavancando)``. O segundo é ``None`` quando as
+    premissas já estavam marcadas como instituição financeira — aí não há o que
+    avisar, porque nada mudou.
+
+    Existe porque o usuário pode ter escolhido um setor industrial na tela de
+    Custo de capital antes de importar um banco, e nesse caso o Ke que chega aqui
+    carrega um realavancamento que não se aplica.
+    """
+    from valuation import substituir_varios
+    from valuation.custo_capital import calcular_custo_capital
+
+    empresa = estado.empresa()
+    if empresa is None:
+        return 0.145, None
+
+    ja_marcado = getattr(empresa.custo_capital, "instituicao_financeira", False)
+    correto = calcular_custo_capital(
+        substituir_varios(
+            empresa.custo_capital, {"instituicao_financeira": True}
+        ),
+        empresa.macro,
+    ).ke_brl
+    if ja_marcado:
+        return correto, None
+
+    realavancado = calcular_custo_capital(empresa.custo_capital, empresa.macro).ke_brl
+    # Só avisa quando a diferença existe: com D/E alvo zerado os dois coincidem,
+    # e um aviso que não corresponde a mudança nenhuma treina o leitor a ignorar.
+    if abs(realavancado - correto) < 1e-9:
+        return correto, None
+    return correto, realavancado
 
 
 def _configuracao() -> None:

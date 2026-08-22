@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 886 testes
+pytest                        # 889 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-886 testes passando. Verificado de verdade: contas financeiras, identidades,
+889 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -970,6 +970,25 @@ Em ordem de valor:
    A barra lateral também desvia: anunciar ali um Equity Value e um WACC que a
    tela de Valor acabou de recusar seria contradizer, no canto do olho, o que a
    tela principal explica.
+
+   **E o beta de um banco não se realavanca.** Hamada supõe que a dívida é
+   escolha de financiamento que acrescenta risco ao acionista; num banco o
+   depósito é a **matéria-prima**, e o risco dele já está dentro do beta
+   observado do equity. Medido nas 18 instituições com balanço legível em 2024:
+
+   | | |
+   |---|---|
+   | Passivo de terceiros / PL, mediana | **11,2x** |
+   | Beta de 0,95 realavancado por esse D/E | **8,0** |
+   | Ke que sairia daí | **41% em dólar** |
+
+   Banco nenhum tem isso — os betas observados ficam perto de 1.
+   `PremissasCustoCapital.instituicao_financeira` desliga o realavancamento, o
+   setor "Bancos e serviços financeiros" já vem marcado, e a tela de Valor
+   **recalcula o Ke com a marca ligada e avisa quando isso muda o número** —
+   porque o usuário pode ter escolhido um setor industrial antes de importar um
+   banco. Medido no Bradesco: Ke de 13,35% realavancado contra **12,40%** sem, e
+   o P/VP vai de 0,97x para 1,01x.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte
    mostrando o que moveu o valor.
 6. **O ROIC indexado é opcional e nasce desligado.** Marcar a caixa não muda o
