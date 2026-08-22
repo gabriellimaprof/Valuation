@@ -1196,8 +1196,25 @@ Em ordem de valor:
    nenhuma, e contá-lo anunciaria atraso por um exercício que ainda não saiu. É
    a mesma armadilha de `_itr_vazio`.
 
-   Ao escrever isto, a própria medição estava **um exercício atrás**: `BASE` vai
-   até 2024 e a CVM já publicou 2025, com 437 companhias.
+   O aviso pegou um caso real na primeira execução — a própria medição estava um
+   exercício atrás —, e a safra foi refeita para **2021-2025, com 421
+   companhias**. O que se moveu:
+
+   | | 2020-2024 | 2021-2025 |
+   |---|---|---|
+   | Crescimento da receita, mediana | 15,1% | **9,3%** |
+   | ROIC, P75 | 18,0% | **16,5%** |
+   | Conversão de caixa, mediana | 51,4% | 53,0% |
+   | Margem EBITDA, mediana | 19,9% | 20,8% |
+
+   A queda do crescimento é o exercício de 2025 entrando e o de 2020 saindo, e
+   ela move o teto que o diagnóstico usa. Os cortes de conversão passaram a
+   0,17 e 0,78 (os quartis novos); `DIVIDA_EBITDA_ALTA = 3.5` segue sendo o P75
+   (3,55) e dispara em 25,4%.
+
+   **Uma linha ficou de fora e está declarada:** `DESCOLAMENTO_DO_JURO` ainda é
+   da safra 2020-2024. Safra parcial que se apresenta como inteira é exatamente
+   o problema que `safra()` existe para evitar.
 
 ## Como trabalhar neste projeto
 

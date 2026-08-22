@@ -58,20 +58,20 @@ import numpy as np
 import pandas as pd
 
 MEDIDO_EM = (
-    "exercícios 2020 a 2024, DFP consolidada, depois da auditoria de leitura: "
+    "exercícios 2021 a 2025, DFP consolidada, depois da auditoria de leitura: "
     "D&A da DFC (e não da linha da DRE, que só traz o pedaço do SG&A), juro pago "
     "padronizado no operacional, pagamentos retirados do capital de giro, sinal "
     "do IR vindo da identidade e lucro dos controladores derivado quando a "
     "companhia zera 3.11.01"
 )
-COMPANHIAS_MEDIDAS = 447
+COMPANHIAS_MEDIDAS = 421
 
 # O ultimo exercicio que entrou na medicao, em forma de numero e nao de prosa.
 # ``BASE`` e um instantaneo **colado**: ela nao se atualiza quando sai DFP nova,
 # e nada na tela dizia isso. O app passava a citar percentis de uma safra antiga
 # com a mesma aparencia de atual, que e o pior tipo de numero desatualizado --
 # o que nao se anuncia. Ao regenerar ``BASE``, atualize tambem esta linha.
-ANO_MAIS_RECENTE_MEDIDO = 2024
+ANO_MAIS_RECENTE_MEDIDO = 2025
 
 
 def safra(cache=None):
@@ -128,22 +128,25 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (429, (-0.968, -0.427, 0.150, 0.514, 0.755, 0.999, 1.219)),
-    "Margem EBITDA": (445, (-0.227, 0.012, 0.099, 0.199, 0.380, 0.615, 0.750)),
-    "Margem liquida": (445, (-0.671, -0.196, -0.001, 0.061, 0.138, 0.288, 0.435)),
-    "Crescimento da receita": (435, (-0.101, -0.032, 0.056, 0.151, 0.268, 0.458, 0.718)),
-    "Capex / Receita": (414, (0.003, 0.007, 0.020, 0.049, 0.124, 0.284, 0.487)),
-    "ROIC": (419, (-0.200, -0.010, 0.043, 0.107, 0.180, 0.283, 0.408)),
-    "Investimento em giro (DFC) / Receita": (440, (-0.318, -0.113, -0.011, 0.028, 0.083, 0.168, 0.293)),
-    "Divida liquida / EBITDA": (429, (-1.461, -0.511, 0.512, 2.070, 3.446, 6.403, 9.669)),
-    "Liquidez corrente": (447, (0.338, 0.562, 1.065, 1.519, 2.140, 2.983, 4.341)),
-    "Payout (dividendos / lucro)": (343, (0.000, 0.000, 0.129, 0.325, 0.567, 0.878, 1.106)),
+    "Conversao de caixa (FCO / EBITDA)": (409, (-0.824, -0.394, 0.166, 0.530, 0.785, 1.021, 1.295)),
+    "Margem EBITDA": (418, (-0.214, 0.035, 0.103, 0.208, 0.399, 0.598, 0.733)),
+    "Margem liquida": (418, (-0.410, -0.161, -0.004, 0.062, 0.140, 0.283, 0.417)),
+    "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.093, 0.199, 0.371, 0.515)),
+    "Capex / Receita": (389, (0.003, 0.008, 0.021, 0.047, 0.112, 0.262, 0.381)),
+    "ROIC": (397, (-0.088, 0.001, 0.044, 0.101, 0.165, 0.255, 0.401)),
+    "Investimento em giro (DFC) / Receita": (396, (-0.232, -0.077, -0.009, 0.026, 0.078, 0.152, 0.258)),
+    "Divida liquida / EBITDA": (409, (-1.478, -0.566, 0.572, 2.051, 3.554, 5.963, 10.455)),
+    "Liquidez corrente": (421, (0.324, 0.638, 1.087, 1.546, 2.167, 2.943, 4.022)),
+    "Payout (dividendos / lucro)": (334, (0.000, 0.000, 0.151, 0.364, 0.603, 0.858, 1.082)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de
 # todo o passivo, nao so juro. Um corte em 2 p.p. -- que era o do app -- acusa
 # 82,3% da base, e sinal que dispara em quatro de cada cinco companhias nao e
 # sinal. Os cortes agora sao os quartis observados.
+# **Esta linha ainda e da safra 2020-2024**, e nao foi remedida junto com
+# ``BASE``. Fica declarado porque safra parcial que se apresenta como inteira e
+# exatamente o problema que ``safra()`` existe para evitar.
 DESCOLAMENTO_DO_JURO = (368, (-0.006, 0.036, 0.082, 0.169, 0.345, 0.633))
 DESCOLAMENTO_QUANTIS = (0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 

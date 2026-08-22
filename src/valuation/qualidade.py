@@ -41,8 +41,8 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 # acusava 47,3% da base antes da correcao da D&A; depois dela, ainda 30%; a
 # padronizacao do juro derrubou a mediana de 64% para 54%; e a D&A somada da DFC
 # a levou a 52%.
-CONVERSAO_BOA = 0.76
-CONVERSAO_FRACA = 0.15
+CONVERSAO_BOA = 0.78
+CONVERSAO_FRACA = 0.17
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 # Diferenca entre juro de competencia e juro pago que sugere capitalizacao.
