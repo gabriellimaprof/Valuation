@@ -372,11 +372,15 @@ Estas afetam o número final. Não as altere sem entender o porquê.
 
 ## Como testar
 
-`pytest` roda tudo, em ~90 s. No CI (`.github/workflows/testes.yml`) ele roda em
-todo push; **a varredura no navegador não**, e a distinção é deliberada: ela sobe
-o app e baixa dados da CVM, então serviço de terceiro fora do ar reprovaria
-código que está certo. Fica no disparo manual (`workflow_dispatch`), que guarda
-as imagens das telas como artefato.
+`pytest` roda tudo, em ~100 s, e **nenhum teste alcança a rede**. No CI
+(`.github/workflows/testes.yml`) ele roda em todo push; **a varredura no
+navegador não**, e a distinção é deliberada: ela sobe o app e baixa dados da CVM,
+então serviço de terceiro fora do ar reprovaria código que está certo.
+
+Ela roda **por agendamento** (segunda de manhã) e por disparo manual, guardando
+as imagens das telas como artefato. As duas coisas juntas resolvem o dilema:
+depender de alguém lembrar de disparar é o mesmo que não ter, e torná-la condição
+de merge trava quem não devia ser travado.
 
 As regras que valem:
 

@@ -12,6 +12,13 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  # Segunda de manha. A varredura no navegador nao pode ser condicao de merge --
+  # ela baixa dados da CVM, e servico de terceiro fora do ar reprovaria codigo
+  # que esta certo --, mas depender de alguem lembrar de disparar e o mesmo que
+  # nao ter. O agendamento resolve as duas coisas: roda sozinha, e falhar nao
+  # trava ninguem.
+  schedule:
+    - cron: "0 9 * * 1"
   workflow_dispatch:
     inputs:
       navegador:
@@ -35,7 +42,9 @@ jobs:
     # So no disparo manual e no agendamento: a varredura baixa dados da CVM, e
     # por isso ela nao pode ser condicao de merge -- servico de terceiro fora do
     # ar reprovaria codigo que esta certo.
-    if: github.event_name == 'workflow_dispatch' && inputs.navegador
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.navegador)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
