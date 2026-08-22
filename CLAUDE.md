@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 925 testes
+pytest                        # 928 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -298,7 +298,10 @@ faltavam.** O leitor é o mesmo, mas o caminho do ano móvel nunca fora medido:
 reconcilia no exercício fechado e não no ano móvel, porque a divisão com
 minoritários mudou entre os trimestres. Não dá para saber qual atribuição
 descreve o período móvel — derivar por diferença esconderia que a soma não fecha,
-e **a conta que não fecha é a informação**. O app avisa.
+e **a conta que não fecha é a informação**. O app avisa, **com o tamanho**:
+"não fecha" sem tamanho não ajuda a decidir, e quem lê precisa saber se o
+problema vale 0,3% ou 78% do resultado. Na Melhoramentos são R$ 46,0 mi, ou
+**78% do lucro consolidado**; na Azul, **690%**.
 
 Junto, **6 das 454 companhias trocam de método da DFC entre o anual e o
 trimestre** — todas de direto para indireto, entre elas Santander, BRB e Axia
@@ -748,7 +751,7 @@ não é verificação.
 
 ## Estado atual
 
-925 testes passando. Verificado de verdade: contas financeiras, identidades,
+928 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

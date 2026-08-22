@@ -349,3 +349,63 @@ def test_a_dva_do_ano_movel_traz_a_receita_bruta():
     assert np.isfinite(bruta) and np.isfinite(liquida)
     assert bruta > liquida
     assert 0.05 < (bruta - liquida) / bruta < 0.15
+
+
+def test_o_aviso_do_ano_movel_diz_o_tamanho_da_diferenca():
+    """"Não fecha" sem tamanho não ajuda a decidir.
+
+    Quem lê precisa saber se o problema vale 0,3% ou 78% do resultado: no
+    primeiro caso segue, no segundo para e vai ao arquivo. Medido no ITR de 2025:
+    a Melhoramentos de São Paulo quebra em **78% do lucro consolidado** e a Azul
+    em **690%** — e as duas apareciam com o mesmo texto.
+    """
+    import pandas as pd
+
+    from valuation.importacao.cvm import _avisar_se_a_dre_do_ano_movel_nao_fecha
+
+    tabela = pd.DataFrame(
+        {
+            2025: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "lucro_bruto": 400.0,
+                "ebit": 200.0,
+                "lucro_antes_impostos": 170.0,
+                "impostos": 50.0,
+                "lucro_liquido": 120.0,
+                "lucro_controladores": 40.0,
+                "lucro_nao_controladores": 0.0,
+            }
+        }
+    )
+    avisos: list[str] = []
+    _avisar_se_a_dre_do_ano_movel_nao_fecha(tabela, 2025, avisos)
+    assert avisos
+    # 120 - 0 - 40 = 80, que e 67% do lucro consolidado.
+    assert "80" in avisos[0]
+    assert "67% do lucro consolidado" in avisos[0]
+
+
+def test_sem_lucro_consolidado_o_aviso_nao_inventa_percentual():
+    """Dividir por zero para dar um percentual seria pior que não dá-lo."""
+    import pandas as pd
+
+    from valuation.importacao.cvm import _tamanho_da_diferenca
+
+    sem_lucro = pd.DataFrame(
+        {2025: {"lucro_liquido": 0.0, "lucro_controladores": 40.0}}
+    )
+    texto = _tamanho_da_diferenca(sem_lucro, 2025, ["Controladores"])
+    assert "%" not in texto
+
+
+def test_quebra_fora_dos_controladores_nao_ganha_o_tamanho():
+    """O cálculo é sobre a atribuição a minoritários; noutro passo não se aplica."""
+    import pandas as pd
+
+    from valuation.importacao.cvm import _tamanho_da_diferenca
+
+    tabela = pd.DataFrame(
+        {2025: {"lucro_liquido": 120.0, "lucro_controladores": 40.0}}
+    )
+    assert _tamanho_da_diferenca(tabela, 2025, ["LAIR"]) == ""

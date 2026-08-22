@@ -1870,7 +1870,43 @@ def _avisar_se_a_dre_do_ano_movel_nao_fecha(
         "soma. Nao da para saber qual atribuicao descreve o periodo movel, entao o "
         "app avisa em vez de derivar por diferenca: a conta que nao fecha e a "
         "informacao."
+        + _tamanho_da_diferenca(tabela, rotulo, quebrados)
     )
+
+
+def _tamanho_da_diferenca(tabela: pd.DataFrame, rotulo: int, quebrados: list[str]) -> str:
+    """De quanto e a diferenca, em dinheiro e em percentual do lucro.
+
+    "Nao fecha" sem tamanho nao ajuda a decidir: quem le precisa saber se o
+    problema vale 0,3% ou 78% do resultado -- no primeiro caso segue, no segundo
+    para e vai ao arquivo. Medido nas 18 companhias que quebram nos
+    controladores, a distancia vai de fracoes de por cento a multiplos do lucro.
+    """
+    if "Controladores" not in quebrados:
+        return ""
+
+    def valor(chave: str) -> float:
+        if chave not in tabela.index or rotulo not in tabela.columns:
+            return float("nan")
+        try:
+            return float(tabela.loc[chave, rotulo])
+        except (TypeError, ValueError):
+            return float("nan")
+
+    lucro = valor("lucro_liquido")
+    controladores = valor("lucro_controladores")
+    minoritarios = valor("lucro_nao_controladores")
+    if not all(np.isfinite(x) for x in (lucro, controladores)):
+        return ""
+    esperado = lucro - (minoritarios if np.isfinite(minoritarios) else 0.0)
+    diferenca = esperado - controladores
+    if not np.isfinite(diferenca) or diferenca == 0:
+        return ""
+
+    parte = f" A diferenca e de {diferenca:,.0f}".replace(",", ".")
+    if lucro:
+        parte += f", ou {abs(diferenca) / abs(lucro):.0%} do lucro consolidado"
+    return parte + "."
 
 
 def importar_ltm(
