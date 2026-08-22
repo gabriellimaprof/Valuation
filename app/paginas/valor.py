@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -109,7 +110,7 @@ def _banco_em_vez_de_dcf() -> bool:
         "esse patrimônio."
     )
 
-    ke, realavancava = _ke_de_instituicao_financeira()
+    ke, realavancava, beta_usado = _ke_de_instituicao_financeira()
     if realavancava is not None:
         st.warning(
             f"**O beta desta empresa estava sendo realavancado, e isso não vale "
@@ -203,6 +204,8 @@ def _banco_em_vez_de_dcf() -> bool:
             "isso sem que ninguém precise afirmar."
         )
 
+    _beta_que_decide(roe / 100, ke, beta_usado)
+
     st.markdown("#### A conta, ano a ano")
     st.caption(
         f"Valores em {unidade}. O custo do capital próprio incide sobre o "
@@ -244,12 +247,17 @@ def _banco_em_vez_de_dcf() -> bool:
 
 
 
-def _ke_de_instituicao_financeira() -> tuple[float, float | None]:
+def _ke_de_instituicao_financeira() -> tuple[float, float | None, float]:
     """O Ke do banco, com o beta **não** realavancado.
 
-    Devolve ``(ke, ke_que_sairia_realavancando)``. O segundo é ``None`` quando as
-    premissas já estavam marcadas como instituição financeira — aí não há o que
-    avisar, porque nada mudou.
+    Devolve ``(ke, ke_que_sairia_realavancando, beta_usado)``. O segundo é
+    ``None`` quando as premissas já estavam marcadas como instituição financeira
+    — aí não há o que avisar, porque nada mudou.
+
+    O **beta usado** sai do cálculo, e não do campo da premissa: quando o beta
+    vem como ``beta_alavancado_setor``, o que entra no Ke é ele desalavancado
+    pelo D/E dos comparáveis. Mostrar o campo bruto exibia 1,00 onde o Ke tinha
+    usado 0,77, e a leitura de "cria ou destrói valor" saía invertida.
 
     Existe porque o usuário pode ter escolhido um setor industrial na tela de
     Custo de capital antes de importar um banco, e nesse caso o Ke que chega aqui
@@ -260,24 +268,80 @@ def _ke_de_instituicao_financeira() -> tuple[float, float | None]:
 
     empresa = estado.empresa()
     if empresa is None:
-        return 0.145, None
+        return 0.145, None, 1.0
 
     ja_marcado = getattr(empresa.custo_capital, "instituicao_financeira", False)
-    correto = calcular_custo_capital(
+    sem_hamada = calcular_custo_capital(
         substituir_varios(
             empresa.custo_capital, {"instituicao_financeira": True}
         ),
         empresa.macro,
-    ).ke_brl
+    )
+    correto, beta = sem_hamada.ke_brl, sem_hamada.beta_realavancado
     if ja_marcado:
-        return correto, None
+        return correto, None, beta
 
     realavancado = calcular_custo_capital(empresa.custo_capital, empresa.macro).ke_brl
     # Só avisa quando a diferença existe: com D/E alvo zerado os dois coincidem,
     # e um aviso que não corresponde a mudança nenhuma treina o leitor a ignorar.
     if abs(realavancado - correto) < 1e-9:
-        return correto, None
-    return correto, realavancado
+        return correto, None, beta
+    return correto, realavancado, beta
+
+
+
+def _beta_que_decide(roe: float, ke: float, usado: float) -> None:
+    """O beta em que a instituição empata com o próprio custo de capital.
+
+    Com o realavancamento desligado, **o beta carrega o Ke sozinho**, e num banco
+    o Ke decide o sinal do lucro residual: abaixo deste beta a instituição cria
+    valor sobre o livro, acima destrói. O veredito inteiro gira em torno de um
+    número que é valor de referência embarcado, e não medido.
+
+    Isto não conserta a origem do beta — **expõe o que ela decide**. Em vez de
+    "o beta é 0,95, confie", a tela diz "acima de X esta instituição destrói
+    valor; julgue se X é plausível". É a ideia do DCF reverso aplicada ao
+    parâmetro que aqui manda em tudo.
+    """
+    from valuation.bancos import beta_de_indiferenca
+
+    empresa = estado.empresa()
+    if empresa is None:
+        return
+    beta = beta_de_indiferenca(empresa.custo_capital, empresa.macro, roe)
+    if not np.isfinite(beta) or beta <= 0:
+        return
+
+    st.markdown("#### O beta que decide o veredito")
+    colunas = st.columns(3)
+    with colunas[0]:
+        metrica("Beta em uso", usado, "numero")
+    with colunas[1]:
+        metrica(
+            "Beta de indiferença",
+            beta,
+            "numero",
+            ajuda="Aquele em que o Ke iguala o ROE e o lucro residual zera.",
+        )
+    with colunas[2]:
+        metrica("ROE projetado", roe, "pct")
+
+    if beta > (usado or 0):
+        st.caption(
+            f"Com beta acima de **{formatar(beta, 'numero')}** esta instituição "
+            f"passaria a destruir valor sobre o próprio livro. O beta em uso é "
+            f"{formatar(usado, 'numero')} — **valor de referência embarcado, e "
+            "não medido contra a série de preços**. A distância entre os dois é a "
+            "margem que a conclusão tem antes de virar."
+        )
+    else:
+        st.caption(
+            f"Bastaria beta de **{formatar(beta, 'numero')}** para esta "
+            f"instituição empatar, e o beta em uso já é "
+            f"{formatar(usado, 'numero')} — **valor de referência embarcado, e "
+            "não medido**. O veredito de destruição de valor depende disso: com "
+            "beta menor, ele se inverte."
+        )
 
 
 def _configuracao() -> None:

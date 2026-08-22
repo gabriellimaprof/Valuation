@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 889 testes
+pytest                        # 894 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-889 testes passando. Verificado de verdade: contas financeiras, identidades,
+894 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -989,6 +989,37 @@ Em ordem de valor:
    porque o usuário pode ter escolhido um setor industrial antes de importar um
    banco. Medido no Bradesco: Ke de 13,35% realavancado contra **12,40%** sem, e
    o P/VP vai de 0,97x para 1,01x.
+
+   **E aí o beta passa a carregar o Ke sozinho, num modelo em que o Ke decide o
+   sinal do resultado.** O beta embarcado é valor de referência, não medido
+   contra série de preços — então a tela mostra o **beta de indiferença**: aquele
+   em que o Ke iguala o ROE e o lucro residual zera. Não conserta a origem do
+   beta, **expõe o que ela decide** — é a ideia do DCF reverso aplicada ao
+   parâmetro que aqui manda em tudo. Medido:
+
+   | Instituição | ROE | Beta de indiferença | Conclusão |
+   |---|---|---|---|
+   | Daycoval | 22,3% | 2,95 | robusta |
+   | BTG | 18,6% | 2,15 | robusta |
+   | Itaú | 18,0% | 2,01 | robusta |
+   | Banco do Brasil | 17,8% | 1,97 | robusta |
+   | **Santander** | 12,3% | **0,78** | **frágil** |
+   | **Bradesco** | 12,1% | **0,72** | **frágil** |
+   | BMG | 5,4% | −0,74 | robusta (destrói) |
+   | IRB | −9,7% | −4,03 | robusta (destrói) |
+
+   A leitura que importa é a das duas pontas. Itaú e BTG precisariam de beta
+   **acima de 2** para deixar de criar valor, e BMG e IRB precisariam de beta
+   **negativo** para deixar de destruir — nos dois casos a conclusão sobrevive à
+   incerteza do parâmetro. Já Bradesco e Santander viram com beta de 0,72-0,78,
+   que é **plausível para banco grande**: ali o app não deve afirmar destruição
+   de valor, e a tela diz isso em vez de mostrar só o P/VP.
+
+   Um erro que a tela cometeu e que valeu a lição: "beta em uso" mostrava o campo
+   bruto da premissa (1,00) e não o que entrou no Ke (0,77, desalavancado pelo
+   D/E dos comparáveis). Como o veredito sai da comparação entre os dois betas,
+   ele saía **contradizendo o P/VP mostrado logo acima**. Há teste travando que
+   as duas leituras concordam.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte
    mostrando o que moveu o valor.
 6. **O ROIC indexado é opcional e nasce desligado.** Marcar a caixa não muda o

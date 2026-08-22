@@ -196,3 +196,61 @@ def test_banco_que_nao_ganha_o_custo_de_capital_vale_menos_que_o_livro():
     )
     resultado = avaliar_lucro_residual(abaixo.premissas, ke=ke)
     assert resultado.equity_value < abaixo.premissas.patrimonio_inicial
+
+
+# ---------------------------------------------------------------------------
+# O beta que decide o veredito
+# ---------------------------------------------------------------------------
+
+
+def test_o_beta_de_indiferenca_iguala_o_ke_ao_roe():
+    """Com o realavancamento desligado, o beta carrega o Ke sozinho.
+
+    E num banco o Ke decide o **sinal** do lucro residual: abaixo deste beta a
+    instituição cria valor sobre o livro, acima destrói. O veredito inteiro gira
+    em torno de um número que é valor de referência embarcado, e não medido.
+    """
+    from valuation.bancos import beta_de_indiferenca
+    from valuation.custo_capital import calcular_custo_capital
+    from valuation.premissas import PremissasCustoCapital, PremissasMacro
+
+    cc = PremissasCustoCapital(
+        beta_desalavancado=0.95, divida_pl_alvo=0.0, instituicao_financeira=True
+    )
+    macro = PremissasMacro()
+
+    for roe in (0.09, 0.126, 0.18, 0.25):
+        beta = beta_de_indiferenca(cc, macro, roe)
+        ke = calcular_custo_capital(
+            PremissasCustoCapital(
+                beta_desalavancado=beta,
+                divida_pl_alvo=0.0,
+                instituicao_financeira=True,
+            ),
+            macro,
+        ).ke_brl
+        assert ke == pytest.approx(roe), f"ROE de {roe:.1%} nao fechou"
+
+
+def test_o_beta_de_indiferenca_cresce_com_o_roe():
+    """Quem ganha mais suporta mais risco antes de deixar de criar valor."""
+    from valuation.bancos import beta_de_indiferenca
+    from valuation.premissas import PremissasCustoCapital, PremissasMacro
+
+    cc = PremissasCustoCapital(
+        beta_desalavancado=0.95, divida_pl_alvo=0.0, instituicao_financeira=True
+    )
+    macro = PremissasMacro()
+    betas = [beta_de_indiferenca(cc, macro, roe) for roe in (0.10, 0.15, 0.20)]
+    assert betas == sorted(betas)
+
+
+def test_sem_roe_nao_ha_beta_de_indiferenca():
+    """Número inventado num lugar em que não há resposta é pior que ausência."""
+    from valuation.bancos import beta_de_indiferenca
+    from valuation.premissas import PremissasCustoCapital, PremissasMacro
+
+    cc = PremissasCustoCapital(beta_desalavancado=0.95, instituicao_financeira=True)
+    assert not np.isfinite(
+        beta_de_indiferenca(cc, PremissasMacro(), float("nan"))
+    )

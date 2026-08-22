@@ -189,3 +189,41 @@ def sugerir_premissas_do_banco(
         justificativas=justificativas,
         alertas=alertas,
     )
+
+
+def beta_de_indiferenca(custo_capital, macro, roe: float) -> float:
+    """O beta em que a instituição empata com o próprio custo de capital.
+
+    Com o realavancamento desligado (ver
+    ``PremissasCustoCapital.instituicao_financeira``), **o beta carrega o Ke
+    sozinho** — e num banco o Ke decide o sinal do lucro residual. Abaixo deste
+    beta a instituição cria valor sobre o livro; acima, destrói. O veredito
+    inteiro do modelo gira em torno de um número que hoje é valor de referência
+    embarcado, e não medido.
+
+    Este número não conserta isso: **expõe**. Em vez de "o beta é 0,95, confie",
+    a tela passa a dizer "com beta acima de X esta instituição destrói valor —
+    julgue se X é plausível". É a mesma ideia do DCF reverso, aplicada ao
+    parâmetro que aqui manda em tudo.
+
+    O Ke é afim no beta::
+
+        ke_usd = rf + beta * ERP + lambda * risco_pais + premio
+        ke_brl = (1 + ke_usd) * (1 + infl_brl) / (1 + infl_usd) - 1
+
+    então a inversão é fechada, e não precisa de busca.
+    """
+    if not np.isfinite(roe):
+        return float("nan")
+    erp = custo_capital.erp_maduro
+    if not erp:
+        return float("nan")
+
+    # Desfaz a conversão de moeda para chegar ao Ke em USD equivalente ao ROE.
+    ke_usd = (1 + roe) * (1 + macro.inflacao_usd) / (1 + macro.inflacao_brl) - 1
+    sem_beta = (
+        custo_capital.rf_usd
+        + custo_capital.lambda_pais * custo_capital.risco_pais
+        + custo_capital.premio_tamanho
+    )
+    return float((ke_usd - sem_beta) / erp)

@@ -301,3 +301,50 @@ main._barra_lateral()
     assert "Equity Value" not in rotulos, rotulos
     assert "WACC" not in rotulos, rotulos
     assert any("lucro residual" in i.value for i in teste.sidebar.info)
+
+
+def test_o_beta_mostrado_e_o_que_entrou_no_ke():
+    """Mostrar o campo bruto da premissa inverte a leitura.
+
+    Quando o beta vem como ``beta_alavancado_setor``, o que entra no Ke é ele
+    **desalavancado** pelo D/E dos comparáveis. A tela exibia 1,00 onde o Ke
+    tinha usado 0,77 — e como a comparação "beta em uso contra beta de
+    indiferença" é o que diz se a instituição cria ou destrói valor, o veredito
+    saía ao contrário do P/VP mostrado logo acima.
+    """
+    from valuation import substituir_varios
+    from valuation.custo_capital import calcular_custo_capital
+
+    teste = _rodar_com_dfs(_banco_de_teste())
+    empresa = teste.session_state["empresa"]
+
+    metricas = {m.label: m.value for m in teste.metric}
+    assert "Beta em uso" in metricas
+
+    esperado = calcular_custo_capital(
+        substituir_varios(empresa.custo_capital, {"instituicao_financeira": True}),
+        empresa.macro,
+    ).beta_realavancado
+    assert float(metricas["Beta em uso"].replace(",", ".")) == pytest.approx(
+        round(esperado, 2), abs=0.01
+    )
+
+
+def test_o_veredito_do_beta_concorda_com_o_pvp():
+    """As duas leituras da mesma coisa não podem discordar na mesma tela.
+
+    Beta de indiferença acima do beta em uso quer dizer que o ROE supera o Ke —
+    exatamente a condição de P/VP acima de 1x.
+    """
+    teste = _rodar_com_dfs(_banco_de_teste())
+    metricas = {m.label: m.value for m in teste.metric}
+
+    def numero(texto: str) -> float:
+        return float(
+            "".join(c for c in texto if c.isdigit() or c in ",-.").replace(",", ".")
+        )
+
+    usado = numero(metricas["Beta em uso"])
+    indiferenca = numero(metricas["Beta de indiferença"])
+    pvp = numero(metricas["P/VP implícito"])
+    assert (indiferenca > usado) == (pvp > 1.0), (usado, indiferenca, pvp)
