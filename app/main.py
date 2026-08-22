@@ -59,6 +59,19 @@ def _barra_lateral() -> None:
         st.markdown(f"### {empresa.nome}")
         st.caption(f"Valores em {empresa.unidade}")
 
+        # Banco e seguradora nao sao avaliados por FCFF ao WACC, e anunciar
+        # aqui um Equity Value e um WACC que a tela de Valor recusou a usar
+        # seria contradizer, na barra lateral, o que a tela principal explica.
+        from valuation.bancos import e_instituicao_financeira
+
+        dfs = estado.demonstracoes()
+        if dfs is not None and e_instituicao_financeira(dfs):
+            st.info(
+                "Instituição financeira: o valor sai do **lucro residual**, em "
+                "**Valor**, e não de um DCF ao WACC."
+            )
+            return
+
         resultado = estado.resultado()
         if resultado is None:
             st.error("As premissas atuais não fecham.")
@@ -138,4 +151,10 @@ def main() -> None:
     navegacao.run()
 
 
-main()
+# O Streamlit executa o arquivo de entrada como ``__main__``, entao a guarda nao
+# muda nada para quem roda o app -- e impede que **importar** este modulo suba a
+# interface inteira como efeito colateral. Sem ela, um teste que so queria
+# chamar ``_barra_lateral`` renderizava o app todo, e o resultado dependia de
+# outro teste ja ter importado o modulo antes.
+if __name__ == "__main__":
+    main()

@@ -170,6 +170,25 @@ def _dre_gerencial(dfs) -> None:
 
     _conferencia_da_dre(dfs)
 
+    st.info(
+        "**O “EBITDA ajustado” daqui não é o do release da companhia, e a "
+        "diferença pode ser grande.** O daqui tira o que a CVM padroniza em "
+        "código — impairment (`3.04.03`), outras receitas (`3.04.04`) e outras "
+        "despesas operacionais (`3.04.05`). O da companhia tira o que ela "
+        "decidiu chamar de não recorrente no próprio release: reestruturação, "
+        "despesa de M&A, remuneração em ações. Essas moram **dentro do SG&A**, "
+        "não têm código próprio e não existem separadas no DFP — nenhum leitor "
+        "as alcança sem a reconciliação que a companhia publica à parte.\n\n"
+        # Tres cifroes na mesma frase: o Streamlit fecharia dois deles num par
+        # ``$...$`` e o meio viraria formula. Escapados, como manda ``em_texto``.
+        "Medido na Viveo de 2024: o release traz EBITDA ajustado de R\\$ 652 mi e "
+        "esta ponte traz **R\\$ 131,8 mi**. Os dois estão certos sobre coisas "
+        "diferentes. O que esta tela garante é que o número **sai dos códigos "
+        "da CVM e fecha com o publicado**, sempre igual entre companhias — que é "
+        "o que permite comparar; o do release não é comparável, porque cada uma "
+        "define o seu."
+    )
+
     st.caption(
         "**O SG&A sai por subtração, e não das contas `3.04.01` e `3.04.02`** — "
         "elas só existem em 297 e 454 das 467 companhias da base, enquanto o "

@@ -167,3 +167,137 @@ def test_amortizar_muda_o_valor_do_acionista():
         divida_por_ano=[max(divida - passo * (i + 1), 0.0) for i in range(anos)],
     )
     assert amortizando.equity_value != pytest.approx(constante.equity_value)
+
+
+# ---------------------------------------------------------------------------
+# Banco e seguradora saem por outra porta
+# ---------------------------------------------------------------------------
+
+SCRIPT_COM_DFS = SCRIPT.replace(
+    "from app.paginas import valor",
+    """if st.session_state.get("dfs") is not None:
+    estado.definir_demonstracoes(st.session_state["dfs"])
+from app.paginas import valor""",
+)
+
+
+def _banco_de_teste():
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    anos = [2021, 2022, 2023, 2024]
+    return Demonstracoes(
+        empresa="Banco Teste",
+        unidade="R$ milhões",
+        valores=pd.DataFrame(
+            {
+                "patrimonio_liquido": [1000.0, 1100.0, 1210.0, 1331.0],
+                "lucro_liquido": [180.0, 198.0, 217.8, 239.6],
+                "dividendos_pagos": [-80.0, -88.0, -96.8, -106.5],
+                "receita_liquida": [900.0, 990.0, 1089.0, 1197.9],
+                "ebit": [250.0, 275.0, 302.5, 332.8],
+                "ativo_total": [9000.0, 9900.0, 10890.0, 11979.0],
+            },
+            index=anos,
+        ).T,
+        avisos=[
+            "Esta companhia publica no plano de contas de instituicao financeira "
+            "ou seguradora."
+        ],
+    )
+
+
+def _rodar_com_dfs(dfs) -> AppTest:
+    teste = AppTest.from_string(SCRIPT_COM_DFS, default_timeout=240)
+    teste.session_state["dfs"] = dfs
+    teste.run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+    return teste
+
+
+def test_banco_nao_ganha_a_tela_de_dcf():
+    """Mostrar um EV descontado ao WACC para um banco é mostrar número errado
+    com aparência de certo, e por isso o desvio acontece **antes** de qualquer
+    número aparecer."""
+    teste = _rodar_com_dfs(_banco_de_teste())
+
+    avisos = [w.value for w in teste.warning]
+    assert any("não se aplica" in a for a in avisos), avisos
+
+    rotulos = {m.label for m in teste.metric}
+    assert "Enterprise Value" not in rotulos, "a tela de FCFF vazou para o banco"
+    assert "Patrimônio contábil" in rotulos
+    assert "P/VP implícito" in rotulos
+
+
+def test_industria_segue_pelo_dcf():
+    """O desvio não pode pegar quem não é banco."""
+    teste = _rodar()
+    rotulos = {m.label for m in teste.metric}
+    assert "Enterprise Value" in rotulos
+    assert "P/VP implícito" not in rotulos
+
+
+def test_a_tela_do_banco_mostra_a_conta_ano_a_ano():
+    """Modelo que não se confere à mão é modelo em que não se confia."""
+    teste = _rodar_com_dfs(_banco_de_teste())
+    tabelas = [d.value for d in teste.dataframe]
+    conta = [t for t in tabelas if "Lucro residual" in list(t.index)]
+    assert conta, "a conta ano a ano nao chegou a tela"
+    assert "Patrimônio (abertura)" in list(conta[0].index)
+
+
+def test_o_que_o_modelo_nao_faz_aparece_na_tela():
+    """Capital regulatório não é modelado, e isso precisa estar onde se usa."""
+    teste = _rodar_com_dfs(_banco_de_teste())
+    avisos = " ".join(w.value for w in teste.warning)
+    assert "capital regulatorio" in avisos or "capital regulatório" in avisos
+
+
+def test_a_conta_do_banco_usa_os_anos_do_exercicio():
+    """Sem o ano-base a tabela numera as linhas 1, 2, 3…
+
+    O analista contaria nos dedos qual exercício está olhando. Foi o mesmo
+    defeito do cronograma de dívida, e apareceu de novo por outro caminho.
+    """
+    dfs = _banco_de_teste()
+    teste = _rodar_com_dfs(dfs)
+    conta = [
+        d.value for d in teste.dataframe if "Lucro residual" in list(d.value.index)
+    ]
+    assert conta
+    primeiro = int(list(conta[0].columns)[0])
+    assert primeiro == dfs.anos[-1] + 1, list(conta[0].columns)
+
+
+def test_a_barra_lateral_nao_anuncia_dcf_para_banco():
+    """Contradizer na barra lateral o que a tela principal explica é pior que
+    não dizer nada: o número apareceria com aparência de conclusão."""
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    script = f"""
+import sys
+for caminho in ({str(raiz)!r}, {str(raiz / "src")!r}):
+    if caminho not in sys.path:
+        sys.path.insert(0, caminho)
+import streamlit as st
+from app import estado
+estado.iniciar()
+if st.session_state.get("dfs") is not None:
+    estado.definir_demonstracoes(st.session_state["dfs"])
+from app import main
+main._barra_lateral()
+"""
+    # ``app/main.py`` so sobe a interface quando **executado**, e nao quando
+    # importado -- por isso da para chamar so a barra lateral aqui.
+    teste = AppTest.from_string(script, default_timeout=120)
+    teste.session_state["dfs"] = _banco_de_teste()
+    teste.run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+
+    rotulos = {m.label for m in teste.sidebar.metric}
+    assert "Equity Value" not in rotulos, rotulos
+    assert "WACC" not in rotulos, rotulos
+    assert any("lucro residual" in i.value for i in teste.sidebar.info)

@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from valuation import substituir_varios
+
 from .. import estado
 from ..componentes import (
     aviso_sem_modelo,
@@ -21,6 +23,12 @@ from ..graficos import cascata_ponte, composicao_do_valor, fluxos_projetados
 
 def render() -> None:
     etapa("Passo 5", "Valor", "O resultado, e de onde cada parte dele vem")
+
+    # Banco e seguradora saem por outra porta, e **antes** de qualquer número
+    # aparecer: mostrar um EV descontado ao WACC para eles seria mostrar um
+    # número errado com aparência de certo.
+    if _banco_em_vez_de_dcf():
+        return
 
     # A configuracao vem **antes** do resultado. Escolher FCFE sem cronograma
     # deixava o modelo sem fechar, e o editor que resolveria isso ficava atras
@@ -68,6 +76,162 @@ def render() -> None:
         _ponte(resultado, unidade)
     with abas[2]:
         _resumo(resultado, unidade)
+
+
+
+def _banco_em_vez_de_dcf() -> bool:
+    """Instituição financeira não se avalia por FCFF descontado ao WACC.
+
+    O motivo não é técnico, é econômico: para uma indústria a dívida financia o
+    ativo e o custo dela entra na taxa de desconto; para um banco a dívida —
+    depósito, captação — **é o insumo do negócio**, e o spread entre captar e
+    emprestar é a receita. Descontar um "fluxo para a firma" ao WACC de um banco
+    soma ao valor o que ele ganha por tomar dinheiro e depois desconta por ele
+    tomar dinheiro.
+
+    São 19 das 467 companhias da base. Devolve ``True`` quando desenhou a tela
+    do banco, para o chamador não seguir para o DCF.
+    """
+    from valuation.bancos import e_instituicao_financeira, sugerir_premissas_do_banco
+    from valuation.lucro_residual import avaliar_lucro_residual
+
+    dfs = estado.demonstracoes()
+    if dfs is None or not e_instituicao_financeira(dfs):
+        return False
+
+    st.warning(
+        "**Esta companhia publica no plano de contas de instituição financeira, "
+        "e o DCF de FCFF ao WACC não se aplica a ela.** Para um banco a dívida "
+        "não financia o ativo — ela *é* o insumo do negócio, e o spread entre "
+        "captar e emprestar é a receita. Em vez do fluxo para a firma, o valor "
+        "aqui sai do **lucro residual**: o patrimônio que a instituição tem, "
+        "mais o valor presente do que ela ganha acima do custo de capital sobre "
+        "esse patrimônio."
+    )
+
+    resultado_modelo = estado.resultado()
+    ke = (
+        resultado_modelo.custo_capital.ke_brl
+        if resultado_modelo is not None
+        else 0.145
+    )
+
+    try:
+        sugestao = sugerir_premissas_do_banco(dfs)
+    except ValueError as erro:
+        st.error(str(erro))
+        return True
+
+    colunas = st.columns(3)
+    roe = colunas[0].number_input(
+        "ROE projetado (%)",
+        value=float(sugestao.premissas.roe[0] * 100),
+        step=0.5,
+        format="%.2f",
+        help="Retorno sobre o patrimônio médio. Mediana histórica, por padrão.",
+    )
+    payout = colunas[1].number_input(
+        "Payout (%)",
+        value=float(sugestao.premissas.payout[0] * 100),
+        min_value=0.0,
+        max_value=100.0,
+        step=5.0,
+        format="%.1f",
+        help="Quanto do lucro é distribuído. O resto fica retido e faz o patrimônio crescer.",
+    )
+    roe_perpetuo = colunas[2].number_input(
+        "ROE perpétuo (%)",
+        value=float(ke * 100),
+        step=0.5,
+        format="%.2f",
+        help=(
+            "Igual ao Ke zera o valor terminal — a afirmação de que a vantagem "
+            "competitiva não sobrevive para sempre. É o padrão para instituição "
+            "madura, e é a premissa que mais move o resultado."
+        ),
+    )
+
+    horizonte = sugestao.premissas.horizonte
+    premissas = substituir_varios(
+        sugestao.premissas,
+        {
+            "roe": [roe / 100] * horizonte,
+            "payout": [payout / 100] * horizonte,
+            "roe_perpetuo": roe_perpetuo / 100,
+        },
+    )
+    try:
+        # O ano-base e o ultimo do historico: sem ele a tabela numera as linhas
+        # 1, 2, 3... e o analista conta nos dedos qual exercicio esta olhando.
+        valuation = avaliar_lucro_residual(
+            premissas, ke=ke, ano_base=int(dfs.anos[-1])
+        )
+    except ValueError as erro:
+        st.error(str(erro))
+        return True
+
+    unidade = estado.empresa().unidade
+    cartoes = st.columns(4)
+    with cartoes[0]:
+        metrica("Equity Value", valuation.equity_value, "moeda", unidade)
+    with cartoes[1]:
+        metrica("Patrimônio contábil", valuation.patrimonio_inicial, "moeda", unidade)
+    with cartoes[2]:
+        metrica(
+            "P/VP implícito",
+            valuation.equity_value / valuation.patrimonio_inicial,
+            "multiplo",
+            ajuda="Abaixo de 1x, o modelo diz que a instituição destrói valor sobre o próprio livro.",
+        )
+    with cartoes[3]:
+        metrica("Ke", ke, "pct2")
+
+    if valuation.equity_value < valuation.patrimonio_inicial:
+        st.info(
+            f"**O modelo devolve menos que o patrimônio contábil.** Com ROE de "
+            f"{formatar(roe / 100, 'pct')} abaixo do Ke de {formatar(ke, 'pct')}, "
+            "cada real retido rende menos que o custo de capital — e a conta diz "
+            "isso sem que ninguém precise afirmar."
+        )
+
+    st.markdown("#### A conta, ano a ano")
+    st.caption(
+        f"Valores em {unidade}. O custo do capital próprio incide sobre o "
+        "patrimônio de **abertura**: o lucro do ano foi ganho sobre o capital que "
+        "estava lá no começo dele."
+    )
+    st.dataframe(tabela_formatada(valuation.tabela(), "moeda"), width="stretch")
+
+    colunas = st.columns(3)
+    with colunas[0]:
+        metrica("Do patrimônio", valuation.peso_do_patrimonio, "pct")
+    with colunas[1]:
+        metrica(
+            "Do lucro acima do Ke",
+            valuation.valor_presente_residual / valuation.equity_value
+            if valuation.equity_value
+            else float("nan"),
+            "pct",
+        )
+    with colunas[2]:
+        metrica("Do valor terminal", valuation.peso_do_terminal, "pct")
+    st.caption(
+        "**É a virtude do modelo.** No DCF de uma indústria o valor terminal "
+        "costuma valer 60% a 80% do total, e a premissa mais frágil carrega quase "
+        "tudo. Aqui a âncora contábil segura a maior parte, e erro na "
+        "perpetuidade custa menos."
+    )
+
+    with st.expander("O que o histórico diz, e o que este modelo não faz"):
+        st.dataframe(
+            tabela_formatada(sugestao.historico.tabela(), "numero"), width="stretch"
+        )
+        for chave, texto in sugestao.justificativas.items():
+            st.markdown(f"- **{chave}** — {texto}")
+        for alerta in sugestao.alertas:
+            st.warning(alerta)
+
+    return True
 
 
 def _configuracao() -> None:

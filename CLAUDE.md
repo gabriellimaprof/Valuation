@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 866 testes
+pytest                        # 886 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -689,7 +689,7 @@ não é verificação.
 
 ## Estado atual
 
-866 testes passando. Verificado de verdade: contas financeiras, identidades,
+886 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -943,8 +943,33 @@ Em ordem de valor:
    O diagnóstico `arrendamento_cresce_para_sempre` mostra o número acima de 10%
    do FCFF terminal. **Não diz qual está certa** — diz quanto custa a que está
    montada, que é o que o analista precisa para escolher.
-4. **Bancos e seguradoras** — FCFF/WACC não se aplica; precisaria de lucro
-   residual ou FCFE com capital regulatório.
+4. **Bancos e seguradoras têm caminho próprio.** FCFF/WACC não se aplica a
+   eles: para uma indústria a dívida financia o ativo; para um banco ela **é o
+   insumo**, e descontar um "fluxo para a firma" ao WACC soma o que ele ganha
+   por tomar dinheiro e depois desconta por ele tomar dinheiro. `lucro_residual.py`
+   implementa Ohlson — `equity = PL contábil + VP do lucro acima do Ke sobre esse
+   patrimônio` — e a tela de Valor **desvia antes de qualquer número aparecer**.
+
+   Duas identidades travadas em teste, porque uma implementação distraída quebra
+   as duas sem avisar: **ROE igual ao Ke devolve exatamente o valor de livro**
+   (se o custo do capital incidir sobre o patrimônio de fechamento em vez do de
+   abertura, deixa de valer e nada mais denuncia), e **lucro residual dá o mesmo
+   que desconto de dividendos** sob clean surplus.
+
+   `roe_perpetuo` nasce igual ao Ke, o que **zera o valor terminal**. Não é
+   omissão: é dizer que a vantagem não sobrevive para sempre, o padrão da
+   literatura para instituição madura. E é aí que o modelo mostra a que veio —
+   no DCF o terminal costuma valer 60% a 80% do total; aqui a âncora contábil
+   carrega **83% a 105%**, e erro na perpetuidade custa menos.
+
+   Medido com Ke de 13,35%: Itaú sai a **1,20x** o valor de livro, Bradesco a
+   **0,97x** — com ROE de 12,6% abaixo do Ke, o lucro residual contribui
+   **negativo**, e a tela diz isso. Não modela capital regulatório, e o alerta
+   está onde o modelo é usado.
+
+   A barra lateral também desvia: anunciar ali um Equity Value e um WACC que a
+   tela de Valor acabou de recusar seria contradizer, no canto do olho, o que a
+   tela principal explica.
 5. **Comparar duas versões do mesmo valuation** — diff de premissas com ponte
    mostrando o que moveu o valor.
 6. **O ROIC indexado é opcional e nasce desligado.** Marcar a caixa não muda o

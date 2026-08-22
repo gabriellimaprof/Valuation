@@ -172,3 +172,18 @@ def test_a_dre_em_percentual_da_receita(weg):
     ]
     assert exibidas
     assert exibidas[0].value.loc["Receita líquida"].iloc[0].startswith("100,0%")
+
+
+def test_a_tela_diz_que_o_ebitda_ajustado_nao_e_o_do_release(weg):
+    """A confusão mais provável de quem lê a aba, dita antes de acontecer.
+
+    O ajuste daqui sai dos códigos que a CVM padroniza; o do release da
+    companhia tira o que ela decidiu chamar de não recorrente, que mora dentro
+    do SG&A e não existe separado no DFP. Medido na Viveo de 2024: R$ 652 mi no
+    release contra R$ 131,8 mi nesta ponte. Os dois estão certos sobre coisas
+    diferentes, e quem não souber disso vai achar que um deles está errado.
+    """
+    teste = _rodar(weg)
+    textos = " ".join(i.value for i in teste.info)
+    assert "não é o do release" in textos, textos
+    assert "3.04.03" in textos
