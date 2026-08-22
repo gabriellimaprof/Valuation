@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 914 testes
+pytest                        # 917 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -748,7 +748,7 @@ não é verificação.
 
 ## Estado atual
 
-914 testes passando. Verificado de verdade: contas financeiras, identidades,
+917 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -836,6 +836,13 @@ código não existe naquele arquivo.
    companhia publica "Dividendos pagos" zerado no ano em que não pagou, e
    contá-la repõe o mesmo erro por outro caminho — sem o filtro, os escapes de
    dividendos passam de 12 para 90.
+
+   **A mesma distinção está na tela de conferência**, por companhia:
+   `conferir_contas_somadas` responde a pergunta que o analista faz olhando a
+   empresa dele — o app achou capex, e se não achou, é porque a companhia não tem
+   ou porque a regra não alcançou? Os dois pedem coisas diferentes: **ausente não
+   pede nada**, e mandar procurar o que não existe gasta o tempo de quem lê;
+   **escapou** pede mapeamento manual, e a tela lista as linhas da seção.
 
 ## Estressar macro, e o efeito que eu previ errado
 

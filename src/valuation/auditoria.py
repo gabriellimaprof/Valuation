@@ -518,3 +518,63 @@ def _valor(dfs, chave: str, ano: int) -> float:
         return float(dfs.valor(chave, ano))
     except Exception:
         return float("nan")
+
+
+@dataclass(frozen=True)
+class ContaSomadaNaCompanhia:
+    """O estado de uma conta remontada por soma, numa companhia so.
+
+    A versao de base responde "a regra cobre quanto?"; esta responde a pergunta
+    que o analista faz olhando **a empresa dele**: o app achou capex, e se nao
+    achou, e porque a companhia nao tem ou porque a regra nao alcancou?
+
+    A distincao decide o que fazer: **ausente** nao pede nada, **escapou** pede
+    mapeamento manual da linha.
+    """
+
+    conta: str
+    valor: float
+    origem: str
+    linhas_que_mencionam: list[str]
+
+    @property
+    def situacao(self) -> str:
+        if np.isfinite(self.valor) and self.valor != 0:
+            return "encontrada"
+        return "escapou" if self.linhas_que_mencionam else "ausente"
+
+
+def conferir_contas_somadas(demonstracoes, ano: int | None = None) -> list[ContaSomadaNaCompanhia]:
+    """Capex, juros pagos e dividendos pagos: achou, nao tem, ou escapou?
+
+    Capex, juro pago e dividendo pago **nao existem como linha unica** na CVM --
+    abaixo dos totais de secao o plano e conta livre --, e sao remontados por
+    soma. Quando a soma nao acha nada, a tela precisa dizer **qual dos dois
+    motivos**: companhia que nao pagou dividendo nao tem linha de dividendo, e
+    tratar isso como falha da leitura manda o analista procurar o que nao existe.
+
+    Medido na base de 2024, a diferenca entre os dois motivos e quase todo o
+    problema: em dividendos pagos, **172 das 467 companhias simplesmente nao
+    pagaram**, e a cobertura vai de 61% aparente para 96% real.
+    """
+    anos = list(demonstracoes.anos)
+    if not anos:
+        return []
+    ano = ano if ano is not None else anos[-1]
+    arvore = getattr(demonstracoes, "detalhe", None)
+
+    saida = []
+    for chave, (padrao, prefixos) in MENCIONA.items():
+        valor = _valor(demonstracoes, chave, ano)
+        mencionam: list[str] = []
+        if not (np.isfinite(valor) and valor != 0) and arvore is not None and not arvore.empty:
+            mencionam = _linhas_que_mencionam(arvore, ano, padrao, prefixos)
+        saida.append(
+            ContaSomadaNaCompanhia(
+                conta=chave,
+                valor=valor,
+                origem=demonstracoes.mapeamento.get(chave, ""),
+                linhas_que_mencionam=mencionam,
+            )
+        )
+    return saida

@@ -28,7 +28,7 @@ from valuation.importacao.cvm import (
 from valuation.importacao.esquema import extrair_codigo_cvm
 
 from .. import estado
-from ..componentes import etapa, tabela_formatada
+from ..componentes import etapa, formatar, tabela_formatada
 
 ESCALAS = {
     "Os valores já estão na unidade que quero usar": (1, None),
@@ -723,6 +723,70 @@ def _demonstracao(dfs, chave: str) -> None:
         st.dataframe(tabela_formatada(canonicas, "moeda"), width="stretch")
 
 
+
+def _contas_remontadas(dfs) -> None:
+    """Capex, juros pagos e dividendos pagos: achou, não tem, ou escapou?
+
+    Essas três **não existem como linha única** na CVM — abaixo dos totais de
+    seção o plano é conta livre —, e são remontadas por soma. Quando a soma não
+    acha nada, a tela precisa dizer **qual dos dois motivos**, porque eles pedem
+    coisas diferentes: companhia que não pagou dividendo não tem o que mapear, e
+    mandar o analista procurar o que não existe gasta o tempo dele.
+
+    Medido na base de 2024, a diferença entre os dois motivos é quase todo o
+    problema: em dividendos pagos, **172 das 467 companhias simplesmente não
+    pagaram**, e a cobertura vai de 61% aparente para 96% real.
+    """
+    from valuation.auditoria import conferir_contas_somadas
+
+    try:
+        situacoes = conferir_contas_somadas(dfs)
+    except Exception:
+        return
+    if not situacoes:
+        return
+
+    st.markdown("**Contas remontadas por soma**")
+    st.caption(
+        "Capex, juro pago e dividendo pago não existem como linha única na CVM: "
+        "chegam partidos em várias rubricas e são somados por regra. Aqui está o "
+        "que a regra achou nesta companhia."
+    )
+
+    simbolo = {"encontrada": "✅", "ausente": "—", "escapou": "⚠️"}
+    explicacao = {
+        "encontrada": "a regra montou a conta",
+        "ausente": "nenhuma linha da DFC menciona — a companhia não tem isso",
+        "escapou": "há linha mencionando e a regra não pegou",
+    }
+    quadro = pd.DataFrame(
+        [
+            {
+                "Conta": POR_CHAVE[s.conta].rotulo,
+                "": simbolo[s.situacao],
+                "Situação": explicacao[s.situacao],
+                "Valor": formatar(s.valor, "moeda", dfs.unidade)
+                if s.situacao == "encontrada"
+                else "—",
+            }
+            for s in situacoes
+        ]
+    ).set_index("Conta")
+    st.dataframe(quadro, width="stretch")
+
+    escaparam = [s for s in situacoes if s.situacao == "escapou"]
+    if escaparam:
+        st.warning(
+            "**Há linha falando do assunto que a regra não alcançou.** Essas são "
+            "as que pedem mapeamento manual — as marcadas com — não, porque ali "
+            "não existe o que mapear."
+        )
+        for s in escaparam:
+            with st.expander(f"O que há na seção — {POR_CHAVE[s.conta].rotulo}"):
+                for linha in s.linhas_que_mencionam[:12]:
+                    st.markdown(f"- {linha}")
+
+
 LIMITE_CONFERENCIA = 40
 
 
@@ -765,6 +829,8 @@ def _conferencia(dfs) -> None:
             ).set_index("Conta"),
             width="stretch",
         )
+
+    _contas_remontadas(dfs)
 
     if not dfs.nao_reconhecidas:
         st.success("Todas as linhas da planilha foram classificadas.")

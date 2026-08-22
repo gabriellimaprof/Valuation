@@ -170,3 +170,55 @@ def test_a_dva_traz_o_que_a_dre_nao_abre(weg):
     arvore = weg.arvore("dva")
     assert not arvore.empty
     assert weg.valor("receita_bruta", 2024) > weg.valor("receita_liquida", 2024)
+
+
+# ---------------------------------------------------------------------------
+# Contas remontadas por soma
+# ---------------------------------------------------------------------------
+
+
+def test_a_conferencia_diz_o_que_a_regra_achou(weg):
+    """Capex, juro pago e dividendo pago não existem como linha única na CVM.
+
+    Chegam partidos em várias rubricas e são somados por regra, então a tela de
+    conferência precisa dizer o que a regra montou nesta companhia.
+    """
+    teste = _rodar(weg)
+    texto = " ".join(m.value for m in teste.markdown)
+    assert "Contas remontadas por soma" in texto
+
+    tabelas = [d.value for d in teste.dataframe]
+    quadro = [t for t in tabelas if "Situação" in list(t.columns)]
+    assert quadro, "o quadro das contas remontadas nao chegou a tela"
+    assert len(quadro[0]) == 3
+
+
+def test_ausente_e_escapou_nao_sao_a_mesma_coisa(weg):
+    """Os dois motivos pedem coisas diferentes, e confundi-los custa tempo.
+
+    Companhia que não pagou dividendo não tem o que mapear; mandar o analista
+    procurar o que não existe gasta o tempo dele. Medido na base de 2024: em
+    dividendos pagos, **172 das 467 simplesmente não pagaram**, e a cobertura vai
+    de 61% aparente para 96% real.
+    """
+    from valuation.auditoria import ContaSomadaNaCompanhia
+
+    achou = ContaSomadaNaCompanhia("capex", 100.0, "6.02.01", [])
+    nao_tem = ContaSomadaNaCompanhia("dividendos_pagos", float("nan"), "", [])
+    escapou = ContaSomadaNaCompanhia(
+        "juros_pagos", float("nan"), "", ["Juros sobre empréstimos"]
+    )
+    assert achou.situacao == "encontrada"
+    assert nao_tem.situacao == "ausente"
+    assert escapou.situacao == "escapou"
+
+
+def test_valor_zero_nao_conta_como_encontrada():
+    """Conta somada que deu zero é conta que a regra não montou.
+
+    É a mesma armadilha da medição de cobertura: linha publicada zerada não é
+    dado, e tratá-la como achado esconderia que não há nada ali.
+    """
+    from valuation.auditoria import ContaSomadaNaCompanhia
+
+    assert ContaSomadaNaCompanhia("capex", 0.0, "", []).situacao == "ausente"
