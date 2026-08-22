@@ -55,6 +55,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -401,8 +402,6 @@ def anos_disponiveis(cache: Path | None = None, forcar: bool = False) -> list[in
     Se o indice nao responder, cai para um intervalo conservador -- e melhor
     oferecer uma lista aproximada que travar a tela.
     """
-    from datetime import date
-
     try:
         with urllib.request.urlopen(
             URL_DFP.rsplit("/", 1)[0] + "/", timeout=TEMPO_LIMITE
@@ -1705,11 +1704,14 @@ def _linhas_do_itr(
     escopo: str,
     data_refer: str,
     ordem: str,
+    periodo: str = "acumulado",
 ) -> list[LinhaCVM]:
-    """Linhas de uma demonstracao do ITR, ja resolvidas para o acumulado.
+    """Linhas de uma demonstracao do ITR, no periodo pedido.
 
     ``ordem`` e ``"ÚLTIMO"`` (exercicio corrente) ou ``"PENÚLTIMO"`` (o mesmo
-    periodo do exercicio anterior, na DRE e na DFC).
+    periodo do exercicio anterior, na DRE e na DFC). ``periodo`` escolhe entre o
+    **acumulado** do exercicio ate o trimestre e o **trimestre isolado**, que a
+    CVM publica lado a lado na mesma conta.
     """
     coletadas: list[LinhaCVM] = []
 
@@ -1728,13 +1730,23 @@ def _linhas_do_itr(
         # arquivos das mesmas companhias.
         recorte = _sem_linhas_repetidas(recorte, demonstracao)
 
-        # Periodo: fica o acumulado, que e a linha mais longa de cada conta.
+        # **Qual das duas linhas da mesma conta.** Para ``DT_REFER`` de 30/09 a
+        # DRE traz o acumulado do exercicio (01/01-30/09) e o trimestre isolado
+        # (01/07-30/09): o acumulado e a linha **mais longa** e o isolado, a
+        # mais curta. No primeiro trimestre ha uma so, e as duas leituras
+        # coincidem -- e por isso a escolha e por duracao e nao por posicao.
+        #
+        # Medidas as duracoes no ITR de 2025, so existem tres faixas: 89-91,
+        # 180-183 e 272-274 dias. E o isolado e publicado por **100% das
+        # companhias** em toda data de referencia, o que torna a visao
+        # trimestral leitura direta e nao diferenca entre acumulados.
         if "DT_INI_EXERC" in recorte.columns:
             inicio = pd.to_datetime(recorte["DT_INI_EXERC"], errors="coerce")
             fim = pd.to_datetime(recorte["DT_FIM_EXERC"], errors="coerce")
             recorte = recorte.assign(_dias=(fim - inicio).dt.days)
             recorte = recorte.sort_values("_dias").drop_duplicates(
-                subset=["CD_CONTA", "DS_CONTA"], keep="last"
+                subset=["CD_CONTA", "DS_CONTA"],
+                keep="first" if periodo == "isolado" else "last",
             )
 
         for _, linha in recorte.iterrows():
@@ -1808,6 +1820,7 @@ def _demonstracoes_do_itr(
     data_refer: str,
     ordem: str,
     empresa: str,
+    periodo: str = "acumulado",
 ) -> Demonstracoes:
     avisos: list[str] = []
     linhas: list[LinhaCVM] = []
@@ -1821,7 +1834,8 @@ def _demonstracoes_do_itr(
     for demonstracao in GRUPOS:
         linhas.extend(
             _linhas_do_itr(
-                zip_path, ano, demonstracao, codigo_cvm, avisos, escopo, data_refer, ordem
+                zip_path, ano, demonstracao, codigo_cvm, avisos, escopo,
+                data_refer, ordem, periodo
             )
         )
     if not linhas:
@@ -1829,7 +1843,10 @@ def _demonstracoes_do_itr(
             f"O ITR de {ano} nao tem dados da companhia {codigo_cvm} em {data_refer}."
         )
     return montar_demonstracoes(
-        linhas, empresa=empresa, origem=f"ITR {data_refer} ({ordem})", avisos=avisos
+        linhas,
+        empresa=empresa,
+        origem=f"ITR {data_refer} ({ordem}, {periodo})",
+        avisos=avisos,
     )
 
 
@@ -1909,14 +1926,57 @@ def _tamanho_da_diferenca(tabela: pd.DataFrame, rotulo: int, quebrados: list[str
     return parte + "."
 
 
+def _identificar(
+    companhia: Companhia | int, catalogo: list[Companhia] | None
+) -> tuple[int, Companhia | None, str]:
+    """Codigo CVM, registro do cadastro e nome, a partir de qualquer um dos dois."""
+    if isinstance(companhia, Companhia):
+        return companhia.codigo_cvm, companhia, companhia.nome
+    codigo_cvm, nome = int(companhia), str(companhia)
+    for candidato in catalogo or []:
+        if candidato.codigo_cvm == codigo_cvm:
+            return codigo_cvm, candidato, candidato.nome
+    return codigo_cvm, None, nome
+
+
+def _abrir_itr(
+    ano: int, codigo_cvm: int, cache: Path | None, forcar_download: bool
+) -> tuple[Path, int, str, list[str]]:
+    """Zip do ITR, ano efetivo, escopo e trimestres com dado da companhia."""
+    zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
+    escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+    trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
+    if not trimestres and _itr_vazio(zip_itr, ano):
+        # Em janeiro o arquivo do ano ja existe e esta vazio; o ITR util e o do
+        # ano anterior. A condicao e **o arquivo estar vazio**, e nao a
+        # companhia faltar nele: sem essa distincao, pedir o ano movel de uma
+        # companhia que nao publica ITR baixava o zip do ano anterior -- 33 MB
+        # por consulta, para nada.
+        ano -= 1
+        zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
+        escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+        trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
+    if not trimestres:
+        raise ErroCVM(
+            f"A CVM nao tem ITR da companhia {codigo_cvm} em {ano} nem em {ano + 1}."
+        )
+    return zip_itr, ano, escopo, trimestres
+
+
 def importar_ltm(
     companhia: Companhia | int,
     cache: Path | None = None,
     catalogo: list[Companhia] | None = None,
     ano: int | None = None,
     forcar_download: bool = False,
+    data_refer: str | None = None,
 ) -> Demonstracoes:
-    """Ano movel: o exercicio fechado, atualizado ate o ultimo trimestre.
+    """Ano movel: o exercicio fechado, atualizado ate o trimestre pedido.
+
+    ``data_refer`` escolhe **qual** trimestre encerra os doze meses; sem ele, o
+    mais recente. E o que permite a serie rolante montar um ano movel por
+    trimestre reusando esta funcao, em vez de reimplementar a formula -- duas
+    implementacoes da mesma conta divergem no dia em que uma das duas muda.
 
     E o que faltava para o app "se atualizar quando sai balanco". A conta e a de
     sempre, e o ITR ja entrega as duas metades que ela pede::
@@ -1935,36 +1995,11 @@ def importar_ltm(
     movel, e um aviso dizendo que aquilo nao e exercicio social. Sem o aviso,
     quem lesse "2025" numa companhia que fecha em dezembro entenderia ano cheio.
     """
-    registro: Companhia | None = None
-    if isinstance(companhia, Companhia):
-        registro, codigo_cvm, nome = companhia, companhia.codigo_cvm, companhia.nome
-    else:
-        codigo_cvm, nome = int(companhia), str(companhia)
-        for candidato in catalogo or []:
-            if candidato.codigo_cvm == codigo_cvm:
-                registro, nome = candidato, candidato.nome
-                break
-
-    ano = ano or date.today().year
-    zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
-    escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
-    trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
-    if not trimestres and _itr_vazio(zip_itr, ano):
-        # Em janeiro o arquivo do ano ja existe e esta vazio; o ITR util e o do
-        # ano anterior. A condicao e **o arquivo estar vazio**, e nao a
-        # companhia faltar nele: sem essa distincao, pedir o ano movel de uma
-        # companhia que nao publica ITR baixava o zip do ano anterior -- 33 MB
-        # por consulta, para nada.
-        ano -= 1
-        zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
-        escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
-        trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
-    if not trimestres:
-        raise ErroCVM(
-            f"A CVM nao tem ITR da companhia {codigo_cvm} em {ano} nem em {ano + 1}."
-        )
-
-    data_refer = trimestres[-1]
+    codigo_cvm, registro, nome = _identificar(companhia, catalogo)
+    zip_itr, ano, escopo, trimestres = _abrir_itr(
+        ano or date.today().year, codigo_cvm, cache, forcar_download
+    )
+    data_refer = data_refer or trimestres[-1]
     atual = _demonstracoes_do_itr(
         zip_itr, ano, codigo_cvm, escopo, data_refer, "ultimo", nome
     )
@@ -2371,4 +2406,136 @@ def _reorganizar_o_fco(
         "Esta companhia paga outorga de concessão. Movi esses pagamentos para o "
         "fluxo de investimento e somei ao capex: comprar o direito de explorar é "
         "investimento, não custo de operar. A soma das seções não muda."
+    )
+
+
+# ---------------------------------------------------------------------------
+# As tres leituras do tempo: anual, trimestral e ano movel rolante
+# ---------------------------------------------------------------------------
+
+
+def importar_trimestral(
+    companhia: Companhia | int,
+    cache: Path | None = None,
+    catalogo: list[Companhia] | None = None,
+    ano: int | None = None,
+    forcar_download: bool = False,
+) -> Demonstracoes:
+    """Os trimestres **isolados** do exercicio, uma coluna cada.
+
+    O trimestre isolado mostra inflexao: uma margem que virou no 3T aparece aqui
+    e some no acumulado, diluida pelos trimestres anteriores. Ele e leitura
+    direta e nao diferenca entre acumulados -- medido no ITR de 2025, **100% das
+    companhias publicam a linha isolada** em toda data de referencia, ao lado do
+    acumulado.
+
+    **Carrega sazonalidade**, e por isso a serie sai rotulada por trimestre
+    (``1T25``, ``2T25``): comparar 3T com 2T e comparar epocas do ano diferentes,
+    e o par que se compara e 3T contra 3T. Quem quer a serie sem sazonalidade usa
+    ``importar_ltm_rolante``.
+
+    Contas de balanco **nao sao do periodo**: entram como o saldo no fim de cada
+    trimestre, e nao como diferenca.
+    """
+    from .series import _rotulo_do_trimestre, montar_serie
+
+    codigo_cvm, registro, nome = _identificar(companhia, catalogo)
+    zip_itr, ano, escopo, trimestres = _abrir_itr(
+        ano or date.today().year, codigo_cvm, cache, forcar_download
+    )
+
+    partes = []
+    for data_refer in trimestres:
+        try:
+            dfs = _demonstracoes_do_itr(
+                zip_itr, ano, codigo_cvm, escopo, data_refer, "ultimo", nome,
+                periodo="isolado",
+            )
+        except ErroCVM:
+            continue
+        partes.append((_rotulo_do_trimestre(data_refer), dfs))
+
+    if not partes:
+        raise ErroCVM(
+            f"A CVM nao tem trimestre da companhia {codigo_cvm} em {ano}."
+        )
+
+    return montar_serie(
+        partes,
+        empresa=nome,
+        unidade="reais",
+        origem=f"CVM ITR — trimestres isolados de {ano}",
+        avisos=[
+            "**Trimestres isolados, e nao acumulados.** Cada coluna sao tres "
+            "meses sozinhos, o que mostra inflexao mas **carrega sazonalidade**: "
+            "comparar 3T com 2T compara epocas do ano diferentes, e o par certo "
+            "e 3T contra 3T. Contas de balanco sao o saldo no fim de cada "
+            "trimestre, e nao uma soma.",
+            *partes[-1][1].avisos,
+        ],
+    )
+
+
+def importar_ltm_rolante(
+    companhia: Companhia | int,
+    cache: Path | None = None,
+    catalogo: list[Companhia] | None = None,
+    ano: int | None = None,
+    forcar_download: bool = False,
+) -> Demonstracoes:
+    """O ano movel encerrado em **cada** trimestre, uma coluna cada.
+
+    Tira a sazonalidade sem esperar o exercicio fechar, que e exatamente o que
+    falta entre um balanco anual e o proximo -- e mostra a **tendencia**, que um
+    ano movel sozinho nao mostra: doze meses em queda e doze meses em alta dao o
+    mesmo ponto no ultimo trimestre.
+
+    Cada coluna sai da mesma formula do ano movel pontual, aplicada naquele
+    trimestre. **Nao e a soma dos quatro trimestres isolados**: o quarto
+    trimestre do exercicio anterior nao existe no ITR, ele seria o exercicio
+    fechado menos o acumulado de nove meses.
+    """
+    from .series import _rotulo_do_trimestre, montar_serie
+
+    codigo_cvm, registro, nome = _identificar(companhia, catalogo)
+    zip_itr, ano, escopo, trimestres = _abrir_itr(
+        ano or date.today().year, codigo_cvm, cache, forcar_download
+    )
+
+    partes = []
+    avisos_ultimo: list[str] = []
+    for data_refer in trimestres:
+        try:
+            dfs = importar_ltm(
+                registro or codigo_cvm,
+                cache=cache,
+                catalogo=catalogo,
+                ano=ano,
+                forcar_download=False,
+                data_refer=data_refer,
+            )
+        except ErroCVM:
+            continue
+        partes.append((_rotulo_do_trimestre(data_refer), dfs))
+        avisos_ultimo = dfs.avisos
+
+    if not partes:
+        raise ErroCVM(
+            f"Nao consegui montar ano movel nenhum da companhia {codigo_cvm} em {ano}."
+        )
+
+    return montar_serie(
+        partes,
+        empresa=nome,
+        unidade="reais",
+        origem=f"CVM ITR — ano móvel rolante de {ano}",
+        avisos=[
+            "**Cada coluna e um ano movel de doze meses**, encerrado no trimestre "
+            "que a rotula -- e nao um exercicio social. A serie tira a "
+            "sazonalidade sem esperar o exercicio fechar, e mostra a tendencia "
+            "que um ano movel sozinho esconde: doze meses em queda e doze em alta "
+            "dao o mesmo ponto no ultimo trimestre. Contas de balanco sao o saldo "
+            "no fim de cada trimestre.",
+            *avisos_ultimo,
+        ],
     )

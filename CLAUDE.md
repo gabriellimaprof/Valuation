@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 928 testes
+pytest                        # 936 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -274,6 +274,34 @@ excluídas por isso, e 85 por não abrirem juro pago.
 nada estivesse errado. Agora montam o caso **a partir das constantes** — o que
 se trava é a propriedade (descolamento na mediana não acusa; entre P75 e P90 é
 atenção), não o valor da safra.
+
+**As três leituras do tempo, e o erro de misturá-las.** O app lia duas — o
+exercício fechado e um ano móvel, o do último trimestre. Faltava a terceira e
+faltava a **série**: quem acompanha uma empresa quer ver o trimestre isolado ao
+longo do tempo e o ano móvel se movendo, não um ponto.
+
+| Leitura | O que responde | O que custa |
+|---|---|---|
+| **Anual** | o exercício auditado, comparável entre empresas | fecha só uma vez por ano |
+| **Trimestral isolado** | inflexão — margem que virou no 3T aparece aqui e some no acumulado | **carrega sazonalidade**: o par é 3T contra 3T |
+| **Ano móvel rolante** | tendência, sem esperar o exercício fechar | não é exercício social |
+
+O trimestre isolado é **leitura direta e não diferença entre acumulados**: medido
+no ITR de 2025, **100% das companhias publicam a linha isolada** em toda data de
+referência, ao lado do acumulado. A escolha entre as duas é por **duração** e não
+por posição — no primeiro trimestre há uma linha só, e as duas coincidem.
+
+O ano móvel rolante **não é a soma dos quatro trimestres isolados**: o quarto
+trimestre do exercício anterior não existe no ITR — seria o exercício fechado
+menos o acumulado de nove meses. Cada coluna reusa `importar_ltm` com o
+`data_refer` daquele trimestre, em vez de reimplementar a fórmula: duas
+implementações da mesma conta divergem no dia em que uma delas muda.
+
+Contas de **balanço** não somam em nenhuma das três — são um saldo numa data.
+
+Conferido na WEG: os três trimestres isolados de 2025 somam 30.558 contra os
+30.557 do acumulado de nove meses, e o ano móvel sobe de 40.032 para 41.380 ao
+longo do ano.
 
 **O ITR tem uma pegadinha própria, e ela é de período.** Para `DT_REFER` de
 30/09, a DRE traz **duas linhas da mesma conta**: o acumulado do exercício
@@ -778,7 +806,7 @@ não é verificação.
 
 ## Estado atual
 
-928 testes passando. Verificado de verdade: contas financeiras, identidades,
+936 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

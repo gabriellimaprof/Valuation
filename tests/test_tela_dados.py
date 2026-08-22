@@ -222,3 +222,46 @@ def test_valor_zero_nao_conta_como_encontrada():
     from valuation.auditoria import ContaSomadaNaCompanhia
 
     assert ContaSomadaNaCompanhia("capex", 0.0, "", []).situacao == "ausente"
+
+
+# ---------------------------------------------------------------------------
+# As tres leituras do tempo, na tela
+# ---------------------------------------------------------------------------
+
+
+def test_a_tela_oferece_as_tres_leituras_do_tempo():
+    """Anual, trimestral e ano móvel respondem perguntas diferentes.
+
+    O exercício é o único que fecha com o resultado que a companhia divulga como
+    do ano; o trimestre isolado mostra inflexão mas carrega sazonalidade; o ano
+    móvel tira a sazonalidade sem esperar o exercício fechar.
+    """
+    from app.paginas.dados import VISOES
+
+    assert list(VISOES) == [
+        "Anual",
+        "Anual + ano móvel",
+        "Trimestral (isolado)",
+        "Ano móvel rolante",
+    ]
+    # Cada uma diz o que responde e o que custa.
+    assert "sazonalidade" in VISOES["Trimestral (isolado)"]
+    assert "tendência" in VISOES["Ano móvel rolante"]
+    assert "não é um exercício social" in VISOES["Anual + ano móvel"]
+
+
+def test_o_catalogo_e_chamado_pelo_nome_certo():
+    """``_catalogo()`` não existe, e o erro só aparecia ao clicar em importar.
+
+    O caminho do ano móvel carregava a chamada errada desde que foi escrito: o
+    ``NameError`` não é ``ErroCVM``, então o ``try`` em volta não o pegava e a
+    tela quebrava inteira. Nenhum teste alcançava a linha porque ela só roda com
+    rede.
+    """
+    import inspect
+
+    from app.paginas import dados
+
+    fonte = inspect.getsource(dados)
+    assert "_catalogo()" not in fonte, "sobrou chamada ao helper inexistente"
+    assert "_catalogo_cvm()" in fonte

@@ -409,3 +409,103 @@ def test_quebra_fora_dos_controladores_nao_ganha_o_tamanho():
         {2025: {"lucro_liquido": 120.0, "lucro_controladores": 40.0}}
     )
     assert _tamanho_da_diferenca(tabela, 2025, ["LAIR"]) == ""
+
+
+# ---------------------------------------------------------------------------
+# As tres leituras do tempo
+# ---------------------------------------------------------------------------
+
+
+def test_o_trimestre_isolado_soma_o_acumulado():
+    """Os três meses sozinhos, e não o acumulado do exercício.
+
+    É a verificação que prova qual das duas linhas foi lida: a CVM publica as
+    duas lado a lado na mesma conta, e a escolha é por **duração**. Somados, os
+    trimestres isolados têm que dar o acumulado — na WEG, 10.079 + 10.207 +
+    10.272 = 30.558 contra os 30.557 do acumulado de nove meses.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    receita = tri.valores.loc["receita_liquida"]
+    assert list(tri.valores.columns) == ["1T25", "2T25", "3T25"]
+
+    ltm = importar_ltm(WEG, cache=DADOS, ano=2025)
+    # O acumulado de nove meses e o que o ano movel soma ao exercicio fechado.
+    assert float(receita.sum()) == pytest.approx(30_557_000_000.0, rel=0.001)
+
+
+def test_o_trimestre_isolado_nao_e_o_acumulado():
+    """Se fossem iguais, a leitura teria pego a linha errada.
+
+    No primeiro trimestre as duas coincidem por construção — há uma linha só —,
+    e é por isso que a escolha é por duração e não por posição.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    receita = tri.valores.loc["receita_liquida"]
+    # Cada trimestre e cerca de um terco do acumulado de nove meses.
+    for valor in receita:
+        assert 8e9 < float(valor) < 13e9, receita.to_dict()
+
+
+def test_o_balanco_nao_soma_no_trimestre():
+    """Saldo é uma data, e não um período.
+
+    Somar o patrimônio pelos trimestres produziria um número que não existe —
+    é o mesmo erro que o ano móvel separa por construção.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    patrimonio = tri.valores.loc["patrimonio_liquido"]
+    # Cresce trimestre a trimestre, e cada um e o saldo -- nao um terco do total.
+    assert list(patrimonio) == sorted(patrimonio)
+    assert float(patrimonio.iloc[-1]) > 20e9
+
+
+def test_o_ano_movel_rolante_e_uma_serie_e_mostra_tendencia():
+    """Um ano móvel sozinho não mostra tendência.
+
+    Doze meses em queda e doze em alta dão o mesmo ponto no último trimestre; a
+    série é o que separa os dois. Na WEG a receita móvel sobe de 40.032 para
+    41.380 ao longo de 2025.
+    """
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    assert list(rolante.valores.columns) == ["1T25", "2T25", "3T25"]
+    receita = [float(v) for v in rolante.valores.loc["receita_liquida"]]
+    assert receita == sorted(receita)
+    # E cada coluna e um ano inteiro, e nao um trimestre.
+    assert all(v > 35e9 for v in receita)
+
+
+def test_a_ultima_coluna_do_rolante_e_o_ano_movel_pontual():
+    """A série reusa a mesma função, e não reimplementa a fórmula.
+
+    Duas implementações da mesma conta divergem no dia em que uma das duas muda.
+    """
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    pontual = importar_ltm(WEG, cache=DADOS, ano=2025)
+    for chave in ("receita_liquida", "ebit", "lucro_liquido", "patrimonio_liquido"):
+        assert float(rolante.valores.loc[chave].iloc[-1]) == pytest.approx(
+            float(pontual.valor(chave))
+        )
+
+
+def test_cada_serie_declara_o_que_ela_e():
+    """Misturar as três leituras é o erro clássico, e o aviso existe para isso."""
+    from valuation.importacao.cvm import importar_ltm_rolante, importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert any("sazonalidade" in a for a in tri.avisos)
+    assert any("isolados" in a for a in tri.avisos)
+
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    assert any("doze meses" in a for a in rolante.avisos)
+    assert any("nao e um exercicio social" in a or "não é um exercício social" in a.lower()
+               for a in rolante.avisos)

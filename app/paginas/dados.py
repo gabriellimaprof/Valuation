@@ -364,18 +364,21 @@ def _cvm() -> None:
         st.info("Escolha ao menos um exercício. Para projetar, o ideal são 5 ou 6.")
         return
 
-    incluir_ltm = st.checkbox(
-        "Acrescentar o ano móvel (últimos 12 meses, do ITR)",
-        value=False,
+    visao = st.radio(
+        "Como ver o tempo",
+        list(VISOES),
+        horizontal=True,
         help=(
-            "Soma ao último exercício fechado o acumulado do ano corrente e "
-            "subtrai o mesmo período do ano anterior. É o número atualizado até "
-            "o trimestre mais recente — e não um exercício social."
+            "As três respondem perguntas diferentes, e misturá-las é o erro "
+            "clássico. Anual é o exercício auditado, que sustenta valuation. "
+            "Trimestral mostra inflexão, mas carrega sazonalidade. Ano móvel "
+            "tira a sazonalidade sem esperar o exercício fechar."
         ),
     )
+    st.caption(VISOES[visao])
 
     if st.button("Importar da CVM", type="primary"):
-        _processar_cvm(companhia, sorted(anos), unidade, incluir_ltm)
+        _processar_cvm(companhia, sorted(anos), unidade, visao)
 
     _cache_da_cvm()
 
@@ -404,21 +407,52 @@ def _cache_da_cvm() -> None:
         st.rerun()
 
 
+# As tres leituras do tempo, com o que cada uma responde. Elas nao sao
+# intercambiaveis: o exercicio e o unico que fecha com o que a companhia divulga
+# como resultado do ano; o trimestre isolado mostra inflexao mas carrega
+# sazonalidade; o ano movel tira a sazonalidade sem esperar o exercicio fechar.
+VISOES = {
+    "Anual": (
+        "Exercícios sociais fechados. É o que sustenta valuation e o único que "
+        "fecha com o resultado que a companhia divulga como do ano."
+    ),
+    "Anual + ano móvel": (
+        "Os exercícios, mais uma coluna com os últimos 12 meses até o trimestre "
+        "mais recente. **Essa última não é um exercício social.**"
+    ),
+    "Trimestral (isolado)": (
+        "Cada coluna são três meses sozinhos. Mostra inflexão que o acumulado "
+        "dilui — mas **carrega sazonalidade**: o par que se compara é 3T contra "
+        "3T, e não 3T contra 2T."
+    ),
+    "Ano móvel rolante": (
+        "Doze meses encerrados em cada trimestre. Tira a sazonalidade e mostra "
+        "**tendência**, que um ano móvel sozinho esconde: doze meses em queda e "
+        "doze em alta dão o mesmo ponto no último trimestre."
+    ),
+}
+
+
 def _processar_cvm(
-    companhia, anos: list[int], unidade: str, incluir_ltm: bool = False
+    companhia, anos: list[int], unidade: str, visao: str = "Anual"
 ) -> None:
     destino = estado.pasta_temporaria() / f"cvm_{companhia.codigo_cvm}.xlsx"
     faixa = f"{anos[0]}–{anos[-1]}" if len(anos) > 1 else str(anos[0])
 
-    try:
-        with st.spinner(f"Baixando a DFP de {companhia.nome} ({faixa})…"):
-            dfs = importar_cvm(companhia, anos, planilha=destino)
-    except ErroCVM as erro:
-        st.error(f"Não consegui importar da CVM: {erro}")
-        return
+    if visao in ("Trimestral (isolado)", "Ano móvel rolante"):
+        dfs = _serie_do_itr(companhia, visao)
+        if dfs is None:
+            return
+    else:
+        try:
+            with st.spinner(f"Baixando a DFP de {companhia.nome} ({faixa})…"):
+                dfs = importar_cvm(companhia, anos, planilha=destino)
+        except ErroCVM as erro:
+            st.error(f"Não consegui importar da CVM: {erro}")
+            return
 
-    if incluir_ltm:
-        dfs = _acrescentar_ltm(companhia, dfs)
+        if visao == "Anual + ano móvel":
+            dfs = _acrescentar_ltm(companhia, dfs)
 
     divisor, nova_unidade = UNIDADES_CVM[unidade]
     if divisor != 1:
@@ -427,12 +461,38 @@ def _processar_cvm(
     estado.definir_demonstracoes(dfs)
     # A tela de conferencia reprocessa este arquivo quando o usuario corrige um
     # mapeamento, do mesmo jeito que faz com uma planilha enviada por upload.
-    st.session_state["arquivo_importado"] = str(destino)
+    # So vale para a serie anual: a trimestral nao passa por planilha.
+    if visao in ("Anual", "Anual + ano móvel"):
+        st.session_state["arquivo_importado"] = str(destino)
+    else:
+        st.session_state.pop("arquivo_importado", None)
+
+    colunas = list(dfs.valores.columns)
     st.success(
-        f"Importado da CVM: {len(dfs.valores.index)} contas em {len(dfs.anos)} "
-        f"exercício(s) ({dfs.anos[0]}–{dfs.anos[-1]})."
+        f"Importado da CVM: {len(dfs.valores.index)} contas em "
+        f"{len(colunas)} período(s) ({colunas[0]}–{colunas[-1]})."
     )
     st.rerun()
+
+
+def _serie_do_itr(companhia, visao: str):
+    """A série trimestral ou a de ano móvel rolante, do ITR.
+
+    Devolve ``None`` quando não deu — a mensagem já foi mostrada. As duas custam
+    uma leitura do ITR inteiro, então o spinner diz o que está acontecendo: sem
+    ele a tela parece travada por dezenas de segundos.
+    """
+    from valuation.importacao.cvm import importar_ltm_rolante, importar_trimestral
+
+    montar = (
+        importar_trimestral if visao == "Trimestral (isolado)" else importar_ltm_rolante
+    )
+    try:
+        with st.spinner(f"Montando a série {visao.lower()} a partir do ITR…"):
+            return montar(companhia, catalogo=_catalogo_cvm())
+    except ErroCVM as erro:
+        st.error(f"Não consegui montar a série: {erro}")
+        return None
 
 
 def _acrescentar_ltm(companhia, dfs):
@@ -447,7 +507,7 @@ def _acrescentar_ltm(companhia, dfs):
 
     try:
         with st.spinner("Montando o ano móvel a partir do ITR…"):
-            ltm = importar_ltm(companhia, catalogo=_catalogo())
+            ltm = importar_ltm(companhia, catalogo=_catalogo_cvm())
     except ErroCVM as erro:
         st.warning(f"Importei os exercícios, mas não consegui montar o ano móvel: {erro}")
         return dfs
