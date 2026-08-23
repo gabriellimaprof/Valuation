@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1026 testes
+pytest                        # 1028 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1161,7 +1161,7 @@ não é verificação.
 
 ## Estado atual
 
-1.026 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.028 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1272,6 +1272,30 @@ código não existe naquele arquivo.
    ou porque a regra não alcançou? Os dois pedem coisas diferentes: **ausente não
    pede nada**, e mandar procurar o que não existe gasta o tempo de quem lê;
    **escapou** pede mapeamento manual, e a tela lista as linhas da seção.
+
+## O que o app busca, e o que ele não busca
+
+**Nada é buscado sozinho.** Nem ao abrir a tela, nem em segundo plano, nem por
+cache que refresque. Toda ida à rede é um botão, e o número que volta **não troca
+premissa nenhuma** sem um segundo clique. É a mesma regra para as quatro fontes:
+
+| Fonte | Quando busca | O que faz com o resultado |
+|---|---|---|
+| Curva de NTN-B (Tesouro) | botão, no campo do `rf` | mostra, e **aplica** se você clicar em "Usar esta taxa" |
+| Risco-país pela curva | botão "Medir agora", cache de 1h | mostra; o padrão não muda |
+| Focus (BCB) | botão, em Premissas | mostra; aplicar é um segundo clique |
+| Cotação da B3 (Yahoo) | botão, em Margem | preenche o campo de preço |
+
+**A exceção é a taxa embarcada, e ela é o risco real.** `NTNB_REAL_REFERENCIA`
+decide o `rf` — e portanto o WACC — de todo modelo que não tocar no campo, e a
+curva se move todo dia. Um número embarcado com cara de número buscado é o pior
+tipo de desatualizado: o que não se anuncia. Por isso ele carrega
+`NTNB_MEDIDA_EM`, o campo diz a idade dele, e passados 90 dias o aviso vira
+alerta — a mesma regra da safra dos percentis e do universo de pares.
+
+E o botão da curva **passou a poder aplicar**. Antes ele só mostrava o número e
+mandava digitar dois centímetros acima: ler e transcrever à mão é trabalho braçal
+e é onde entra erro de digitação, justamente no campo que decide o WACC inteiro.
 
 ## O balizador: o número que você digita, contra duas âncoras
 

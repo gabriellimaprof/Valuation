@@ -434,3 +434,13 @@ def test_o_caminho_escolhido_chega_ao_modelo():
     cc = teste.session_state["empresa"].custo_capital
     assert cc.metodo == "local"
     assert cc.rf_brl is not None and cc.rf_brl > 0
+
+
+def test_a_tela_diz_que_o_rf_e_referencia_e_nao_atualiza_sozinho():
+    """Numero embarcado com cara de numero buscado engana quem confia nele."""
+    teste = _rodar(TELA_CUSTO)
+    legendas = " ".join(c.value for c in teste.caption)
+    avisos = " ".join(w.value for w in teste.warning)
+    assert "não" in (legendas + avisos)
+    assert "referência" in (legendas + avisos)
+    assert "atualiza sozinho" in legendas or "busque a atual" in avisos

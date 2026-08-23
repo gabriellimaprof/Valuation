@@ -17,6 +17,7 @@ soberano locais, gerando dupla contagem).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from .premissas import PremissasCustoCapital, PremissasMacro
 
@@ -31,6 +32,24 @@ from .premissas import PremissasCustoCapital, PremissasMacro
 # este. Deixa-lo aqui e o que permite o app abrir funcionando sem rede -- a mesma
 # escolha ja feita para beta e premio de risco-pais.
 NTNB_REAL_REFERENCIA = 0.0782
+# **E ela envelhece.** Este numero decide o WACC de todo modelo que nao toca no
+# campo, e a curva se move todo dia. Guardar a data e o que permite a tela dizer
+# a idade em vez de apresentar um numero velho com cara de atual -- a mesma
+# regra da safra dos percentis e do universo de pares.
+NTNB_MEDIDA_EM = date(2026, 8, 23)
+# Acima disto a referencia deixa de ser "ordem de grandeza" e vira palpite: a
+# NTN-B longa se move o bastante num trimestre para mudar o WACC em ponto
+# percentual inteiro.
+DIAS_ATE_A_REFERENCIA_ENVELHECER = 90
+
+
+def idade_da_referencia_ntnb(hoje: date | None = None) -> int:
+    """Quantos dias tem a taxa real embarcada."""
+    return ((hoje or date.today()) - NTNB_MEDIDA_EM).days
+
+
+def referencia_ntnb_envelheceu(hoje: date | None = None) -> bool:
+    return idade_da_referencia_ntnb(hoje) > DIAS_ATE_A_REFERENCIA_ENVELHECER
 
 
 def desalavancar_beta(beta_alavancado: float, divida_pl: float, aliquota_ir: float) -> float:

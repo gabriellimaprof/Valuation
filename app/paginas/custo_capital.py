@@ -197,12 +197,25 @@ def _campos_locais(premissas, empresa, paises):
         "País", paises, index=paises.index(estado.config().get("pais", "Brasil"))
     )
 
+    from valuation.custo_capital import (
+        NTNB_REAL_REFERENCIA,
+        idade_da_referencia_ntnb,
+        referencia_ntnb_envelheceu,
+    )
+
+    # A taxa que a sessão já tem ganha precedência; sem ela, a de referência —
+    # e o campo **diz qual das duas está mostrando**. Um número embarcado com
+    # cara de número buscado é o defeito que a safra dos percentis já custou.
     real_padrao = premissas.rf_brl
-    if real_padrao is not None:
-        real_padrao = (1 + real_padrao) / (1 + ipca) - 1
+    da_referencia = real_padrao is None
+    real_padrao = (
+        NTNB_REAL_REFERENCIA
+        if da_referencia
+        else (1 + real_padrao) / (1 + ipca) - 1
+    )
     taxa_real = colunas[1].number_input(
         "NTN-B — taxa real (%)",
-        value=float((real_padrao if real_padrao is not None else 0.07) * 100),
+        value=float(real_padrao * 100),
         step=0.1,
         format="%.2f",
         help=(
@@ -210,6 +223,18 @@ def _campos_locais(premissas, empresa, paises):
             "horizonte do valuation."
         ),
     )
+    if da_referencia:
+        dias = idade_da_referencia_ntnb()
+        if referencia_ntnb_envelheceu():
+            colunas[1].warning(
+                f"**Valor de referência de {dias} dias atrás.** A curva se move "
+                "todo dia — busque a atual abaixo."
+            )
+        else:
+            colunas[1].caption(
+                f"Valor de referência, medido há {dias} dia(s). O app **não "
+                "atualiza sozinho**."
+            )
     rf_brl = rf_local(taxa_real / 100, ipca)
     colunas[1].caption(
         f"Nominalizada a {formatar(ipca, 'pct')} de IPCA: "
@@ -236,30 +261,44 @@ def _campos_locais(premissas, empresa, paises):
 
 
 def _buscar_ntnb(ipca: float) -> None:
-    """A curva de verdade, a um clique — e nada é buscado sem o clique."""
+    """A curva de verdade, a um clique — e nada é buscado sem o clique.
+
+    O resultado **pode ser aplicado**, e antes não podia: a versão anterior só
+    mostrava o número e mandava digitar acima. Ler um número na tela e
+    transcrevê-lo à mão dois centímetros abaixo é trabalho braçal, e é onde
+    entra erro de digitação — justamente no campo que decide o WACC inteiro.
+
+    Aplicar continua sendo **decisão de quem clica**: o botão existe, mas nada
+    acontece sem ele.
+    """
+    from valuation.custo_capital import rf_local
     from valuation.mercado import ErroMercado, curva_ntnb, taxa_real_longa
 
-    with st.popover("Ver a curva de NTN-B", width="stretch"):
+    with st.popover("Buscar a curva de NTN-B", width="stretch"):
         st.caption(
             "Tesouro Transparente, fonte oficial. Nada é buscado ao abrir a "
-            "tela, e o número **não troca sozinho** — ele aparece aqui para "
-            "você digitar acima se concordar."
+            "tela, e o número **não troca sozinho**."
         )
-        if not st.button("Buscar a curva", key="botao_ntnb"):
+        if st.button("Buscar a curva", key="botao_ntnb"):
+            try:
+                st.session_state["ntnb_buscada"] = taxa_real_longa(curva_ntnb())
+            except (ErroMercado, ValueError) as erro:
+                st.warning(f"Não consegui buscar: {erro}")
+                return
+
+        real = st.session_state.get("ntnb_buscada")
+        if real is None:
             return
-        try:
-            curva = curva_ntnb()
-            real = taxa_real_longa(curva)
-        except (ErroMercado, ValueError) as erro:
-            st.warning(f"Não consegui buscar: {erro}")
-            return
-        from valuation.custo_capital import rf_local
 
         st.success(
             f"Taxa real longa: **{formatar(real, 'pct')}**. "
             f"Nominalizada a {formatar(ipca, 'pct')} de IPCA, o rf fica em "
             f"**{formatar(rf_local(real, ipca), 'pct')}**."
         )
+        if st.button("Usar esta taxa", key="usar_ntnb", type="primary"):
+            estado.atualizar({"custo_capital.rf_brl": rf_local(real, ipca)})
+            st.session_state.pop("ntnb_buscada", None)
+            st.rerun()
 
 
 def _baliza_do_kd(kd: float) -> None:

@@ -330,3 +330,33 @@ def test_metodo_desconhecido_e_rejeitado():
 
     with pytest.raises(ValueError, match="metodo de custo de capital"):
         PremissasCustoCapital(metodo="chute", beta_alavancado_setor=1.0)
+
+
+# ---------------------------------------------------------------------------
+# A referencia embarcada envelhece, e diz isso
+# ---------------------------------------------------------------------------
+
+
+def test_a_taxa_de_referencia_carrega_a_data_em_que_foi_medida():
+    """Ela decide o WACC de todo modelo que nao toca no campo.
+
+    A curva se move todo dia; um numero embarcado com cara de numero buscado e o
+    pior tipo de desatualizado, o que nao se anuncia -- a mesma licao da safra
+    dos percentis e do universo de pares.
+    """
+    from datetime import date, timedelta
+
+    from valuation.custo_capital import (
+        DIAS_ATE_A_REFERENCIA_ENVELHECER,
+        NTNB_MEDIDA_EM,
+        idade_da_referencia_ntnb,
+        referencia_ntnb_envelheceu,
+    )
+
+    assert isinstance(NTNB_MEDIDA_EM, date)
+    assert idade_da_referencia_ntnb(NTNB_MEDIDA_EM) == 0
+    assert not referencia_ntnb_envelheceu(NTNB_MEDIDA_EM)
+
+    velha = NTNB_MEDIDA_EM + timedelta(days=DIAS_ATE_A_REFERENCIA_ENVELHECER + 1)
+    assert referencia_ntnb_envelheceu(velha)
+    assert idade_da_referencia_ntnb(velha) > DIAS_ATE_A_REFERENCIA_ENVELHECER
