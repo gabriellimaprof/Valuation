@@ -187,6 +187,22 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
             conversao,
         )
 
+    # **A operação já não converte, e isso é diferente de "sobra pouco".** Quando
+    # o caixa gerado pelas operações também está baixo, a distância não está no
+    # giro, no imposto nem no juro: está antes deles, no resultado que não se
+    # realiza. É o caso em que o sinal aponta para o lugar certo dizendo o nome.
+    if np.isfinite(operacional) and operacional < CGO_FRACO:
+        return Sinal(
+            "conversao", RUIM,
+            "Nem o caixa das operações acompanha o EBITDA",
+            texto
+            + f" E a conversão **até o caixa das operações** é de "
+            f"{operacional:.0%}: a distância aparece **antes** de giro, imposto "
+            "e juro, então não é consumo abaixo da operação — é resultado que "
+            "não se realiza em caixa.",
+            conversao,
+        )
+
     if conversao >= CONVERSAO_FRACA:
         return Sinal(
             "conversao", ATENCAO, "Parte do EBITDA não chega ao caixa",

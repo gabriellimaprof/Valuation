@@ -371,3 +371,23 @@ def test_cgo_fraco_continua_acusando_a_operacao():
         s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
     )
     assert "operação gera caixa" not in sinal.titulo
+
+
+def test_cgo_fraco_ganha_o_nome_certo():
+    """"Sobra pouco" e "a operacao nao converte" sao diagnosticos diferentes.
+
+    Quando o CGO tambem esta baixo, a distancia aparece **antes** de giro,
+    imposto e juro -- entao nao e consumo abaixo da operacao, e o sinal precisa
+    dizer isso em vez de mandar procurar nos tres.
+    """
+    from valuation.historico import analisar
+    from valuation.qualidade import CGO_FRACO, avaliar_qualidade
+
+    dfs = _com_dfc(cgo=400.0, giro=-50.0, imposto=50.0, juro=50.0)
+    sinal = next(
+        s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
+    )
+    assert sinal.veredito == "ruim"
+    assert "caixa das operações" in sinal.titulo
+    assert "não se realiza" in sinal.detalhe
+    assert 400.0 / 1000.0 < CGO_FRACO

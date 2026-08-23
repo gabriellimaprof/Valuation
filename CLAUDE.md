@@ -567,11 +567,29 @@ navegador leu 4.360 caracteres na tela de Histórico contra 2.824 antes.
 Os testes de tela deixaram de pinar o rótulo inteiro da métrica: o que eles
 verificam é **que a métrica existe**, não como a unidade é escrita.
 
-**Não verificado:** o modo escuro foi montado a partir dos mesmos tokens e tem
-teste de coerência de cor, mas não foi olhado no navegador — a varredura roda no
-tema claro. E a fonte é remota (Google Fonts), com fallback declarado para
-`sans-serif`: sem rede o app cai na fonte do sistema, o que degrada bem mas
-muda a métrica do texto.
+**O modo escuro foi ao navegador, e o contraste reprovou três pares.** O teste de
+cor passava — as cores eram "as da paleta" —, mas **contraste é propriedade de
+renderização**: só aparece medindo frente contra fundo no navegador, com o tema
+que o usuário tem. É a mesma família de defeito que o markdown cru e a unidade
+repetida, e o `AppTest` não alcança nenhum dos três.
+
+| Par | Antes | Depois |
+|---|---|---|
+| Cabeçalho da tabela (branco sobre azul) | 4,42 | **5,39** claro / **8,10** escuro |
+| Nível 5 da árvore, no claro | 3,70 | **7,73** |
+| Negativo sobre a tinta do subtotal | 3,24 | **5,09** claro / **6,27** escuro |
+
+A WCAG pede 4,5:1 para texto normal, e a tabela usa corpos de 0,74rem a 0,9rem —
+vale o limite de texto normal, não o de texto grande. O cabeçalho e o negativo
+passaram a usar **passos mais escuros da própria rampa sequencial**, escolha por
+contraste medido e não cor nova; o nível 5 trocou `texto_suave` por
+`texto_secundario`, porque a hierarquia sobrevive no tamanho e no peso. Três
+testes em `test_tema.py` travam os limites — a função de contraste está lá, então
+qualquer cor nova passa a ser conferível sem abrir o navegador.
+
+**Não verificado:** a fonte é remota (Google Fonts), com fallback declarado para
+`sans-serif`: sem rede o app cai na fonte do sistema, o que degrada bem mas muda
+a métrica do texto.
 
 **Gráficos** seguem `app/graficos.py`: nenhum eixo secundário, cor por
 identidade em ordem fixa, escala sequencial de um tom só, tabela de dados ao
