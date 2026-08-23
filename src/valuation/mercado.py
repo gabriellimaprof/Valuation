@@ -56,7 +56,7 @@ import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -403,4 +403,97 @@ def macro_do_focus(anos_a_frente: int = 3, cache: Path | None = None) -> MacroDo
         ano_de_referencia=ano_escolhido,
         coleta=coleta,
         respondentes=respondentes,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cotacao da B3
+# ---------------------------------------------------------------------------
+
+# **Por que esta fonte, e o que ela nao garante.** O app precisava de um preco
+# para fechar a margem de seguranca, e sem ele o campo nascia preenchido com o
+# proprio DCF -- um numero que se lia como dado de mercado e nao era. As
+# alternativas foram medidas antes de escolher:
+#
+#   brapi.dev  -> HTTP 401, exige token; guardar credencial contraria a regra de
+#                 o app nao gravar nada em disco
+#   stooq      -> nao tem os papeis da B3
+#   Yahoo      -> responde, mas **so com User-Agent**: sem ele devolve 429
+#
+# Sobrou o Yahoo, e ele e **endpoint nao documentado**: pode mudar ou sair do ar
+# sem aviso, e nao ha contrato de servico. Por isso a busca e opt-in (so acontece
+# quando o usuario clica), nunca troca nada sozinha, e a falha e tratada como
+# normal -- o campo manual continua sendo o caminho principal, e nao um plano B.
+COTACAO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+# Sem isto o Yahoo devolve 429. Nao e disfarce: e um cliente identificando-se
+# para um endpoint que recusa requisicao sem identificacao nenhuma.
+CABECALHO_COTACAO = {"User-Agent": "valuation-app/1.0"}
+SUFIXO_B3 = ".SA"
+
+
+@dataclass(frozen=True)
+class Cotacao:
+    """O ultimo preco negociado de um papel, com a origem declarada."""
+
+    ticker: str
+    preco: float
+    moeda: str
+    nome: str
+    negociado_em: datetime
+
+    def valor_de_mercado(self, acoes: float) -> float:
+        """Preco x acoes em circulacao, na unidade em que as acoes vierem."""
+        return self.preco * acoes
+
+
+def _normalizar_ticker(ticker: str) -> str:
+    """``wege3`` vira ``WEGE3.SA``; ``WEGE3.SA`` fica como esta.
+
+    O sufixo e o que diz ao Yahoo que o papel e da B3. Sem ele, ``WEGE3``
+    encontra outra coisa ou nada -- e "nada" seria o melhor dos dois casos.
+    """
+    limpo = ticker.strip().upper()
+    if not limpo:
+        raise ErroMercado("Informe o codigo do papel, como WEGE3.")
+    return limpo if "." in limpo else limpo + SUFIXO_B3
+
+
+def cotacao(ticker: str) -> Cotacao:
+    """Ultimo preco negociado de um papel da B3.
+
+    Levanta ``ErroMercado`` em qualquer falha -- rede fora, papel inexistente,
+    resposta com formato diferente do esperado. Quem chama trata como recusa e
+    segue com o numero digitado a mao: **a cotacao e conveniencia, nao
+    dependencia**.
+    """
+    alvo = _normalizar_ticker(ticker)
+    bruto = _buscar(COTACAO_URL.format(ticker=alvo), CABECALHO_COTACAO)
+    return interpretar_cotacao(bruto, alvo)
+
+
+def interpretar_cotacao(bruto: bytes, ticker: str) -> Cotacao:
+    """Le a resposta do Yahoo. Separada da rede para o teste nao precisar dela."""
+    try:
+        dados = json.loads(bruto)
+        meta = dados["chart"]["result"][0]["meta"]
+        preco = float(meta["regularMarketPrice"])
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError) as erro:
+        raise ErroMercado(
+            f"Nao reconheci a resposta da cotacao de {ticker}."
+        ) from erro
+
+    if not np.isfinite(preco) or preco <= 0:
+        raise ErroMercado(f"A cotacao de {ticker} veio como {preco}.")
+
+    momento = meta.get("regularMarketTime")
+    return Cotacao(
+        ticker=ticker,
+        preco=preco,
+        moeda=str(meta.get("currency") or "BRL"),
+        nome=str(meta.get("longName") or ticker),
+        negociado_em=(
+            datetime.fromtimestamp(int(momento), tz=timezone.utc)
+            if momento
+            else datetime.now(tz=timezone.utc)
+        ),
     )

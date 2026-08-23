@@ -117,6 +117,9 @@ def _entrada_do_preco(resultado, empresa):
             "entre o que a empresa vale e o que ela custa."
         ),
     )
+    with colunas[1]:
+        _buscar_cotacao(por_acao, resultado)
+
     if preco is None or preco <= 0:
         colunas[1].caption("Informe o preço para ver a margem.")
         return None, por_acao
@@ -126,6 +129,56 @@ def _entrada_do_preco(resultado, empresa):
     estado.definir_preco(preco, por_acao=por_acao)
     return preco, por_acao
 
+
+
+def _buscar_cotacao(por_acao: bool, resultado) -> None:
+    """Busca o preço na B3 — **só quando o usuário pede**.
+
+    Mesma regra do risco-país pela NTN-B e do Focus: nada é buscado ao abrir a
+    tela, e nada troca sozinho. O botão preenche o campo e o usuário confirma —
+    porque a fonte é um endpoint **não documentado** do Yahoo, que pode mudar ou
+    sair do ar sem aviso, e um valuation não pode depender disso.
+
+    As alternativas foram medidas antes: `brapi.dev` responde 401 e exige token
+    (guardar credencial contraria a regra de o app não gravar nada em disco), e
+    o stooq não tem os papéis da B3.
+    """
+    from valuation.mercado import ErroMercado, cotacao
+
+    with st.popover("Buscar cotação na B3", width="stretch"):
+        st.caption(
+            "Fonte externa e **não oficial** (Yahoo Finance). O app não busca "
+            "nada sozinho, e o número preenchido continua editável."
+        )
+        ticker = st.text_input(
+            "Código do papel", placeholder="WEGE3", key="ticker_b3"
+        )
+        if not st.button("Buscar", key="botao_cotacao") or not ticker.strip():
+            return
+
+        try:
+            achada = cotacao(ticker)
+        except ErroMercado as erro:
+            st.warning(f"Não consegui buscar: {erro}")
+            return
+
+        acoes = resultado.empresa.ponte.acoes_em_circulacao
+        st.success(
+            f"**{achada.nome}** — {em_texto(achada.preco, 'R$')} por ação, "
+            f"negociado em {achada.negociado_em:%d/%m/%Y}."
+        )
+        if acoes:
+            st.caption(
+                "Valor de mercado: "
+                f"**{em_texto(achada.valor_de_mercado(acoes), estado.empresa().unidade)}**"
+            )
+        # O valor vai para o campo, e nao direto para o modelo: quem decide se
+        # aquele preco e o que interessa e quem esta olhando.
+        estado.definir_preco(
+            achada.preco if por_acao else achada.valor_de_mercado(acoes or 0.0),
+            por_acao=por_acao,
+        )
+        st.rerun()
 
 def _mostrar_a_outra_leitura(coluna, preco, por_acao, resultado, empresa) -> None:
     """Cotação e valor de mercado, um ao lado do outro.

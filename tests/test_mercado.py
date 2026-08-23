@@ -242,3 +242,62 @@ def test_a_comparacao_poe_modelo_e_focus_lado_a_lado(focus_offline):
     assert tabela.loc["IPCA", "Diferença"] == pytest.approx(
         0.05 - tabela.loc["IPCA", "Focus"]
     )
+
+
+# ---------------------------------------------------------------------------
+# Cotacao da B3
+# ---------------------------------------------------------------------------
+
+COTACAO_WEGE3 = Path(__file__).parent / "dados" / "cotacao_wege3.json"
+
+
+def test_interpreta_a_cotacao_do_recorte_real():
+    """Contra a resposta real do endpoint, gravada -- e nao contra um mock.
+
+    O teste **nao alcanca a rede**: a suite ja passou de 100s para 237s uma vez
+    por causa de um teste que dependia do Banco Central, e falhou quando ele
+    demorou. Teste que depende de terceiro nao esta testando o app.
+    """
+    from valuation.mercado import interpretar_cotacao
+
+    c = interpretar_cotacao(COTACAO_WEGE3.read_bytes(), "WEGE3.SA")
+    assert c.moeda == "BRL"
+    assert 1 < c.preco < 1000, c.preco
+    assert "WEG" in c.nome.upper()
+
+
+def test_o_valor_de_mercado_fecha_com_o_da_bolsa():
+    """A ponta que faltava: acoes da CVM x preco da B3.
+
+    O app lia 4.195.695.973 acoes da composicao de capital e nunca tinha como
+    conferir isso contra o mercado -- e um usuario leu R$ 59,8 bi (que era o DCF
+    do proprio app) achando que era o valor de mercado da WEG, que vale ~R$ 207
+    bi. Com as duas pontas juntas, a conferencia e uma multiplicacao.
+    """
+    from valuation.mercado import interpretar_cotacao
+
+    c = interpretar_cotacao(COTACAO_WEGE3.read_bytes(), "WEGE3.SA")
+    acoes = 4_195_695_973
+    em_bilhoes = c.valor_de_mercado(acoes) / 1e9
+    assert 150 < em_bilhoes < 300, f"R$ {em_bilhoes:,.1f} bi"
+
+
+def test_ticker_ganha_o_sufixo_da_b3():
+    """Sem `.SA` o Yahoo acha outro papel, ou nada -- e "nada" e o melhor caso."""
+    from valuation.mercado import _normalizar_ticker
+
+    assert _normalizar_ticker("wege3") == "WEGE3.SA"
+    assert _normalizar_ticker(" PETR4 ") == "PETR4.SA"
+    assert _normalizar_ticker("AAPL.US") == "AAPL.US"
+
+
+def test_ticker_vazio_e_resposta_estranha_viram_erro_tratado():
+    """Falha de cotacao e recusa normal: o campo manual continua sendo o caminho."""
+    from valuation.mercado import ErroMercado, _normalizar_ticker, interpretar_cotacao
+
+    with pytest.raises(ErroMercado):
+        _normalizar_ticker("   ")
+    with pytest.raises(ErroMercado):
+        interpretar_cotacao(b"{}", "X.SA")
+    with pytest.raises(ErroMercado):
+        interpretar_cotacao(b"nao e json", "X.SA")
