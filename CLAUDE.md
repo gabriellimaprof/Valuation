@@ -1153,8 +1153,24 @@ código não existe naquele arquivo.
 
 **Não verificado, e é honesto dizer:**
 
-1. A planilha nunca foi aberta no Excel de verdade (validada com o pacote
-   `formulas`, que é independente mas não é o Excel).
+1. ~~A planilha nunca foi aberta no Excel de verdade.~~ **Foi.**
+   `tools/conferir_no_excel.py` gera o modelo, abre no Excel por COM, força
+   `CalculateFullRebuild` e lê as células de volta. As **10 contas que decidem o
+   valor** — Ke, Kd bruto, Kd após IR, WACC, VP explícito, valor terminal, VP do
+   terminal, EV, Equity Value e valor por ação — batem com o motor **com desvio
+   zero**, não apenas dentro da tolerância.
+
+   Roda fora do `pytest`, como o `navegador.py`, porque depende de **Excel
+   instalado e de Windows**: no CI reprovaria código correto na primeira máquina
+   sem Office. `tests/test_excel_formulas.py` continua sendo a verificação de
+   todo push, com o pacote `formulas` — que é independente, mas não é o Excel.
+
+   Três armadilhas do PowerShell custaram tempo e viraram comentário no script,
+   porque nenhuma delas dá erro: `param([string]$Alvos)` **fixa o tipo da
+   variável** e `$alvos` é a mesma (maiúscula não distingue), então atribuir um
+   array o converte de volta para string; `@(... | ConvertFrom-Json)` **aninha**
+   o array em vez de garanti-lo; e `Set-Content -Encoding utf8` grava **BOM**,
+   que o `json` do Python recusa.
 2. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
 3. Do ITR, só o **consolidado** é lido, e o ano móvel exige o exercício anterior
