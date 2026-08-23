@@ -359,6 +359,15 @@ FUNDOS = {
     "escuro": {"n1": "#203042", "n2": "#1d242b", "realce": "#3a2d15"},
 }
 
+# Passos mais escuros da rampa sequencial, escolhidos por contraste medido e nao
+# por gosto: o cabecalho e texto branco pequeno em caixa alta.
+CABECALHO_DA_TABELA = {"claro": "#256abf", "escuro": "#184f95"}
+
+# O vermelho do negativo e **reforco** do sinal de menos, nao a unica pista --
+# mas 3,57:1 sobre a tinta do subtotal e ilegivel, nao discreto. Estes dao
+# 5,09:1 no claro e 6,27:1 no escuro sobre os fundos das linhas.
+NEGATIVO_NA_TABELA = {"claro": "#c1302f", "escuro": "#f08585"}
+
 
 def tabela_css() -> str:
     """CSS da demonstracao publicada, com as cores do modo em vigor."""
@@ -369,12 +378,15 @@ def tabela_css() -> str:
         superficie=p.superficie,
         texto=p.texto_primario,
         texto_fraco=p.texto_secundario,
-        texto_suave=p.texto_suave,
-        cabecalho=p.serie(0),
+        texto_suave=p.texto_secundario,
+        # Nao e `serie(0)`: branco sobre ele da 4,42:1, abaixo do minimo para
+        # texto pequeno. Um passo mais escuro da propria rampa sequencial da
+        # 5,39:1 (claro) e 8,10:1 (escuro). Medido no navegador, e nao no token.
+        cabecalho=CABECALHO_DA_TABELA["escuro" if p is ESCURO else "claro"],
         tinta_forte=fundos["n1"],
         tinta_fraca=fundos["n2"],
         realce=fundos["realce"],
-        negativo=p.critico,
+        negativo=NEGATIVO_NA_TABELA["escuro" if p is ESCURO else "claro"],
     )
 
 

@@ -201,7 +201,7 @@ def _historico(analise) -> list[str]:
     return linhas
 
 
-def _qualidade(qualidade) -> list[str]:
+def _qualidade(qualidade, analise=None) -> list[str]:
     if qualidade is None:
         return [
             "## Qualidade dos lucros",
@@ -221,6 +221,49 @@ def _qualidade(qualidade) -> list[str]:
     ]
     for sinal in qualidade.por_severidade:
         linhas.append(f"- {sinal.icone} **{sinal.titulo}** — {sinal.detalhe}")
+    linhas += _ponte_do_caixa(analise)
+    return linhas
+
+
+def _ponte_do_caixa(analise) -> list[str]:
+    """De EBITDA a FCO, degrau a degrau, quando a DFC permite montar.
+
+    O relatorio e o que sobra depois que a tela fecha, e a conversao sozinha nao
+    diz **onde** o caixa se perdeu. Sem a ponte, quem le em tres meses ve
+    "converte 34%" e refaz do zero a pergunta que a tela ja tinha respondido.
+
+    Sai do relatorio quando a ponte nao fecha: uma tabela que nao reconstroi o
+    FCO publicado descreveria uma companhia que nao e esta.
+    """
+    if analise is None:
+        return []
+    try:
+        from .qualidade import ponte_do_caixa
+
+        ponte = ponte_do_caixa(analise)
+    except Exception:  # noqa: BLE001 - relatorio nao quebra por falta de DFC
+        return []
+    if ponte is None or not ponte.fecha:
+        return []
+
+    linhas = [
+        "",
+        f"### De EBITDA a caixa — {analise.anos[-1]}",
+        "",
+        "A conversão FCO/EBITDA responde três perguntas de uma vez, e só uma "
+        "delas é sobre a operação: o resultado virou caixa? o giro prendeu "
+        "caixa? quanto saiu para imposto e juro? A ponte separa as três.",
+        "",
+        "| Degrau | Valor | % do EBITDA |",
+        "|---|---:|---:|",
+    ]
+    for rotulo, valor, fracao in ponte.degraus:
+        linhas.append(f"| {rotulo} | {_num(valor, 1)} | {_pct(fracao)} |")
+    linhas += [
+        "",
+        "`FCO = CGO + variação do giro + outros − imposto pago − juro pago`, e a "
+        "ponte fecha com o FCO publicado.",
+    ]
     return linhas
 
 
@@ -753,7 +796,7 @@ def montar(
             _historico_do_banco(historico_do_banco)
             if historico_do_banco is not None
             else _historico(analise),
-            _qualidade(qualidade),
+            _qualidade(qualidade, analise),
             _nao_se_aplica_ao_banco(),
             _limites(resultado, analise, qualidade),
         ]
@@ -763,7 +806,7 @@ def montar(
         _cabecalho(resultado, data),
         _resumo(resultado, margem),
         _historico(analise),
-        _qualidade(qualidade),
+        _qualidade(qualidade, analise),
         _ifrs16(ifrs16),
         _premissas(resultado),
         _ponte(resultado),

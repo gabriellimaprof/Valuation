@@ -163,3 +163,56 @@ def test_o_negativo_ganha_marca_alem_do_sinal():
     html = tabela_financeira(tabela, formato="moeda")
     assert 'class="negativo"' in html
     assert 'class="nulo"' in html
+
+
+# ---------------------------------------------------------------------------
+# Contraste: o que o teste de cor nao pega
+# ---------------------------------------------------------------------------
+
+
+def _luminancia(hexa: str) -> float:
+    canal = [int(hexa.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    ajustado = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in canal]
+    return 0.2126 * ajustado[0] + 0.7152 * ajustado[1] + 0.0722 * ajustado[2]
+
+
+def contraste(frente: str, fundo: str) -> float:
+    a, b = _luminancia(frente), _luminancia(fundo)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+# A WCAG pede 4,5:1 para texto normal. A tabela usa corpos de 0,74rem a 0,9rem,
+# entao vale o limite de texto normal e nao o de texto grande.
+MINIMO = 4.5
+
+
+@pytest.mark.parametrize("modo", ["claro", "escuro"])
+def test_o_cabecalho_da_tabela_tem_contraste(modo):
+    """Branco sobre `serie(0)` dava 4,42:1 -- reprovado, e num texto em caixa alta.
+
+    O teste de cor passava, porque a cor era "a da paleta". Contraste e
+    propriedade de renderizacao: so aparece medindo o par frente/fundo.
+    """
+    fundo = tema.CABECALHO_DA_TABELA[modo]
+    assert contraste("#ffffff", fundo) >= MINIMO, f"{modo}: {contraste('#ffffff', fundo):.2f}"
+
+
+@pytest.mark.parametrize("modo", ["claro", "escuro"])
+def test_o_negativo_da_tabela_tem_contraste_sobre_as_tres_linhas(modo):
+    """Vermelho sobre a tinta do subtotal dava 3,24:1 no fundo mais forte.
+
+    Ele e **reforco** do sinal de menos e nao a unica pista -- mas 3,24:1 num
+    corpo de 0,8rem e ilegivel, nao discreto.
+    """
+    cor = tema.NEGATIVO_NA_TABELA[modo]
+    palheta = tema.CLARO if modo == "claro" else tema.ESCURO
+    fundos = [palheta.superficie, tema.FUNDOS[modo]["n1"], tema.FUNDOS[modo]["n2"]]
+    for fundo in fundos:
+        assert contraste(cor, fundo) >= MINIMO, f"{modo} sobre {fundo}: {contraste(cor, fundo):.2f}"
+
+
+@pytest.mark.parametrize("modo", ["claro", "escuro"])
+def test_o_nivel_mais_fraco_da_tabela_ainda_se_le(modo):
+    """`texto_suave` dava 3,70:1 no claro. A hierarquia sobrevive no tamanho."""
+    palheta = tema.CLARO if modo == "claro" else tema.ESCURO
+    assert contraste(palheta.texto_secundario, palheta.superficie) >= MINIMO

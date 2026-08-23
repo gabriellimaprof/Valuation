@@ -702,19 +702,34 @@ def _conversao_em_dois_degraus(analise, qualidade) -> None:
 
     with st.expander(f"A ponte, degrau a degrau — {analise.anos[-1]}"):
         unidade = analise.demonstracoes.unidade
-        tabela = pd.DataFrame(
-            {
-                f"Valor ({unidade_curta(unidade)})": [
-                    formatar(valor, "moeda") for _, valor, _ in ponte.degraus
-                ],
-                "% do EBITDA": [
-                    formatar(fracao, "pct") for _, _, fracao in ponte.degraus
-                ],
-            },
-            index=[rotulo for rotulo, _, _ in ponte.degraus],
-        )
-        tabela.index.name = "Degrau"
-        st.dataframe(tabela, width="stretch")
+        # Os degraus vão nas duas leituras, e em duas tabelas: o valor é moeda e
+        # a fração é percentual, e uma tabela só teria de escolher um formato
+        # para as duas colunas. Os subtotais da ponte — CGO e FCO — ganham peso.
+        subtotais = {r for r, _, _ in ponte.degraus if r.startswith("=")}
+        colunas = st.columns(2)
+        with colunas[0]:
+            st.html(
+                tabela_financeira(
+                    pd.DataFrame(
+                        {analise.anos[-1]: [v for _, v, _ in ponte.degraus]},
+                        index=[r for r, _, _ in ponte.degraus],
+                    ),
+                    subtotais,
+                    "moeda",
+                    unidade,
+                )
+            )
+        with colunas[1]:
+            st.html(
+                tabela_financeira(
+                    pd.DataFrame(
+                        {"% do EBITDA": [f for _, _, f in ponte.degraus]},
+                        index=[r for r, _, _ in ponte.degraus],
+                    ),
+                    subtotais,
+                    "pct",
+                )
+            )
         st.caption(
             "`FCO = CGO + variação do giro + outros − imposto pago − juro pago`. "
             + (

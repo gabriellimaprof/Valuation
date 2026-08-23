@@ -23,6 +23,7 @@ import pandas as pd
 
 from .dcf import valor_terminal_gordon
 from .historico import AnaliseHistorica
+from .qualidade import CGO_BOM
 from .modelo import ResultadoValuation
 
 ERRO = "erro"
@@ -731,22 +732,46 @@ def _checar_contra_historico(
 
     conversao = analise.mediana("Conversao de caixa (FCO / EBITDA)")
     if np.isfinite(conversao) and conversao < CONVERSAO_CAIXA_BAIXA:
+        # **Antes de acusar a operacao, olhar o degrau de cima.** O FCO e liquido
+        # de giro, imposto e juro; o caixa gerado pelas operacoes nao e. Medido
+        # em 2024, metade da base tem CGO alto e FCO baixo -- nelas o resultado
+        # vira caixa, e o que consome esta abaixo da operacao. Um achado que diz
+        # "receita reconhecida antes de ser recebida" ali manda o analista
+        # procurar no lugar errado.
+        operacional = analise.mediana("Conversao operacional (CGO / EBITDA)")
+        gera_caixa = np.isfinite(operacional) and operacional >= CGO_BOM
         achados.append(
             Achado(
                 codigo="ebitda_nao_vira_caixa",
                 severidade=ALERTA,
                 titulo=(
-                    f"Só {_pct(conversao, 0)} do EBITDA virou caixa operacional"
+                    f"Só {_pct(conversao, 0)} do EBITDA virou caixa, mas a "
+                    f"operação converte {_pct(operacional, 0)}"
+                    if gera_caixa
+                    else f"Só {_pct(conversao, 0)} do EBITDA virou caixa operacional"
                 ),
                 detalhe=(
-                    "O EBITDA e o ponto de partida do valor, mas quem paga dívida e "
-                    "dividendo e o caixa. Conversao baixa e persistente costuma "
-                    "significar lucro preso no capital de giro ou receita "
-                    "reconhecida antes de ser recebida."
+                    "O EBITDA é o ponto de partida do valor, mas quem paga dívida "
+                    "e dividendo é o caixa. **Aqui o resultado vira caixa**: o "
+                    "caixa gerado pelas operações é "
+                    f"{_pct(operacional, 0)} do EBITDA. A distância até o FCO "
+                    "está no capital de giro, no imposto de renda e no juro "
+                    "pagos — que são consumo abaixo da operação, e não sinal de "
+                    "resultado que não se realiza."
+                    if gera_caixa
+                    else "O EBITDA é o ponto de partida do valor, mas quem paga "
+                    "dívida e dividendo é o caixa. Conversão baixa e persistente "
+                    "**já no caixa gerado pelas operações** costuma significar "
+                    "lucro preso no capital de giro ou receita reconhecida antes "
+                    "de ser recebida."
                 ),
                 acao=(
-                    "Olhe o investimento em giro no histórico antes de projetar "
-                    "margem estável."
+                    "Veja a ponte EBITDA → CGO → FCO no histórico para saber qual "
+                    "dos três consome, e quanto. Se for juro, o problema é de "
+                    "estrutura de capital, não de operação."
+                    if gera_caixa
+                    else "Olhe o investimento em giro no histórico antes de "
+                    "projetar margem estável."
                 ),
                 referencia="Koller, Goedhart & Wessels, Valuation, cap. 20",
             )
