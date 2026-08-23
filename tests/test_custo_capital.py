@@ -193,3 +193,100 @@ def test_o_setor_de_bancos_ja_vem_marcado():
 
     assert not buscar_setor("Bens de capital").financeiro
     assert not premissas_do_setor("Bens de capital").instituicao_financeira
+
+
+# ---------------------------------------------------------------------------
+# CAPM local: NTN-B + premio local, sem risco-pais
+# ---------------------------------------------------------------------------
+
+
+def _premissas_locais(**extra):
+    from valuation import PremissasCustoCapital
+    from valuation.custo_capital import rf_local
+
+    padrao = dict(
+        metodo="local",
+        rf_brl=rf_local(0.08, 0.04),
+        erp_local=0.075,
+        beta_alavancado_setor=1.05,
+        divida_pl_setor=0.45,
+        divida_pl_alvo=0.50,
+        spread_credito=0.025,
+    )
+    padrao.update(extra)
+    return PremissasCustoCapital(**padrao)
+
+
+def test_a_ntnb_e_nominalizada_por_composicao():
+    """`(1 + real) x (1 + inflacao) - 1`, e nao a soma dos dois.
+
+    Somar subestima, e num rf que desconta todo ano projetado a diferenca nao
+    fica pequena: a 8% real com 4% de IPCA, sao 12,32% contra 12,00%.
+    """
+    from valuation.custo_capital import rf_local
+
+    assert rf_local(0.08, 0.04) == pytest.approx(1.08 * 1.04 - 1)
+    assert rf_local(0.08, 0.04) > 0.08 + 0.04
+
+
+def test_o_caminho_local_nao_soma_risco_pais():
+    """Ele ja esta dentro da NTN-B; soma-lo de novo o contaria duas vezes.
+
+    E a mesma dupla contagem que o caminho em dolar existe para evitar, pelo
+    outro lado -- por isso o `risco_pais` das premissas nao pode mover o Ke aqui.
+    """
+    from valuation import PremissasMacro
+    from valuation.custo_capital import calcular_custo_capital
+
+    macro = PremissasMacro(inflacao_brl=0.04, inflacao_usd=0.023, aliquota_ir=0.34)
+    sem = calcular_custo_capital(_premissas_locais(risco_pais=0.0), macro)
+    com = calcular_custo_capital(_premissas_locais(risco_pais=0.10), macro)
+    assert sem.ke_brl == pytest.approx(com.ke_brl)
+    assert sem.wacc_brl == pytest.approx(com.wacc_brl)
+
+
+def test_o_ke_local_e_o_rf_mais_beta_vezes_o_premio():
+    """A conta inteira, refeita a mao."""
+    from valuation import PremissasMacro
+    from valuation.custo_capital import calcular_custo_capital
+
+    macro = PremissasMacro(inflacao_brl=0.04, inflacao_usd=0.023, aliquota_ir=0.34)
+    premissas = _premissas_locais()
+    resultado = calcular_custo_capital(premissas, macro)
+
+    esperado = premissas.rf_brl + resultado.beta_realavancado * premissas.erp_local
+    assert resultado.ke_brl == pytest.approx(esperado)
+
+
+def test_o_caminho_em_dolar_nao_mudou():
+    """A construcao antiga continua identica: a nova e escolha, nao troca."""
+    from valuation import PremissasCustoCapital, PremissasMacro
+    from valuation.custo_capital import calcular_custo_capital, converter_taxa
+
+    macro = PremissasMacro(inflacao_brl=0.04, inflacao_usd=0.023, aliquota_ir=0.34)
+    p = PremissasCustoCapital(
+        beta_alavancado_setor=1.05, divida_pl_setor=0.45, divida_pl_alvo=0.50
+    )
+    r = calcular_custo_capital(p, macro)
+    esperado = (
+        p.rf_usd + r.beta_realavancado * p.erp_maduro + p.lambda_pais * p.risco_pais
+    )
+    assert r.ke_usd == pytest.approx(esperado)
+    assert r.ke_brl == pytest.approx(
+        converter_taxa(esperado, macro.inflacao_brl, macro.inflacao_usd)
+    )
+
+
+def test_metodo_local_sem_rf_e_rejeitado():
+    """Premissa que falta tem de levantar erro, e nao virar zero calado."""
+    from valuation import PremissasCustoCapital
+
+    with pytest.raises(ValueError, match="rf_brl"):
+        PremissasCustoCapital(metodo="local", beta_alavancado_setor=1.0)
+
+
+def test_metodo_desconhecido_e_rejeitado():
+    from valuation import PremissasCustoCapital
+
+    with pytest.raises(ValueError, match="metodo de custo de capital"):
+        PremissasCustoCapital(metodo="chute", beta_alavancado_setor=1.0)

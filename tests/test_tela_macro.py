@@ -367,3 +367,58 @@ def test_no_fcfe_o_numero_digitado_vai_para_o_campo_do_roe():
     perpetuidade = teste.session_state["empresa"].perpetuidade
     assert perpetuidade.roe_perpetuidade == pytest.approx(0.22)
     assert perpetuidade.roic_perpetuidade is None
+
+
+# ---------------------------------------------------------------------------
+# Os dois caminhos do Ke, na tela
+# ---------------------------------------------------------------------------
+
+TELA_CUSTO = CABECALHO + """
+from app.paginas import custo_capital
+custo_capital.render()
+"""
+
+
+def _rotulos_numericos(teste) -> set[str]:
+    return {n.label for n in teste.number_input}
+
+
+def test_o_caminho_em_dolar_pede_rf_americano_e_risco_pais():
+    teste = _rodar(TELA_CUSTO)
+    rotulos = _rotulos_numericos(teste)
+    assert "Taxa livre de risco em USD (%)" in rotulos
+    assert "Prêmio de risco-país (%)" in rotulos
+    assert "NTN-B — taxa real (%)" not in rotulos
+
+
+def test_o_caminho_local_troca_os_campos_e_tira_o_risco_pais():
+    """No local o risco-pais **nao aparece**, e a ausencia e a decisao.
+
+    O soberano brasileiro ja embute risco de credito do pais; oferecer um campo
+    de risco-pais ali convidaria a conta-lo duas vezes.
+    """
+    teste = _rodar(TELA_CUSTO)
+    caminho = next(r for r in teste.radio if r.label == "Caminho")
+    caminho.set_value("NTN-B + prêmio local").run()
+    assert not teste.exception, teste.exception
+
+    rotulos = _rotulos_numericos(teste)
+    assert "NTN-B — taxa real (%)" in rotulos
+    assert "Prêmio de risco de ações local (%)" in rotulos
+    assert "Prêmio de risco-país (%)" not in rotulos
+    assert "Taxa livre de risco em USD (%)" not in rotulos
+    # O lambda escala um termo que este caminho nao tem.
+    assert "Lambda (exposição ao risco-país)" not in rotulos
+
+
+def test_o_caminho_escolhido_chega_ao_modelo():
+    teste = _rodar(TELA_CUSTO)
+    next(r for r in teste.radio if r.label == "Caminho").set_value(
+        "NTN-B + prêmio local"
+    ).run()
+    next(b for b in teste.button if "Aplicar" in b.label).click().run()
+    assert not teste.exception, teste.exception
+
+    cc = teste.session_state["empresa"].custo_capital
+    assert cc.metodo == "local"
+    assert cc.rf_brl is not None and cc.rf_brl > 0

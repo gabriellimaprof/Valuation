@@ -43,6 +43,23 @@ def converter_taxa(taxa: float, inflacao_destino: float, inflacao_origem: float)
     return (1 + taxa) * (1 + inflacao_destino) / (1 + inflacao_origem) - 1
 
 
+
+def rf_local(taxa_real: float, inflacao: float) -> float:
+    """A NTN-B nominalizada: ``(1 + real) x (1 + inflacao) - 1``.
+
+    A NTN-B paga taxa **real**, e o CAPM local precisa de um rf nominal na mesma
+    moeda do fluxo. Somar os dois em vez de compo-los subestima -- e num rf que
+    entra no desconto de todo ano projetado, a diferenca nao fica pequena.
+
+    **O que este numero e:** o soberano brasileiro, que ja embute risco de
+    credito do pais e expectativa de inflacao. **O que ele nao e:** um rf livre
+    de risco no sentido do CAPM original, porque titulo soberano de emergente
+    nao e livre de risco. E por isso que o caminho local nao soma risco-pais
+    depois: ele ja esta aqui dentro.
+    """
+    return (1 + taxa_real) * (1 + inflacao) - 1
+
+
 def pesos_estrutura_capital(divida_pl: float) -> tuple[float, float]:
     """Converte D/E em pesos ``(peso_divida, peso_equity)`` que somam 1."""
     if divida_pl < 0:
@@ -109,16 +126,33 @@ def calcular_custo_capital(
     else:
         beta_l = realavancar_beta(beta_u, premissas.divida_pl_alvo, t)
 
-    ke_usd = (
-        premissas.rf_usd
-        + beta_l * premissas.erp_maduro
-        + premissas.lambda_pais * premissas.risco_pais
-        + premissas.premio_tamanho
-    )
-    ke_brl = converter_taxa(ke_usd, macro.inflacao_brl, macro.inflacao_usd)
+    if premissas.metodo == "local":
+        # **O rf ja e brasileiro, e ja embute risco soberano e inflacao.** Por
+        # isso nao ha termo de risco-pais aqui: some-lo seria conta-lo duas
+        # vezes, que e exatamente o erro que o caminho em dolar existe para
+        # evitar -- so que pelo outro lado.
+        ke_brl = (
+            premissas.rf_brl
+            + beta_l * premissas.erp_local
+            + premissas.premio_tamanho
+        )
+        ke_usd = converter_taxa(ke_brl, macro.inflacao_usd, macro.inflacao_brl)
+    else:
+        ke_usd = (
+            premissas.rf_usd
+            + beta_l * premissas.erp_maduro
+            + premissas.lambda_pais * premissas.risco_pais
+            + premissas.premio_tamanho
+        )
+        ke_brl = converter_taxa(ke_usd, macro.inflacao_brl, macro.inflacao_usd)
 
     if premissas.custo_divida_brl is not None:
         kd_bruto_brl = premissas.custo_divida_brl
+    elif premissas.metodo == "local":
+        # O Kd sintetico acompanha o mesmo rf do Ke: em reais, e o titulo
+        # soberano local mais o spread de credito da empresa. Nao ha risco-pais
+        # separado, pela mesma razao de cima.
+        kd_bruto_brl = premissas.rf_brl + premissas.spread_credito
     else:
         # Kd sintetico: livre de risco global + risco soberano + spread de credito
         # da empresa, montado em USD e trazido para BRL pela mesma paridade.

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1006 testes
+pytest                        # 1021 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -658,9 +658,33 @@ contraste em modo claro e escuro — **não troque cor por gosto**.
 
 Estas afetam o número final. Não as altere sem entender o porquê.
 
-- **Ke montado em USD nominal** (`rf + β × ERP + λ × risco-país`) e convertido
-  para BRL por diferencial de inflação. Somar prêmio americano a taxa brasileira
-  contaria risco soberano duas vezes.
+- **O Ke tem dois caminhos, e eles não se misturam** (`PremissasCustoCapital.metodo`):
+
+  | | Construção | Por que não soma o outro termo |
+  |---|---|---|
+  | `"usd"` (padrão) | `rf_usd + β × ERP_maduro + λ × risco-país`, convertido para BRL por diferencial de inflação | somar prêmio americano a taxa brasileira contaria risco soberano duas vezes |
+  | `"local"` | `rf_BRL + β × ERP_local`, com `rf_BRL` = NTN-B real **composta** com o IPCA | **não há risco-país**: ele já está dentro da NTN-B, e somá-lo o contaria duas vezes — o mesmo erro, pelo outro lado |
+
+  O caminho local foi pedido pelo dono do projeto e é construção legítima (CAPM
+  local). **O custo dele está no prêmio de risco:** um ERP estimado na série
+  brasileira é ruidoso demais para ser observado, então `erp_local` é premissa
+  do analista — e é o número que mais move o Ke ali. No caminho em dólar o ERP é
+  de mercado maduro, onde a série sustenta a estimativa.
+
+  Os dois discordam por construção, e a distância é informação. Medido com
+  NTN-B a 8,0% real, IPCA 4,0%, ERP local 7,5% e β de 1,08:
+
+  | | USD + risco-país | NTN-B + ERP local |
+  |---|---|---|
+  | Ke BRL | 13,70% | **20,40%** |
+  | WACC BRL | 11,63% | **16,86%** |
+
+  A diferença é quase toda o risco-país: o padrão embarcado é 2,5% e a NTN-B
+  implica perto de 5,5 p.p. Trocar de caminho **move o valuation muito**, e por
+  isso o método é escolha explícita e o padrão não mudou.
+
+  O `λ` some da tela no caminho local: ele escala o termo de risco-país, e ali
+  não há termo para escalar.
 - **Perpetuidade com reinvestimento normalizado**: `NOPAT_n × (1+g) × (1 − g/ROIC)`.
 - **Retornos sobre capital médio** (abertura + fechamento) / 2, como o CFA manda.
 - **Capital de giro é estoque**; a variação é derivada. Só recebíveis, estoques e
@@ -1115,7 +1139,7 @@ não é verificação.
 
 ## Estado atual
 
-1.006 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.021 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

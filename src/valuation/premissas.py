@@ -25,6 +25,15 @@ ANCORAS_PERPETUIDADE = ("livre", "ipca", "pib_nominal")
 # o que o analista digita.
 BASES_DO_MULTIPLO = {"ebitda": "EV/EBITDA", "lucro": "P/L"}
 
+# Por onde o Ke e montado. Ver ``PremissasCustoCapital.metodo``.
+# Os rotulos vao para a tela, entao levam acento -- e a regra do projeto para
+# texto de usuario, e estes sao os dois botoes que o analista le antes de
+# escolher por onde o Ke e montado.
+METODOS_DE_CUSTO_DE_CAPITAL = {
+    "usd": "Dólar + risco-país",
+    "local": "NTN-B + prêmio local",
+}
+
 
 @dataclass(frozen=True)
 class PremissasMacro:
@@ -80,9 +89,26 @@ class PremissasCustoCapital:
     o WACC. Alternativamente informe ``beta_desalavancado`` direto.
     """
 
+    # **Por onde o Ke e montado.** Sao duas construcoes legitimas, e elas nao se
+    # misturam:
+    #
+    # ``"usd"``   -- rf americano + beta x ERP maduro + lambda x risco-pais, e o
+    #                resultado convertido para BRL por diferencial de inflacao.
+    #                Evita somar premio americano a taxa brasileira.
+    # ``"local"`` -- rf **brasileiro** (NTN-B real, nominalizada pelo IPCA) +
+    #                beta x ERP local. Aqui **nao entra risco-pais**: ele ja esta
+    #                dentro do rf, e soma-lo seria conta-lo duas vezes.
+    #
+    # O custo do caminho local esta no ERP: um premio de risco de acoes estimado
+    # na serie brasileira e ruidoso demais para ser observado, entao ``erp_local``
+    # e uma premissa do analista -- e a que mais move o Ke.
+    metodo: str = "usd"
     rf_usd: float = 0.045
     erp_maduro: float = 0.045
     risco_pais: float = 0.025
+    # Usados so quando ``metodo == "local"``.
+    rf_brl: float | None = None
+    erp_local: float = 0.075
     beta_alavancado_setor: float | None = 1.0
     beta_desalavancado: float | None = None
     divida_pl_setor: float = 0.0
@@ -102,6 +128,16 @@ class PremissasCustoCapital:
     instituicao_financeira: bool = False
 
     def __post_init__(self) -> None:
+        if self.metodo not in METODOS_DE_CUSTO_DE_CAPITAL:
+            raise ValueError(
+                f"metodo de custo de capital desconhecido: {self.metodo!r}. "
+                f"Use um de {list(METODOS_DE_CUSTO_DE_CAPITAL)}."
+            )
+        if self.metodo == "local" and self.rf_brl is None:
+            raise ValueError(
+                "metodo 'local' exige rf_brl -- a taxa livre de risco em reais, "
+                "que sai da NTN-B nominalizada pela inflacao."
+            )
         if self.beta_alavancado_setor is None and self.beta_desalavancado is None:
             raise ValueError(
                 "Informe beta_alavancado_setor (com divida_pl_setor) ou "
