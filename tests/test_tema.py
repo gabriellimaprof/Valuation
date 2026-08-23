@@ -259,3 +259,46 @@ def test_a_tabela_aceita_celula_de_texto():
     assert "12,5%" in html
     assert 'class="texto"' in html
     assert "no percentil 69 de 397" in html
+
+
+# ---------------------------------------------------------------------------
+# As referencias que o balizador cita
+# ---------------------------------------------------------------------------
+
+
+def test_todo_indicador_que_o_balizador_cita_tem_distribuicao():
+    """Sem distribuicao medida nao ha percentil, e o balizador so tem metade.
+
+    A tela mostra "o que a empresa entregou" a partir da propria analise, mas
+    "onde isso cai na base" depende de `referencias.BASE`. Campo que cita um
+    indicador ausente dali sai com meia resposta, calado.
+    """
+    from valuation import referencias
+
+    citados = {
+        "Crescimento da receita",
+        "ROIC",
+        "ROE",
+        "Margem EBITDA",
+        "Capex / Receita",
+        "Capital de giro / Receita",
+        "Divida bruta / Patrimonio liquido",
+    }
+    faltando = [i for i in citados if i not in referencias.BASE]
+    # "Capital de giro / Receita" e "Depreciacao / Receita" ainda nao foram
+    # medidos, e o balizador degrada em silencio neles -- mostra o historico da
+    # empresa e omite o percentil. Este teste trava os que ja existem.
+    assert "Divida bruta / Patrimonio liquido" not in faltando
+    assert "ROE" not in faltando
+    assert "ROIC" not in faltando
+
+
+def test_o_corte_de_divida_pl_continua_no_quartil_alto():
+    """`DIVIDA_PL_ALTA` foi calibrado em outra safra; reconferido nesta."""
+    from valuation import referencias
+    from valuation.diagnostico import DIVIDA_PL_ALTA
+
+    percentil = referencias.posicao("Divida bruta / Patrimonio liquido", DIVIDA_PL_ALTA)
+    # Entre P70 e P85: um corte de "alavancado" que acusa perto de um quarto da
+    # base. Fora dessa faixa ele vira ruido (dispara sempre) ou inutil (nunca).
+    assert 0.70 <= percentil <= 0.85, f"percentil {percentil:.0%}"

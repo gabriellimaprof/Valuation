@@ -147,15 +147,29 @@ def _baliza_do_divida_pl(alvo: float) -> None:
         if np.isfinite(hoje):
             anos = analise.anos
             partes.append(
-                f"**{formatar(hoje, 'numero')}** na empresa ({anos[0]}–{anos[-1]})"
+                f"a empresa tem **{formatar(hoje, 'numero')}** ({anos[0]}–{anos[-1]})"
             )
 
+    # O percentil diz onde o alvo cai; o corte diz o que ele significa. Faltando
+    # um dos dois, o leitor ou estranha o normal do mercado ou aceita o quartil
+    # alto por ele existir -- a mesma razao pela qual o sinal de conversao cita
+    # os dois.
+    from valuation import referencias
+
+    # O sujeito do percentil precisa estar escrito: "no percentil 27" logo
+    # depois de "a empresa tem 0,19" se le como se o 0,19 fosse o percentilado,
+    # e o percentil e do **alvo** digitado.
+    onde = referencias.descrever("Divida bruta / Patrimonio liquido", alvo)
+    if onde:
+        partes.append(
+            f"o alvo de {formatar(alvo, 'numero')} fica "
+            + onde.replace("companhias brasileiras", "da base")
+        )
     if alvo >= DIVIDA_PL_ALTA:
         partes.append(
-            f"**acima do quartil alto da base** ({formatar(DIVIDA_PL_ALTA, 'numero')})"
+            f"**alavancado**: acima de {formatar(DIVIDA_PL_ALTA, 'numero')}, o "
+            "corte que o diagnóstico usa"
         )
-    else:
-        partes.append(f"quartil alto da base: {formatar(DIVIDA_PL_ALTA, 'numero')}")
 
     st.caption(" · ".join(partes))
 

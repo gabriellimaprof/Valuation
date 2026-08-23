@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1001 testes
+pytest                        # 1006 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1115,7 +1115,7 @@ não é verificação.
 
 ## Estado atual
 
-1.001 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.006 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1226,6 +1226,49 @@ código não existe naquele arquivo.
    ou porque a regra não alcançou? Os dois pedem coisas diferentes: **ausente não
    pede nada**, e mandar procurar o que não existe gasta o tempo de quem lê;
    **escapou** pede mapeamento manual, e a tela lista as linhas da seção.
+
+## O balizador: o número que você digita, contra duas âncoras
+
+A queixa que originou isto: *"é muita opção, pouca explicação, e muita info que
+eu tenho que ficar indo e voltando pras outras janelas para verificar. ROIC
+perpetuidade de 25%, é muito ou pouco com base no passado da companhia?"*
+
+A resposta estava a duas telas de distância — no Histórico, e depois na base de
+referência. `componentes.balizador` a traz para o lado do campo, com **duas
+âncoras, porque nenhuma basta sozinha**:
+
+* **o que a companhia entregou** — a mediana do período importado. É a âncora
+  mais forte: projetar 25% para quem nunca passou de 12% é uma afirmação sobre
+  mudança, e ela precisa de motivo;
+* **onde isso cai na base brasileira** — o percentil entre as companhias
+  medidas. Cobre o caso oposto, o da empresa sem histórico longo, e diz se o
+  número é incomum no mercado e não só nela.
+
+Na WEG, o padrão de 15% de ROIC perpétuo aparece como *"34,0% na empresa
+(2019–2025) · 19,0% abaixo do histórico · no percentil 69 de 397 da base"*. O
+D/E alvo padrão de 0,40 aparece contra os **0,19** que ela de fato tem.
+
+Os doze direcionadores anuais ganharam uma tabela: **projetado**, **entregue** e
+**percentil**, por linha. Duas linhas saem com "—" no percentil — depreciação e
+capital de giro sobre receita ainda não têm distribuição medida, e o balizador
+**degrada mostrando só o histórico** em vez de sumir.
+
+Quatro distribuições entraram em `referencias.BASE` para isso: dívida/PL (n=396,
+P75 = 1,834), ROE (n=399), margem EBIT (n=430) e taxa de reinvestimento (n=411).
+A medição reconfirmou `DIVIDA_PL_ALTA = 2,0` no percentil 77 — quartil alto, como
+foi calibrado noutra safra.
+
+**E o app nunca teve valor de mercado.** Um usuário leu R$ 59,8 bi para a WEG,
+que vale R$ 206,8 bi na bolsa — e aquele número era o Equity Value do próprio
+DCF. O campo "preço pedido" nascia preenchido com ele, produzia margem de 0,0% e
+aparecia no placar como se fosse dado de mercado.
+
+A contagem de ações estava certa: 4.195.695.973, lidas da composição de capital
+que a CVM publica junto da DFP. A R$ 49,29 elas dão exatamente os R$ 206,8 bi. O
+que faltava era o preço, e **o app não busca cotação em lugar nenhum**. O campo
+passa a nascer vazio, dizendo isso, e sem placar até o número vir de fora;
+informada a cotação, a tela mostra o valor de mercado implícito ao lado — que é
+o que torna o número de ações conferível contra a bolsa sem sair da tela.
 
 ## Estressar macro, e o efeito que eu previ errado
 

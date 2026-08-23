@@ -147,6 +147,16 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "Divida liquida / EBITDA": (409, (-1.478, -0.566, 0.572, 2.051, 3.554, 5.963, 10.455)),
     "Liquidez corrente": (421, (0.324, 0.638, 1.087, 1.546, 2.167, 2.943, 4.022)),
     "Payout (dividendos / lucro)": (334, (0.000, 0.000, 0.151, 0.364, 0.603, 0.858, 1.082)),
+    # Os quatro abaixo entraram para o **balizador** das telas de Premissas e de
+    # Custo de capital: cada campo passa a dizer onde o numero digitado cai na
+    # base, ao lado do que a propria companhia entregou. Sem distribuicao medida
+    # nao ha percentil, e sem percentil o balizador so tem metade da resposta.
+    #
+    # Medidos na safra 2021-2025, mesma metodologia dos demais.
+    "Divida bruta / Patrimonio liquido": (396, (0.009, 0.093, 0.348, 0.972, 1.834, 3.160, 5.315)),
+    "ROE": (399, (-0.325, -0.143, 0.013, 0.106, 0.195, 0.320, 0.423)),
+    "Margem EBIT": (430, (-0.287, -0.015, 0.061, 0.151, 0.265, 0.479, 0.575)),
+    "Taxa de reinvestimento": (411, (-1.068, -0.674, -0.142, 0.089, 0.560, 1.268, 1.964)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de
