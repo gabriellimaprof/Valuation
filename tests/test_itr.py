@@ -428,11 +428,14 @@ def test_o_trimestre_isolado_soma_o_acumulado():
 
     tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
     receita = tri.valores.loc["receita_liquida"]
-    assert list(tri.valores.columns) == ["1T25", "2T25", "3T25"]
+    assert list(tri.valores.columns) == [
+        "1T24", "2T24", "3T24", "1T25", "2T25", "3T25",
+    ]
 
     ltm = importar_ltm(WEG, cache=DADOS, ano=2025)
     # O acumulado de nove meses e o que o ano movel soma ao exercicio fechado.
-    assert float(receita.sum()) == pytest.approx(30_557_000_000.0, rel=0.001)
+    do_ano = receita[["1T25", "2T25", "3T25"]]
+    assert float(do_ano.sum()) == pytest.approx(30_557_000_000.0, rel=0.001)
 
 
 def test_o_trimestre_isolado_nao_e_o_acumulado():
@@ -450,6 +453,75 @@ def test_o_trimestre_isolado_nao_e_o_acumulado():
         assert 8e9 < float(valor) < 13e9, receita.to_dict()
 
 
+# ---------------------------------------------------------------------------
+# O mesmo trimestre do exercicio anterior
+# ---------------------------------------------------------------------------
+
+
+def test_a_serie_trimestral_traz_o_exercicio_anterior():
+    """O `PENULTIMO` dobra a serie sem baixar outro zip.
+
+    O par que se compara e 3T contra 3T, e ate aqui a serie tinha um exercicio
+    so -- o par nao existia dentro dela. O ITR publica o mesmo trimestre do ano
+    passado ao lado do corrente, e ele estava sendo lido so no caminho do ano
+    movel.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert list(tri.valores.columns) == [
+        "1T24", "2T24", "3T24", "1T25", "2T25", "3T25",
+    ]
+    receita = tri.valores.loc["receita_liquida"]
+    # 3T25 contra 3T24, que e a leitura sem sazonalidade.
+    assert float(receita["3T24"]) == pytest.approx(9_856_900_000.0, rel=0.001)
+    assert float(receita["3T25"]) == pytest.approx(10_271_500_000.0, rel=0.001)
+
+
+def test_o_ano_anterior_bate_com_o_itr_do_proprio_ano():
+    """Lido de dois jeitos, o mesmo trimestre tem de dar o mesmo numero.
+
+    E a conferencia que separa "li o `PENULTIMO`" de "li alguma outra linha":
+    o 3T24 vindo do `PENULTIMO` do ITR de 2025 contra o 3T24 vindo do `ULTIMO`
+    do ITR de 2024.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    de_2025 = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    de_2024 = importar_trimestral(WEG, cache=DADOS, ano=2024)
+    for conta in ("receita_liquida", "lucro_liquido", "lucro_bruto"):
+        for coluna in ("1T24", "2T24", "3T24"):
+            assert float(de_2025.valores.loc[conta, coluna]) == pytest.approx(
+                float(de_2024.valores.loc[conta, coluna]), rel=1e-6
+            ), f"{conta} em {coluna}"
+
+
+def test_o_ano_anterior_nao_inventa_balanco_nem_caixa():
+    """Faltar e honesto; estar errado, nao.
+
+    O `PENULTIMO` do balanco e o saldo de **31/12**, igual nas tres datas de
+    referencia -- entra-lo como "1T24", "2T24" e "3T24" poria o mesmo saldo de
+    dezembro em tres colunas de trimestres diferentes. E a DFC do ano anterior
+    so tem o acumulado: o de nove meses entraria rotulado como um trimestre,
+    tres vezes maior. As duas linhas tem de vir **vazias**.
+    """
+    import numpy as np
+
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    for conta in ("patrimonio_liquido", "ativo_total", "caixa_operacional"):
+        if conta not in tri.valores.index:
+            continue
+        anteriores = tri.valores.loc[conta, ["1T24", "2T24", "3T24"]]
+        assert anteriores.isna().all() or (anteriores == 0).all(), (
+            f"{conta} veio preenchido no exercicio anterior: "
+            f"{anteriores.to_dict()}"
+        )
+    # E o exercicio corrente continua trazendo o balanco.
+    assert np.isfinite(float(tri.valores.loc["patrimonio_liquido", "3T25"]))
+
+
 def test_o_balanco_nao_soma_no_trimestre():
     """Saldo é uma data, e não um período.
 
@@ -459,7 +531,9 @@ def test_o_balanco_nao_soma_no_trimestre():
     from valuation.importacao.cvm import importar_trimestral
 
     tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
-    patrimonio = tri.valores.loc["patrimonio_liquido"]
+    # So o exercicio corrente: o balanco do ano anterior nao existe no ITR, e
+    # vem vazio de proposito (ver ``test_o_ano_anterior_nao_inventa_balanco``).
+    patrimonio = tri.valores.loc["patrimonio_liquido", ["1T25", "2T25", "3T25"]]
     # Cresce trimestre a trimestre, e cada um e o saldo -- nao um terco do total.
     assert list(patrimonio) == sorted(patrimonio)
     assert float(patrimonio.iloc[-1]) > 20e9
@@ -509,3 +583,69 @@ def test_cada_serie_declara_o_que_ela_e():
     assert any("doze meses" in a for a in rolante.avisos)
     assert any("nao e um exercicio social" in a or "não é um exercício social" in a.lower()
                for a in rolante.avisos)
+
+
+def test_o_crescimento_trimestral_e_ano_contra_ano():
+    """1T25 se compara com 1T24, e nunca com a coluna à esquerda.
+
+    A coluna à esquerda de 1T25 é 3T24: dividir uma pela outra mede a distância
+    entre épocas diferentes do ano **e** pula o 4T24, que nem está na série. Na
+    WEG a diferença é o oposto de pequena — a leitura sequencial dizia +0,6% no
+    3T25 e a leitura certa diz +4,2%, com desaceleração de 25,5% para 4,2% ao
+    longo do ano, que a sequencial escondia por completo.
+    """
+    from valuation.historico import analisar
+    from valuation.importacao.cvm import importar_trimestral
+
+    indicadores = analisar(
+        importar_trimestral(WEG, cache=DADOS, ano=2025)
+    ).indicadores
+    crescimento = indicadores.loc["Crescimento da receita"]
+
+    # O primeiro exercicio nao tem com o que se comparar.
+    assert crescimento[["1T24", "2T24", "3T24"]].isna().all()
+    assert float(crescimento["1T25"]) == pytest.approx(0.2546, abs=0.001)
+    assert float(crescimento["3T25"]) == pytest.approx(0.0421, abs=0.001)
+
+    # E a conta e mesmo contra o mesmo trimestre do ano anterior.
+    receita = importar_trimestral(WEG, cache=DADOS, ano=2025).valores.loc[
+        "receita_liquida"
+    ]
+    assert float(crescimento["3T25"]) == pytest.approx(
+        float(receita["3T25"]) / float(receita["3T24"]) - 1, rel=1e-9
+    )
+
+
+def test_o_crescimento_anual_continua_sendo_o_ano_anterior():
+    """A série anual não muda: ali o par comparável já é a coluna à esquerda."""
+    from valuation.historico import analisar
+    from valuation.importacao.cvm import importar_cvm
+
+    dfs = importar_cvm(WEG, [2023, 2024, 2025], cache=DADOS)
+    indicadores = analisar(dfs).indicadores
+    crescimento = indicadores.loc["Crescimento da receita"]
+    receita = dfs.valores.loc["receita_liquida"]
+
+    import math
+
+    assert math.isnan(float(crescimento.iloc[0]))
+    for anterior, atual in zip(dfs.valores.columns, dfs.valores.columns[1:]):
+        assert float(crescimento[atual]) == pytest.approx(
+            float(receita[atual]) / float(receita[anterior]) - 1, rel=1e-9
+        )
+
+
+def test_o_rotulo_de_trimestre_diz_o_periodo():
+    """O rótulo já carrega o que a coluna é — não é preciso um sinalizador."""
+    from valuation.importacao.series import anterior_comparavel, periodo_do_rotulo
+
+    assert periodo_do_rotulo("3T25") == (2025, 3)
+    assert periodo_do_rotulo("1T2024") == (2024, 1)
+    assert periodo_do_rotulo(2024) is None
+    assert periodo_do_rotulo("5T25") is None
+
+    trimestral = anterior_comparavel(["1T24", "2T24", "3T24", "1T25", "2T25", "3T25"])
+    assert trimestral == {"1T25": "1T24", "2T25": "2T24", "3T25": "3T24"}
+
+    anual = anterior_comparavel([2022, 2023, 2024])
+    assert anual == {2023: 2022, 2024: 2023}

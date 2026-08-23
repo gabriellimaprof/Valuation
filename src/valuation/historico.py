@@ -48,6 +48,28 @@ def _media_movel_de_saldo(serie: pd.Series) -> pd.Series:
     return (serie + serie.shift(1)) / 2
 
 
+def _crescimento_no_par_certo(serie: pd.Series) -> pd.Series:
+    """Crescimento contra o periodo comparavel, e nao contra a coluna a esquerda.
+
+    Numa serie anual as duas coisas coincidem. Numa serie **trimestral** nao: a
+    coluna a esquerda de 1T25 e 3T24, e a divisao entre as duas mede sazonalidade
+    somada a um buraco -- o 4T24 nem esta na serie. O par que responde
+    "cresceu?" e 3T25 contra 3T24.
+    """
+    from .importacao.series import anterior_comparavel
+
+    pares = anterior_comparavel(serie.index)
+    anterior = pd.Series(
+        [
+            serie.get(pares[coluna], float("nan")) if coluna in pares else float("nan")
+            for coluna in serie.index
+        ],
+        index=serie.index,
+        dtype="float64",
+    )
+    return serie / anterior - 1
+
+
 def _divisao_segura(numerador: pd.Series, denominador: pd.Series) -> pd.Series:
     """Divide series tratando zero e negativo no denominador como indefinido."""
     denominador = denominador.where(denominador > 0)
@@ -184,7 +206,7 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     ativo_medio = _media_movel_de_saldo(ativo)
     divida_media = _media_movel_de_saldo(divida_bruta)
 
-    crescimento = receita / receita.shift(1) - 1
+    crescimento = _crescimento_no_par_certo(receita)
     variacao_giro = giro_operacional.diff()
     reinvestimento = capex.sub(depreciacao, fill_value=0).add(variacao_giro, fill_value=0)
 

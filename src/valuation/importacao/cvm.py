@@ -1776,6 +1776,24 @@ def _linhas_do_itr(
                 keep="first" if periodo == "isolado" else "last",
             )
 
+        # **O trimestre isolado do exercicio anterior so existe onde a companhia
+        # o publica -- e na maioria das demonstracoes ele nao existe.** Medido no
+        # ITR de 2025, secao ``PENULTIMO``: DRE e DRA trazem o trimestre em 454
+        # das 460 companhias (99%), enquanto DFC, DVA e DMPL trazem em 10 (2%) e
+        # o balanco em nenhuma -- ali o ``PENULTIMO`` e o **fim do exercicio
+        # anterior**, sempre 31/12, igual nas tres datas de referencia.
+        #
+        # Sem esta guarda a leitura nao falha: ela mente. O acumulado de nove
+        # meses de 2024 entraria rotulado como "3T24", tres vezes maior que o
+        # trimestre, e o saldo de 31/12/2024 apareceria identico nas colunas de
+        # 1T24, 2T24 e 3T24. Faltar a linha e honesto; traze-la errada, nao.
+        if periodo == "isolado" and normalizar(ordem) == normalizar("PENÚLTIMO"):
+            if "DT_INI_EXERC" not in recorte.columns:
+                continue
+            recorte = recorte[recorte["_dias"].between(_DIAS_DE_TRIMESTRE, 100)]
+            if recorte.empty:
+                continue
+
         for _, linha in recorte.iterrows():
             valor = pd.to_numeric(linha.get("VL_CONTA"), errors="coerce")
             if not np.isfinite(valor):
@@ -2474,16 +2492,38 @@ def importar_trimestral(
         ano or date.today().year, codigo_cvm, cache, forcar_download
     )
 
+    # **O `PENÚLTIMO` dobra a série sem baixar outro zip.** Para cada data de
+    # referência o ITR publica o mesmo trimestre do exercício anterior ao lado do
+    # corrente, e ele estava sendo lido só no caminho do ano móvel. Sem ele a
+    # série tinha um exercício e o par que importa -- 3T contra 3T -- não existia
+    # dentro dela; com ele, quatro trimestres de 2025 trazem quatro de 2024 de
+    # graça.
     partes = []
     for data_refer in trimestres:
-        try:
-            dfs = _demonstracoes_do_itr(
-                zip_itr, ano, codigo_cvm, escopo, data_refer, "ultimo", nome,
-                periodo="isolado",
-            )
-        except ErroCVM:
-            continue
-        partes.append((_rotulo_do_trimestre(data_refer), dfs))
+        for ordem in ("penultimo", "ultimo"):
+            try:
+                dfs = _demonstracoes_do_itr(
+                    zip_itr, ano, codigo_cvm, escopo, data_refer, ordem, nome,
+                    periodo="isolado",
+                )
+            except ErroCVM:
+                continue
+            rotulo = _rotulo_do_trimestre(data_refer)
+            if ordem == "penultimo":
+                # Mesmo trimestre, exercicio anterior: 3T25 vira 3T24.
+                numero, _, ano_curto = rotulo.partition("T")
+                rotulo = f"{numero}T{int(ano_curto) - 1:02d}"
+            partes.append((rotulo, dfs))
+
+    # A ordem cronologica e a que se le, e as duas passadas a embaralham.
+    def _cronologica(item):
+        rotulo = item[0]
+        trimestre, _, ano_curto = rotulo.partition("T")
+        return (int(ano_curto), int(trimestre))
+
+    partes = sorted(
+        {rotulo: (rotulo, dfs) for rotulo, dfs in partes}.values(), key=_cronologica
+    )
 
     if not partes:
         raise ErroCVM(
@@ -2494,13 +2534,28 @@ def importar_trimestral(
         partes,
         empresa=nome,
         unidade="reais",
-        origem=f"CVM ITR — trimestres isolados de {ano}",
+        origem=f"CVM ITR — trimestres isolados de {ano} e do exercicio anterior",
         avisos=[
             "**Trimestres isolados, e nao acumulados.** Cada coluna sao tres "
             "meses sozinhos, o que mostra inflexao mas **carrega sazonalidade**: "
             "comparar 3T com 2T compara epocas do ano diferentes, e o par certo "
             "e 3T contra 3T. Contas de balanco sao o saldo no fim de cada "
             "trimestre, e nao uma soma.",
+            "**As colunas do exercicio anterior tem so a DRE.** Elas vem do "
+            "`PENULTIMO` do proprio ITR, que publica o mesmo trimestre do ano "
+            "passado ao lado do corrente -- e o publica **so na DRE e na DRA**: "
+            "medido no ITR de 2025, 99% das companhias trazem o trimestre "
+            "anterior ali, contra 2% na DFC, na DVA e na DMPL. No balanco ele "
+            "nao existe de forma nenhuma: o `PENULTIMO` do balanco e o saldo de "
+            "31/12, e nao o fim do trimestre. Por isso caixa e balanco aparecem "
+            "**vazios** nessas colunas, em vez de aparecerem errados.",
+            "**Sao os numeros reapresentados.** O ano anterior vem como a "
+            "companhia o publica hoje, e nao como publicou na epoca -- que e a "
+            "base certa para comparar, e a razao de poder divergir de um "
+            "relatorio antigo. Conferidas 111 contas em 22 companhias contra o "
+            "ITR do proprio ano, 102 batem exatamente e 9 diferem por "
+            "reapresentacao da companhia (a Auren refez o resultado bruto dos "
+            "tres trimestres de 2024).",
             *partes[-1][1].avisos,
         ],
     )

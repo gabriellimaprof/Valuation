@@ -435,7 +435,9 @@ VISOES = {
     "Trimestral (isolado)": (
         "Cada coluna são três meses sozinhos. Mostra inflexão que o acumulado "
         "dilui — mas **carrega sazonalidade**: o par que se compara é 3T contra "
-        "3T, e não 3T contra 2T."
+        "3T, e não 3T contra 2T. Vem com **o mesmo trimestre do ano anterior "
+        "ao lado**, que é esse par; nele só há DRE, porque é só ela que o ITR "
+        "publica do exercício passado."
     ),
     "Ano móvel rolante": (
         "Doze meses encerrados em cada trimestre. Tira a sazonalidade e mostra "
