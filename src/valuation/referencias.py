@@ -157,6 +157,15 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "ROE": (399, (-0.325, -0.143, 0.013, 0.106, 0.195, 0.320, 0.423)),
     "Margem EBIT": (430, (-0.287, -0.015, 0.061, 0.151, 0.265, 0.479, 0.575)),
     "Taxa de reinvestimento": (411, (-1.068, -0.674, -0.142, 0.089, 0.560, 1.268, 1.964)),
+    # As duas ultimas linhas do balizador da projecao, que saiam com "-".
+    #
+    # A **dispersao** delas e o motivo de o percentil valer mais aqui que em
+    # outros indicadores: depreciacao sobre receita vai de 1,0% (P10) a 20,2%
+    # (P90) -- vinte vezes -- porque separa servico de infraestrutura, e capital
+    # de giro sobre receita vai de -2,1% a 60,7%, separando quem recebe adiantado
+    # de incorporadora. Num intervalo desses, "4,5%" nao se le sozinho.
+    "Depreciacao / Receita": (394, (0.005, 0.010, 0.025, 0.059, 0.128, 0.202, 0.271)),
+    "Capital de giro / Receita": (418, (-0.068, -0.021, 0.048, 0.144, 0.307, 0.607, 1.138)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de

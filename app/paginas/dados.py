@@ -1055,7 +1055,22 @@ def _conferencia(dfs) -> None:
             escolhas[linha.rotulo] = rotulo_para_chave[escolha]
 
     caminho = st.session_state.get("arquivo_importado")
-    if escolhas and caminho and st.button("Aplicar correções"):
+    if caminho is None:
+        # **O botão sumia calado.** A correção reprocessa o arquivo em disco, e a
+        # série trimestral não passa por planilha — ela é montada período a
+        # período a partir do ITR. Sem o arquivo o botão nunca era desenhado, e
+        # quem tinha acabado de preencher os seletores ficava sem onde clicar e
+        # sem saber por quê.
+        st.info(
+            "**A correção de mapeamento não está disponível nesta leitura.** Ela "
+            "reprocessa a planilha que a importação grava, e a série trimestral é "
+            "montada direto do ITR, período a período — não há planilha para "
+            "reprocessar. Para corrigir um mapeamento, importe a série **anual** "
+            "e aplique a correção lá: as contas canônicas são as mesmas."
+        )
+        return
+
+    if escolhas and st.button("Aplicar correções"):
         try:
             corrigido = aplicar_mapeamento_manual(dfs, caminho, escolhas)
         except (ValueError, FileNotFoundError) as erro:

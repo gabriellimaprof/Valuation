@@ -456,3 +456,37 @@ def test_planilha_sem_plano_de_contas_nao_perde_o_balanco():
     )
     ativo, passivo = separar_o_balanco(linhas)
     assert len(ativo) == 2 and passivo.empty
+
+
+def test_a_correcao_de_mapeamento_diz_por_que_nao_esta_disponivel(weg):
+    """O botao sumia calado quando nao ha planilha para reprocessar.
+
+    A serie trimestral e montada direto do ITR, periodo a periodo, e nao passa
+    por planilha. Sem `arquivo_importado` o botao nunca era desenhado -- e quem
+    tinha acabado de preencher os seletores de conta ficava sem onde clicar e
+    sem saber por que.
+
+    O caso e montado a mao porque a WEG do fixture nao tem linha nao
+    reconhecida, e a secao inteira so aparece quando ha alguma.
+    """
+    from valuation.importacao.importador import LinhaNaoReconhecida
+
+    com_pendencia = type(weg)(
+        **{
+            **weg.__dict__,
+            "nao_reconhecidas": [
+                LinhaNaoReconhecida(
+                    rotulo="Conta esquisita",
+                    aba="DRE",
+                    melhor_palpite=None,
+                    confianca=0.0,
+                )
+            ],
+        }
+    )
+    teste = _rodar(com_pendencia)
+    textos = [i.value for i in teste.info]
+    assert any("não está disponível nesta leitura" in t for t in textos), textos
+    # A marcacao entra no meio da frase ("serie **anual**"), entao a busca e
+    # pelo que sobrevive a ela.
+    assert any("não há planilha para reprocessar" in t for t in textos)
