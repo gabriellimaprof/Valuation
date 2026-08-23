@@ -182,8 +182,14 @@ def ipca_esperado(anos_a_frente: int = 3, cache: Path | None = None) -> float:
 def curva_ntnb(caminho: str | Path | None = None) -> pd.DataFrame:
     """Taxa real das NTN-B por vencimento, da coleta mais recente do arquivo.
 
-    O arquivo do Tesouro tem o historico inteiro e passa de 30 MB; quando vem da
-    rede, so os primeiros blocos sao lidos, que ja contem a coleta mais recente.
+    O arquivo do Tesouro tem o historico inteiro. **O `Range` nao economiza
+    nada**: medido em agosto de 2026, o servidor responde `206 Partial Content`
+    e manda os 14,4 MB inteiros do mesmo jeito, em 3 a 7 segundos. O cabecalho
+    fica porque nao custa e pode voltar a ser respeitado; o que resolve o custo e
+    o cache em disco de :func:`taxa_real_ntnb`, que busca uma vez por dia.
+
+    O comentario anterior dizia que so os primeiros blocos eram lidos. Nao era
+    verdade -- so a *leitura* e parcial, o download nao.
     """
     if caminho is not None:
         bruto = Path(caminho).read_bytes()
@@ -497,3 +503,62 @@ def interpretar_cotacao(bruto: bytes, ticker: str) -> Cotacao:
             else datetime.now(tz=timezone.utc)
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# A taxa real do dia, com cache em disco
+# ---------------------------------------------------------------------------
+
+# O arquivo do Tesouro custa 14 MB e alguns segundos, e a curva se move uma vez
+# por dia util. Guardar em disco o numero -- e nao o arquivo -- torna a
+# atualizacao automatica barata: a primeira sessao do dia paga a busca, as
+# demais leem um JSON de duas linhas.
+ARQUIVO_DA_TAXA = "ntnb_taxa_real.json"
+
+
+@dataclass(frozen=True)
+class TaxaRealDoDia:
+    """A taxa real longa da NTN-B, com a data da coleta e de onde veio."""
+
+    taxa: float
+    coletada_em: date
+    do_cache: bool
+
+    @property
+    def dias(self) -> int:
+        return (date.today() - self.coletada_em).days
+
+
+def taxa_real_ntnb(
+    cache: Path | None = None, anos: int = ANOS_REFERENCIA, hoje: date | None = None
+) -> TaxaRealDoDia:
+    """A taxa real longa, buscando no maximo **uma vez por dia**.
+
+    Devolve tambem a data da coleta, porque quem consome precisa poder dizer a
+    idade do numero -- um valor de mercado sem data e indistinguivel de um valor
+    embarcado.
+
+    Levanta ``ErroMercado`` quando nao ha cache do dia **e** a rede falha. Quem
+    chama decide o que fazer; no app, a decisao e cair na referencia embarcada e
+    dizer isso na tela.
+    """
+    hoje = hoje or date.today()
+    pasta = cache or diretorio_cache()
+    arquivo = pasta / ARQUIVO_DA_TAXA
+
+    if arquivo.exists():
+        try:
+            guardado = json.loads(arquivo.read_text(encoding="utf-8"))
+            coletada = date.fromisoformat(guardado["coletada_em"])
+            if coletada == hoje:
+                return TaxaRealDoDia(float(guardado["taxa"]), coletada, do_cache=True)
+        except (json.JSONDecodeError, KeyError, ValueError, OSError):
+            pass  # cache corrompido e o mesmo que cache ausente
+
+    taxa = taxa_real_longa(curva_ntnb(), anos=anos)
+    pasta.mkdir(parents=True, exist_ok=True)
+    arquivo.write_text(
+        json.dumps({"taxa": taxa, "coletada_em": hoje.isoformat()}),
+        encoding="utf-8",
+    )
+    return TaxaRealDoDia(taxa, hoje, do_cache=False)

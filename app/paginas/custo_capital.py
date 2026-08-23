@@ -136,6 +136,58 @@ def _risco_pais_de_mercado(empresa) -> None:
 
 
 
+
+@st.cache_data(ttl=60 * 60 * 6, show_spinner=False)
+def _taxa_real_do_dia():
+    """A taxa real da NTN-B, buscada no máximo uma vez por dia.
+
+    O cache é duplo de propósito: o do Streamlit evita repetir a chamada dentro
+    da sessão, e o de disco em `mercado.taxa_real_ntnb` faz a busca acontecer
+    **uma vez por dia por máquina** — a primeira sessão do dia paga os ~6s, as
+    demais leem um JSON de duas linhas em 0,02s.
+    """
+    from valuation.mercado import taxa_real_ntnb
+
+    return taxa_real_ntnb()
+
+
+def _taxa_real_de_partida() -> tuple[float, str]:
+    """A taxa real com que o campo abre, e de onde ela veio.
+
+    **Automática, e não silenciosa.** A atualização acontece sem clique — que é
+    o que se espera de uma taxa de mercado —, mas a origem vai escrita ao lado
+    do campo. Sem isso, o número de hoje e o embarcado de três meses atrás teriam
+    a mesma aparência, que é o defeito que a safra dos percentis já custou.
+
+    Rede fora não é erro: cai na referência embarcada e diz que caiu.
+    """
+    from valuation.custo_capital import (
+        NTNB_REAL_REFERENCIA,
+        idade_da_referencia_ntnb,
+    )
+    from valuation.mercado import ErroMercado
+
+    try:
+        do_dia = _taxa_real_do_dia()
+    except (ErroMercado, ValueError):
+        dias = idade_da_referencia_ntnb()
+        return NTNB_REAL_REFERENCIA, (
+            f"⚠️ Sem conexão com o Tesouro: usando o valor de referência de "
+            f"{dias} dia(s) atrás."
+        )
+
+    if do_dia.dias == 0:
+        quando = "hoje"
+    elif do_dia.dias == 1:
+        quando = "ontem"
+    else:
+        quando = f"há {do_dia.dias} dias"
+    return do_dia.taxa, (
+        f"Curva do Tesouro, coletada **{quando}** ({do_dia.coletada_em:%d/%m/%Y}). "
+        "Atualiza sozinho uma vez por dia."
+    )
+
+
 def _campos_em_dolar(premissas, paises):
     """Taxa americana, prêmio maduro e risco-país — a construção original."""
     colunas = st.columns(4)
@@ -197,22 +249,15 @@ def _campos_locais(premissas, empresa, paises):
         "País", paises, index=paises.index(estado.config().get("pais", "Brasil"))
     )
 
-    from valuation.custo_capital import (
-        NTNB_REAL_REFERENCIA,
-        idade_da_referencia_ntnb,
-        referencia_ntnb_envelheceu,
-    )
-
-    # A taxa que a sessão já tem ganha precedência; sem ela, a de referência —
-    # e o campo **diz qual das duas está mostrando**. Um número embarcado com
-    # cara de número buscado é o defeito que a safra dos percentis já custou.
+    # A taxa que **você** digitou ganha de tudo. Sem ela, a do dia, buscada
+    # automaticamente; sem rede, a de referência embarcada. As três aparecem
+    # rotuladas: um número de mercado sem data é indistinguível de um embarcado.
     real_padrao = premissas.rf_brl
-    da_referencia = real_padrao is None
-    real_padrao = (
-        NTNB_REAL_REFERENCIA
-        if da_referencia
-        else (1 + real_padrao) / (1 + ipca) - 1
-    )
+    origem = None
+    if real_padrao is None:
+        real_padrao, origem = _taxa_real_de_partida()
+    else:
+        real_padrao = (1 + real_padrao) / (1 + ipca) - 1
     taxa_real = colunas[1].number_input(
         "NTN-B — taxa real (%)",
         value=float(real_padrao * 100),
@@ -223,18 +268,8 @@ def _campos_locais(premissas, empresa, paises):
             "horizonte do valuation."
         ),
     )
-    if da_referencia:
-        dias = idade_da_referencia_ntnb()
-        if referencia_ntnb_envelheceu():
-            colunas[1].warning(
-                f"**Valor de referência de {dias} dias atrás.** A curva se move "
-                "todo dia — busque a atual abaixo."
-            )
-        else:
-            colunas[1].caption(
-                f"Valor de referência, medido há {dias} dia(s). O app **não "
-                "atualiza sozinho**."
-            )
+    if origem:
+        colunas[1].caption(origem)
     rf_brl = rf_local(taxa_real / 100, ipca)
     colunas[1].caption(
         f"Nominalizada a {formatar(ipca, 'pct')} de IPCA: "

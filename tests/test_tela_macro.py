@@ -436,11 +436,49 @@ def test_o_caminho_escolhido_chega_ao_modelo():
     assert cc.rf_brl is not None and cc.rf_brl > 0
 
 
-def test_a_tela_diz_que_o_rf_e_referencia_e_nao_atualiza_sozinho():
-    """Numero embarcado com cara de numero buscado engana quem confia nele."""
-    teste = _rodar(TELA_CUSTO)
-    legendas = " ".join(c.value for c in teste.caption)
-    avisos = " ".join(w.value for w in teste.warning)
-    assert "não" in (legendas + avisos)
-    assert "referência" in (legendas + avisos)
-    assert "atualiza sozinho" in legendas or "busque a atual" in avisos
+def test_o_rf_do_dia_diz_de_onde_veio(monkeypatch):
+    """Numero de mercado sem data e indistinguivel de numero embarcado.
+
+    A atualizacao e automatica -- e o que se espera de uma taxa de mercado --,
+    mas a origem vai escrita ao lado do campo, senao o valor de hoje e o
+    embarcado de tres meses atras teriam a mesma aparencia.
+
+    **O teste nao alcanca a rede**: substitui a busca. A suite ja passou de 100s
+    para 237s uma vez por depender do Banco Central, e falhou quando ele demorou.
+    """
+    from datetime import date
+
+    from valuation import mercado
+
+    monkeypatch.setattr(
+        mercado,
+        "taxa_real_ntnb",
+        lambda *a, **k: mercado.TaxaRealDoDia(0.0791, date.today(), do_cache=True),
+    )
+    _limpar_cache_de_taxa()
+
+    legendas = " ".join(c.value for c in _rodar(TELA_CUSTO).caption)
+    assert "Curva do Tesouro" in legendas
+    assert "hoje" in legendas
+
+
+def test_sem_rede_o_rf_cai_na_referencia_e_avisa(monkeypatch):
+    """Rede fora nao e erro: e a referencia embarcada, dita como tal."""
+    from valuation import mercado
+
+    def recusar(*a, **k):
+        raise mercado.ErroMercado("sem rede")
+
+    monkeypatch.setattr(mercado, "taxa_real_ntnb", recusar)
+    _limpar_cache_de_taxa()
+
+    legendas = " ".join(c.value for c in _rodar(TELA_CUSTO).caption)
+    assert "Sem conexão" in legendas
+    assert "referência" in legendas
+
+
+def _limpar_cache_de_taxa() -> None:
+    """O cache do Streamlit sobrevive entre testes e mascararia o substituto."""
+    from app.paginas.custo_capital import _taxa_real_do_dia
+
+    _taxa_real_do_dia.clear()

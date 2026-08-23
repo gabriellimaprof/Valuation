@@ -301,3 +301,72 @@ def test_ticker_vazio_e_resposta_estranha_viram_erro_tratado():
         interpretar_cotacao(b"{}", "X.SA")
     with pytest.raises(ErroMercado):
         interpretar_cotacao(b"nao e json", "X.SA")
+
+
+# ---------------------------------------------------------------------------
+# A taxa real do dia, com cache em disco
+# ---------------------------------------------------------------------------
+
+
+def test_a_taxa_do_dia_busca_uma_vez_e_reusa(tmp_path, monkeypatch):
+    """O arquivo do Tesouro custa 14 MB e ~6s; a curva se move uma vez por dia.
+
+    Medido em agosto de 2026: o servidor responde `206 Partial Content` e manda
+    o arquivo **inteiro** mesmo com `Range` -- entao nao da para deixar a busca
+    leve, e o que torna a atualizacao automatica viavel e nao repeti-la.
+    """
+    from datetime import date, timedelta
+
+    import pandas as pd
+
+    from valuation import mercado
+
+    buscas = []
+
+    def falsa_curva():
+        buscas.append(1)
+        return pd.DataFrame(
+            {
+                "vencimento": [pd.Timestamp("2035-05-15")],
+                "data_base": [pd.Timestamp("2026-08-21")],
+                "taxa_real": [0.0782],
+            }
+        )
+
+    monkeypatch.setattr(mercado, "curva_ntnb", falsa_curva)
+
+    primeira = mercado.taxa_real_ntnb(cache=tmp_path)
+    assert primeira.taxa == pytest.approx(0.0782)
+    assert primeira.do_cache is False
+    assert len(buscas) == 1
+
+    segunda = mercado.taxa_real_ntnb(cache=tmp_path)
+    assert segunda.taxa == pytest.approx(0.0782)
+    assert segunda.do_cache is True
+    assert len(buscas) == 1, "buscou de novo no mesmo dia"
+
+    # No dia seguinte, busca de novo.
+    depois = date.today() + timedelta(days=1)
+    mercado.taxa_real_ntnb(cache=tmp_path, hoje=depois)
+    assert len(buscas) == 2
+
+
+def test_cache_corrompido_e_o_mesmo_que_cache_ausente(tmp_path, monkeypatch):
+    """Arquivo quebrado nao pode derrubar o app -- so custa uma busca."""
+    import pandas as pd
+
+    from valuation import mercado
+
+    (tmp_path / mercado.ARQUIVO_DA_TAXA).write_text("{isto nao e json", encoding="utf-8")
+    monkeypatch.setattr(
+        mercado,
+        "curva_ntnb",
+        lambda: pd.DataFrame(
+            {
+                "vencimento": [pd.Timestamp("2035-05-15")],
+                "data_base": [pd.Timestamp("2026-08-21")],
+                "taxa_real": [0.08],
+            }
+        ),
+    )
+    assert mercado.taxa_real_ntnb(cache=tmp_path).taxa == pytest.approx(0.08)
