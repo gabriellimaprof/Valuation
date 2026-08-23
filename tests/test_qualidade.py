@@ -285,3 +285,89 @@ def test_companhia_que_troca_de_classificacao_e_apontada():
     )
     assert "em 2023" in sinal.detalhe
     assert "nem consigo mesma" in sinal.detalhe
+
+
+# ---------------------------------------------------------------------------
+# EBITDA -> CGO -> FCO: separar a operacao do que vem depois dela
+# ---------------------------------------------------------------------------
+
+
+def _com_dfc(cgo, giro, imposto, juro, ebit=800.0, da=200.0):
+    """Demonstracoes minimas com a seccao operacional aberta."""
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    fco = cgo + giro - abs(imposto) - abs(juro)
+    valores = pd.DataFrame(
+        {
+            2023: {
+                "receita_liquida": 5000.0, "ebit": ebit,
+                "depreciacao_amortizacao": da, "lucro_liquido": 500.0,
+                "lucro_antes_impostos": 700.0, "impostos": 200.0,
+                "patrimonio_liquido": 3000.0, "ativo_total": 6000.0,
+                "caixa_das_operacoes": cgo, "fluxo_operacional": fco,
+                "variacao_capital_giro": giro, "impostos_pagos": imposto,
+                "juros_pagos": juro,
+            },
+            2024: {
+                "receita_liquida": 5200.0, "ebit": ebit,
+                "depreciacao_amortizacao": da, "lucro_liquido": 520.0,
+                "lucro_antes_impostos": 720.0, "impostos": 200.0,
+                "patrimonio_liquido": 3100.0, "ativo_total": 6200.0,
+                "caixa_das_operacoes": cgo, "fluxo_operacional": fco,
+                "variacao_capital_giro": giro, "impostos_pagos": imposto,
+                "juros_pagos": juro,
+            },
+        }
+    )
+    return Demonstracoes(empresa="Teste", valores=valores, unidade="R$ milhões")
+
+
+def test_a_ponte_do_caixa_reconstroi_o_fco():
+    """`FCO = CGO + giro + outros - imposto - juro`, a identidade da DFC."""
+    from valuation.historico import analisar
+    from valuation.qualidade import ponte_do_caixa
+
+    ponte = ponte_do_caixa(analisar(_com_dfc(cgo=1100.0, giro=-100.0, imposto=150.0, juro=250.0)))
+    assert ponte is not None
+    assert ponte.fecha
+    assert ponte.ebitda == pytest.approx(1000.0)
+    assert ponte.conversao_operacional == pytest.approx(1.10)
+    assert ponte.conversao_final == pytest.approx(0.60)
+
+
+def test_cgo_bom_com_fco_fraco_nao_acusa_a_operacao():
+    """O ponto: FCO fraco por juro e imposto nao e operacao que nao gera caixa.
+
+    Medido no consolidado de 2024, **190 das 371 companhias** com os dois
+    numeros tem CGO acima de 78% do EBITDA e FCO abaixo disso -- metade da base.
+    Dizer "o EBITDA nao vira caixa" nelas manda o analista procurar receita
+    ficticia onde o que ha e divida cara.
+    """
+    from valuation.historico import analisar
+    from valuation.qualidade import avaliar_qualidade
+
+    # Opera bem (CGO = 110% do EBITDA) e paga muito juro (40% do EBITDA).
+    dfs = _com_dfc(cgo=1100.0, giro=-50.0, imposto=100.0, juro=400.0)
+    sinal = next(
+        s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
+    )
+
+    assert sinal.valor < 0.78, "o caso montado precisa ter FCO fraco"
+    assert "operação gera caixa" in sinal.titulo
+    assert "juro" in sinal.detalhe
+    # E o culpado vem com o tamanho: "esta no juro" sem numero nao dirige nada.
+    assert "40%" in sinal.detalhe
+
+
+def test_cgo_fraco_continua_acusando_a_operacao():
+    """A ressalva nao pode virar desculpa: CGO baixo e a operacao mesmo."""
+    from valuation.historico import analisar
+    from valuation.qualidade import avaliar_qualidade
+
+    dfs = _com_dfc(cgo=300.0, giro=-100.0, imposto=50.0, juro=50.0)
+    sinal = next(
+        s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
+    )
+    assert "operação gera caixa" not in sinal.titulo

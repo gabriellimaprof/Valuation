@@ -76,6 +76,33 @@ def linhas_vazias(tabela: pd.DataFrame, anos: list) -> np.ndarray:
     return propria & ~guarda_filha
 
 
+# Os dois lados do balanco, pela raiz do codigo no plano da CVM: ``1`` e o ativo
+# e ``2`` e o passivo mais o patrimonio liquido. Nao e convencao deste app -- e a
+# numeracao que a CVM publica, e a mesma que separa os arquivos BPA e BPP.
+RAIZ_DO_ATIVO = "1"
+RAIZ_DO_PASSIVO = "2"
+
+
+def separar_o_balanco(linhas: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Divide o balanco em ativo e passivo+PL, na ordem em que veio.
+
+    O balanco nao e uma lista: e uma **igualdade**. Empilhar os dois lados um
+    embaixo do outro, que e o que uma tabela unica faz, esconde a unica coisa que
+    o balanco afirma -- que os dois fecham no mesmo numero. Lado a lado a
+    igualdade fica visivel sem ninguem ter que rolar a tela para conferir.
+
+    Devolve ``(ativo, passivo)``. Linha sem codigo -- planilha importada a mao,
+    que nao tem plano de contas -- fica no ativo, porque devolve-la em nenhum dos
+    dois a apagaria da tela.
+    """
+    if linhas.empty or "codigo" not in linhas.columns:
+        return linhas, linhas.iloc[0:0]
+
+    raizes = linhas["codigo"].astype(str).str.split(".").str[0]
+    do_passivo = raizes == RAIZ_DO_PASSIVO
+    return linhas[~do_passivo], linhas[do_passivo]
+
+
 def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFrame | None:
     """Divide so as colunas de ano da arvore; codigo e nivel nao sao valores.
 

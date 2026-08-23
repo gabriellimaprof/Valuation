@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 965 testes
+pytest                        # 978 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -433,6 +433,76 @@ na tela.
 **Textos em português acentuado, números no padrão brasileiro** (milhar com
 ponto, decimal com vírgula). Use os formatadores existentes; não escreva
 `f"{x:.1%}"` em texto de usuário.
+
+## O balanço em T, e as fórmulas por escrito
+
+**O balanço não é uma lista, é uma igualdade.** Empilhado numa tabela só, ele se
+lê como 96 linhas, e a única coisa que ele afirma — que os dois lados fecham no
+mesmo número — só aparece para quem rolar até o fim e lembrar do total lá de
+cima. `separar_o_balanco` divide por raiz de código (`1` = ativo, `2` = passivo
+e PL, que é a numeração da própria CVM e a mesma que separa os arquivos BPA e
+BPP), e a tela põe os dois lado a lado com a conferência **antes** das tabelas:
+se os lados não fecham, isso muda como se lê tudo o que vem abaixo.
+
+Custo medido: sete anos em cada metade não cabem em 1.440px, e as duas tabelas
+rolavam na horizontal — exatamente o que a leitura em T existe para evitar. A
+variante `.compacta` aperta rótulo e recuo, e o container do app foi de 1.440
+para 1.600px. A 2.150px (a tela do dono do projeto) cabe inteiro; abaixo de
+1.600px cada lado rola dentro do próprio quadro, e a página não.
+
+**As fórmulas passaram a ser publicadas, porque há vários jeitos de chegar no
+ROIC.** O denominador pode ser capital de abertura, de fechamento ou médio; o
+numerador pode usar alíquota nominal ou efetiva; o capital investido pode ou não
+incluir o caixa. Mostrar "ROIC: 34,0%" sem dizer qual dos jeitos foi usado
+obriga quem lê a confiar ou a refazer a conta — as duas coisas piores que
+mostrar a fórmula.
+
+`formulas.py` guarda, por indicador, a **conta** e a **convenção que ela
+embute** — é a segunda que carrega a informação. As três escolhas do ROIC estão
+escritas: alíquota efetiva (não os 34% nominais), capital investido pela ótica
+do financiamento (dívida líquida + PL) e **capital médio** entre abertura e
+fechamento. Fica no motor, e não na tela, porque descreve o que o motor calcula;
+e `test_formulas.py` refaz a conta do ROIC à mão a partir do verbete e exige o
+mesmo número, além de exigir verbete para todo indicador publicado. Texto que
+descreve código envelhece calado se nada os amarrar.
+
+## EBITDA → CGO → FCO: três perguntas que a conversão juntava numa só
+
+A conversão FCO/EBITDA respondia ao mesmo tempo "o resultado virou caixa?", "o
+giro prendeu caixa?" e "quanto saiu para imposto e juro?" — e só a primeira fala
+da operação. Medido no consolidado de 2024, em 374 companhias com EBITDA
+positivo:
+
+| | Mediana |
+|---|---|
+| **CGO / EBITDA** (antes de giro, imposto e juro) | **105,9%** |
+| **FCO / EBITDA** (depois dos três) | **59,2%** |
+| Distância | **42,4 p.p.** |
+| Juro pago / EBITDA | **25,8%** (P75 = 42,7%) |
+| Imposto pago / EBITDA | 6,3% |
+
+A mediana passa de 100% no CGO e isso não é anomalia: o caixa gerado devolve ao
+lucro despesas que não foram caixa e o EBITDA não captura — provisão,
+impairment.
+
+**190 das 371 companhias com os dois números — metade da base — têm CGO acima de
+78% do EBITDA e FCO abaixo disso.** Nelas o resultado vira caixa e o consumo
+está abaixo da operação; dizer "o EBITDA não vira caixa" ali manda o analista
+procurar receita fictícia onde o que há é dívida cara. O sinal passa a olhar o
+degrau de cima antes de culpar a operação, e nomeia o maior consumo **com o
+tamanho** — "está no juro pago: 40% do EBITDA" dirige atenção, "está no giro, no
+imposto ou no juro" não.
+
+`qualidade.ponte_do_caixa` monta a identidade que a DFC indireta publica:
+
+```
+FCO = CGO + variação do giro + outros − imposto pago − juro pago
+```
+
+Com o termo `6.01.03` ela fecha em 96,8% da base; **sem ele fechava em 59%** — a
+mesma diferença que a auditoria já tinha achado, reconfirmada aqui. Na WEG de
+2024: EBITDA 8.503,0 → CGO 9.562,3 (112,5%) → giro −774,4 → imposto −1.375,4 →
+juro −160,3 → FCO 7.252,3 (85,3%), fechando exato.
 
 ## O revamp de UI/UX, e o que o benchmark mostrou
 
@@ -947,7 +1017,7 @@ não é verificação.
 
 ## Estado atual
 
-965 testes passando. Verificado de verdade: contas financeiras, identidades,
+978 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

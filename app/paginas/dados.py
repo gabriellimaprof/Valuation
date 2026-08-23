@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -26,11 +27,14 @@ from valuation.importacao.cvm import (
     importar_cvm,
 )
 from valuation.importacao.esquema import extrair_codigo_cvm
+from valuation.importacao.importador import separar_o_balanco
 
 from .. import estado
 from ..componentes import (
+    em_texto,
     etapa,
     formatar,
+    secao,
     tabela_de_demonstracao,
     tabela_formatada,
 )
@@ -817,7 +821,72 @@ def _arvore_publicada(dfs, chave: str) -> None:
         "cada conta é a soma das que aparecem abaixo dela, mais fracas."
         + (f" {ocultas} zeradas em todo o período ficaram de fora." if ocultas else "")
     )
-    st.html(tabela_de_demonstracao(linhas, dfs.unidade))
+
+    if chave == "bp":
+        _balanco_lado_a_lado(linhas, dfs.unidade)
+    else:
+        st.html(tabela_de_demonstracao(linhas, dfs.unidade))
+
+
+def _balanco_lado_a_lado(linhas, unidade: str) -> None:
+    """O balanço em T: ativo à esquerda, passivo e patrimônio à direita.
+
+    Empilhado, o balanço se lê como uma lista de 96 linhas e a igualdade que ele
+    afirma — que os dois lados fecham no mesmo número — só aparece para quem
+    rolar até o fim e lembrar do total lá de cima. É a forma como o balanço é
+    ensinado, publicado e conferido há séculos, e a tela não tinha por que
+    desfazê-la.
+
+    A conferência vem antes das duas tabelas, e não depois: se os lados não
+    fecham, isso muda como se lê tudo o que vem abaixo.
+    """
+    ativo, passivo = separar_o_balanco(linhas)
+    if passivo.empty:
+        st.html(tabela_de_demonstracao(linhas, unidade))
+        return
+
+    _conferir_a_igualdade(ativo, passivo, unidade)
+
+    colunas = st.columns(2, gap="medium")
+    for coluna, (titulo, lado) in zip(
+        colunas, (("Ativo", ativo), ("Passivo e patrimônio líquido", passivo))
+    ):
+        with coluna:
+            secao(titulo)
+            st.html(tabela_de_demonstracao(lado, unidade, compacta=True))
+
+
+def _conferir_a_igualdade(ativo, passivo, unidade: str) -> None:
+    """Os dois lados fecham? A resposta vai com o tamanho, e não só com o sinal.
+
+    "Não fecha" sem tamanho não ajuda a decidir: quem lê precisa saber se a
+    diferença vale 0,1% ou 40% do ativo. Fecha em 100% das companhias medidas —
+    é a identidade mais básica da base —, então quando não fechar o problema é
+    de leitura e merece aparecer com o número.
+    """
+    anos = [c for c in ativo.columns if isinstance(c, int)]
+    if ativo.empty or not anos:
+        return
+
+    total_ativo = ativo[anos].iloc[0]
+    total_passivo = passivo[anos].iloc[0]
+    diferenca = (total_ativo - total_passivo).abs()
+    escala = total_ativo.abs().replace(0, np.nan)
+    desvio = (diferenca / escala).max()
+
+    if not np.isfinite(desvio) or desvio < 1e-6:
+        st.success(
+            "**Os dois lados fecham.** Ativo total igual a passivo mais "
+            f"patrimônio líquido, em todos os {len(anos)} anos."
+        )
+        return
+
+    pior = (diferenca / escala).idxmax()
+    st.warning(
+        "**Os dois lados não fecham.** A maior diferença é em "
+        f"{pior}: {em_texto(diferenca[pior], unidade)}, ou "
+        f"{formatar(desvio, 'pct')} do ativo."
+    )
 
 
 

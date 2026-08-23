@@ -248,7 +248,9 @@ def _texto_seguro(valor: object) -> str:
 NIVEL_MAXIMO_COM_ESTILO = 5
 
 
-def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
+def tabela_de_demonstracao(
+    linhas: pd.DataFrame, unidade: str = "", compacta: bool = False
+) -> str:
     """A demonstracao publicada em HTML, com a hierarquia visivel.
 
     ``st.dataframe`` desenha em canvas e trata toda linha igual: "Ativo Total" e
@@ -264,6 +266,10 @@ def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
 
     ``linhas`` e o que :meth:`Demonstracoes.linhas_publicadas` devolve: codigo,
     rotulo, nivel e uma coluna por ano.
+
+    ``compacta`` aperta a coluna de rotulo e o recuo, para a tabela caber em
+    meia largura -- e o que o balanco lado a lado precisa, com sete anos de cada
+    lado numa tela so.
     """
     from valuation.importacao.cvm import e_conta_por_acao
 
@@ -280,7 +286,8 @@ def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
         # O recuo continua sendo a hierarquia, agora em CSS: o peso do texto
         # diz "isto e um total" e o recuo diz "dentro de quem". As duas leituras
         # nao se substituem -- num nivel 4 longo, so o peso perderia o caminho.
-        recuo = f"padding-left: calc(0.75rem + {profundidade} * 0.85rem)"
+        passo = 0.6 if compacta else 0.85
+        recuo = f"padding-left: calc(0.75rem + {profundidade} * {passo}rem)"
         marca = '<span class="unidade">R$/ação</span>' if por_acao else ""
         celulas = [
             f'<td class="conta" style="{recuo}" '
@@ -300,9 +307,10 @@ def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
             celulas.append(f"<td{atributo}>{formatar(valor, formato)}</td>")
         corpo.append(f'<tr class="n{nivel}">{"".join(celulas)}</tr>')
 
-    rotulo_conta = f"Conta ({unidade})" if unidade else "Conta"
+    rotulo_conta = f"Conta ({unidade_curta(unidade)})" if unidade else "Conta"
+    classe = "df-publicada compacta" if compacta else "df-publicada"
     return (
-        '<div class="df-publicada"><table><thead><tr>'
+        f'<div class="{classe}"><table><thead><tr>'
         f'<th class="conta">{_texto_seguro(rotulo_conta)}</th>{cabecalho}'
         f'</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
     )
@@ -364,6 +372,62 @@ def tabela_financeira(
         f'<th class="conta">{_texto_seguro(rotulo_coluna)}</th>{cabecalho}'
         f'</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
     )
+
+
+
+def tabela_de_indicadores(
+    tabela: pd.DataFrame, formato: str = "numero", destaques: set[str] | None = None
+) -> str:
+    """Indicadores por ano, com o mesmo desenho das demonstracoes.
+
+    Diferente de :func:`tabela_financeira` em uma coisa so: aqui a linha nao e
+    conta contabil e nao ha subtotal, entao o destaque e opcional e serve para o
+    indicador que a aba esta tratando.
+
+    Existe porque duas abas ficaram para tras no revamp -- "Liquidez e
+    composicao" e "Tudo" -- e tabela com numero a esquerda ao lado de tabela com
+    numero a direita le como dois apps.
+    """
+    destaques = destaques or set()
+    colunas = list(tabela.columns)
+    cabecalho = "".join(f"<th>{_texto_seguro(c)}</th>" for c in colunas)
+
+    corpo = []
+    for rotulo, linha in tabela.iterrows():
+        nivel = "n2" if rotulo in destaques else "n3"
+        celulas = [f'<td class="conta">{_texto_seguro(rotulo)}</td>']
+        celulas += [_celula_de_numero(linha[c], formato) for c in colunas]
+        corpo.append(f'<tr class="{nivel}">{"".join(celulas)}</tr>')
+
+    return (
+        '<div class="df-publicada"><table><thead><tr>'
+        f'<th class="conta">Indicador</th>{cabecalho}'
+        f'</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
+    )
+
+
+def formulas_dos_indicadores(indicadores: list[str]) -> None:
+    """As contas por tras dos numeros, para quem quiser conferir.
+
+    "Ha varios jeitos de chegar no ROIC" -- e ha. Mostrar o numero sem dizer
+    qual dos jeitos foi usado obriga quem le a confiar ou a reimplementar a
+    conta. Fica num expansor porque a maioria das visitas nao precisa dele, e
+    quem precisa precisa muito.
+    """
+    from valuation.formulas import formula as buscar_formula
+
+    verbetes = [(nome, buscar_formula(nome)) for nome in indicadores]
+    verbetes = [(nome, v) for nome, v in verbetes if v is not None]
+    if not verbetes:
+        return
+
+    with st.expander("Como cada indicador é calculado"):
+        for nome, verbete in verbetes:
+            st.markdown(f"**{nome}**")
+            st.markdown(verbete.formula)
+            if verbete.convencao:
+                st.caption(verbete.convencao)
+            st.divider()
 
 
 def aviso_sem_modelo(erro: str | None) -> None:

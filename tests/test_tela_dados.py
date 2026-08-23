@@ -77,15 +77,16 @@ def test_tela_desenha_as_tres_demonstracoes(weg):
     teste = _rodar(weg)
 
     tabelas = _tabelas_publicadas(teste)
-    assert len(tabelas) >= 3
+    # O balanco vem em duas tabelas -- ativo e passivo, lado a lado --, entao
+    # sao quatro no minimo para tres demonstracoes.
+    assert len(tabelas) >= 4
 
-    # DRE, balanco e DFC, cada uma com a arvore publicada.
-    linhas = sorted(t.count("<tr class=") for t in tabelas[:3])
-    assert linhas[0] >= 20, "a DRE publicada tem mais que umas poucas linhas"
-    assert linhas[-1] >= 90, "o balanco publicado tem dezenas de linhas"
+    linhas = sorted(t.count("<tr class=") for t in tabelas)
+    assert linhas[-1] >= 40, "nenhuma tabela tem o tamanho de uma demonstracao"
+    assert sum(linhas) >= 100, "faltou demonstracao na tela"
 
     # Duas colunas de ano em todas.
-    for tabela in tabelas[:3]:
+    for tabela in tabelas:
         assert tabela.count("<th>") == 2, "sobrou ou faltou coluna de ano"
 
 
@@ -122,20 +123,25 @@ def test_a_arvore_desenhada_tem_a_hierarquia(weg):
     diz "isto e um total", o recuo diz "dentro de quem". Num quarto nivel com
     rotulo longo, so o peso perderia o caminho de volta ao pai.
     """
-    tabelas = _tabelas_publicadas(_rodar(weg))
-    junto = "".join(tabelas[:3])
+    junto = "".join(_tabelas_publicadas(_rodar(weg)))
 
     for nivel in (1, 2, 3):
         assert f'<tr class="n{nivel}">' in junto, f"nenhuma linha de nivel {nivel}"
-    assert "0 * 0.85rem" in junto, "o primeiro nivel nao ficou rente a margem"
-    assert "2 * 0.85rem" in junto, "faltou o recuo do terceiro nivel"
+    # O recuo cresce com o nivel, em qualquer das duas larguras de tabela. O
+    # balanco lado a lado usa o passo apertado (0,6rem) para caber em meia
+    # largura; as demais demonstracoes usam o largo (0,85rem).
+    assert "0 * 0.6rem" in junto, "o primeiro nivel nao ficou rente a margem"
+    assert "2 * 0.6rem" in junto, "faltou o recuo do terceiro nivel no balanco"
+    assert "1 * 0.85rem" in junto, "a tabela larga perdeu o recuo"
 
 
 def test_a_escala_escolhida_chega_na_arvore(weg):
     """Em R$ milhoes o ativo total da WEG fica na casa das dezenas de milhar."""
-    balanco = max(_tabelas_publicadas(_rodar(weg)), key=lambda t: t.count("<tr class="))
-    primeira = balanco.split("<tr class=")[1]
-    assert "Ativo Total" in primeira, "a primeira linha do balanco nao e o ativo"
+    ativo = next(
+        t for t in _tabelas_publicadas(_rodar(weg)) if "Ativo Total" in t
+    )
+    primeira = ativo.split("<tr class=")[1]
+    assert "Ativo Total" in primeira, "a primeira linha do ativo nao e o total"
     ativo = primeira.split("<td>")[-1].split("</td>")[0]
     assert 30_000 < float(ativo.replace(".", "").replace(",", ".")) < 60_000
 
@@ -391,3 +397,62 @@ def test_a_tabela_marca_a_linha_que_esta_em_reais_por_acao(weg):
     )
     assert "R$/ação" in linha_do_eps
     assert "1,44" in linha_do_eps
+
+
+# ---------------------------------------------------------------------------
+# O balanco em T
+# ---------------------------------------------------------------------------
+
+
+def test_o_balanco_vem_em_dois_lados(weg):
+    """O balanço não é uma lista, é uma igualdade.
+
+    Empilhado, ele se lê como 96 linhas e a única coisa que afirma -- que os
+    dois lados fecham no mesmo número -- só aparece para quem rolar até o fim e
+    lembrar do total lá de cima.
+    """
+    from valuation.importacao.importador import separar_o_balanco
+
+    linhas = weg.linhas_publicadas("bp", ocultar_vazias=True)
+    ativo, passivo = separar_o_balanco(linhas)
+
+    assert not ativo.empty and not passivo.empty
+    assert len(ativo) + len(passivo) == len(linhas), "sumiu linha na separacao"
+    assert ativo["codigo"].astype(str).str.startswith("1").all()
+    assert passivo["codigo"].astype(str).str.startswith("2").all()
+
+
+def test_os_dois_lados_do_balanco_fecham(weg):
+    """A identidade mais basica da base, conferida na propria tela."""
+    from valuation.importacao.importador import separar_o_balanco
+
+    ativo, passivo = separar_o_balanco(weg.linhas_publicadas("bp"))
+    anos = [c for c in ativo.columns if isinstance(c, int)]
+    for ano in anos:
+        assert ativo[ano].iloc[0] == pytest.approx(passivo[ano].iloc[0], rel=1e-9)
+
+
+def test_a_tela_desenha_os_dois_lados_e_confirma_a_igualdade(weg):
+    teste = _rodar(weg)
+    tabelas = _tabelas_publicadas(teste)
+
+    lados = [t for t in tabelas if "Ativo Total" in t or "Passivo Total" in t]
+    assert len(lados) == 2, "o balanco nao saiu em dois lados"
+    assert any("Ativo Total" in t for t in lados)
+    assert any("Passivo Total" in t for t in lados)
+
+    textos = [s.value for s in teste.success]
+    assert any("dois lados fecham" in t for t in textos), textos
+
+
+def test_planilha_sem_plano_de_contas_nao_perde_o_balanco():
+    """Sem codigo nao ha como separar os lados, e sumir com um deles seria pior."""
+    import pandas as pd
+
+    from valuation.importacao.importador import separar_o_balanco
+
+    linhas = pd.DataFrame(
+        {"rotulo": ["Ativo", "Passivo"], "nivel": [1, 1], 2024: [10.0, 10.0]}
+    )
+    ativo, passivo = separar_o_balanco(linhas)
+    assert len(ativo) == 2 and passivo.empty

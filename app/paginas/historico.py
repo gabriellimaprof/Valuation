@@ -15,9 +15,13 @@ from ..componentes import (
     etapa,
     formatar,
     grafico,
+    formulas_dos_indicadores,
     metrica,
+    secao,
+    tabela_de_indicadores,
     tabela_financeira,
     tabela_formatada,
+    unidade_curta,
 )
 from ..graficos import (
     barras_ciclo,
@@ -93,15 +97,14 @@ def render() -> None:
         with abas[proxima]:
             _liquidez(analise, dfs)
     with abas[-1]:
-        st.dataframe(
-            analise.indicadores.style.format("{:,.3f}", na_rep="—"),
-            width="stretch",
-        )
-        st.markdown("**Resumo por indicador**")
-        st.dataframe(
-            analise.resumo().style.format("{:,.3f}", na_rep="—"),
-            width="stretch",
-        )
+        indicadores = analise.indicadores
+        indicadores.columns = [str(c) for c in indicadores.columns]
+        st.html(tabela_de_indicadores(indicadores, "numero"))
+
+        secao("Resumo por indicador")
+        st.html(tabela_de_indicadores(analise.resumo(), "numero"))
+
+        formulas_dos_indicadores(list(analise.indicadores.index))
 
 
 def _dre_gerencial(dfs) -> None:
@@ -401,17 +404,7 @@ def _qualidade(analise) -> None:
     else:
         st.warning(f"{icone} {qualidade.resumo}")
 
-    if np.isfinite(qualidade.conversao_mediana):
-        colunas = st.columns(3)
-        with colunas[0]:
-            metrica("Conversão mediana FCO / EBITDA", qualidade.conversao_mediana, "pct")
-        colunas[1].caption(
-            "Os cortes são os quartis medidos em 429 companhias brasileiras: a "
-            "**mediana converte 52%**, o quartil inferior 15% e o superior 78%. O "
-            "FCO já é líquido de imposto e de juro pago — e o app padroniza o juro "
-            "para o operacional, senão duas companhias idênticas teriam números "
-            "diferentes só pela apresentação."
-        )
+    _conversao_em_dois_degraus(analise, qualidade)
 
     for sinal in qualidade.por_severidade:
         with st.expander(f"{sinal.icone} {sinal.titulo}", expanded=sinal.veredito == RUIM):
@@ -488,10 +481,9 @@ def _liquidez(analise, dfs) -> None:
             "paga a conta do mês que vem. Decidem se o valuation faz sentido: "
             "quem não atravessa o curto prazo não chega à perpetuidade."
         )
-        st.dataframe(
-            analise.indicadores.loc[presentes].style.format("{:,.2f}", na_rep="—"),
-            width="stretch",
-        )
+        liquidez = analise.indicadores.loc[presentes].copy()
+        liquidez.columns = [str(c) for c in liquidez.columns]
+        st.html(tabela_de_indicadores(liquidez, "numero"))
         st.caption(
             "**FCO / Passivo circulante** mede solvência sem depender de estoque "
             "virar caixa no prazo. Quando ele é alto e a liquidez corrente é "
@@ -509,10 +501,22 @@ def _liquidez(analise, dfs) -> None:
             continue
         with st.expander(f"{titulo} ({codigo})"):
             st.caption(explicacao)
-            exibida = composicao.copy()
-            exibida["Valor"] = [formatar(v, "moeda") for v in exibida["Valor"]]
-            exibida["% do total"] = [formatar(v, "pct") for v in exibida["% do total"]]
-            st.dataframe(exibida, width="stretch")
+            # O indice e o codigo CVM; quem le a composicao quer o nome da
+            # conta. O codigo continua a mao no expansor, no titulo.
+            aberta = composicao.set_index("Conta")[["Valor", "% do total"]]
+            aberta.columns = [f"Valor ({unidade_curta(dfs.unidade)})", "% do total"]
+            st.html(
+                tabela_de_indicadores(
+                    aberta.iloc[:, :1], "moeda"
+                ).replace("<th class=\"conta\">Indicador</th>", '<th class="conta">Conta</th>')
+            )
+            st.caption(
+                "Participação: "
+                + " · ".join(
+                    f"**{nome}** {formatar(linha['% do total'], 'pct')}"
+                    for nome, linha in aberta.iterrows()
+                )
+            )
 
 
 def _cartoes(analise, dfs) -> None:
@@ -643,8 +647,89 @@ def _nao_recorrente(analise, dfs) -> None:
     )
 
 
+
+def _conversao_em_dois_degraus(analise, qualidade) -> None:
+    """As duas conversões lado a lado, e a ponte que explica a diferença.
+
+    Uma conversão FCO/EBITDA baixa responde três perguntas de uma vez, e só uma
+    delas é sobre a operação: o resultado virou caixa? o giro prendeu caixa?
+    quanto saiu para imposto e juro? Medido no consolidado de 2024, **metade da
+    base (190 de 371) tem CGO acima de 78% do EBITDA e FCO abaixo disso** — nelas
+    a operação converte, e o consumo está abaixo dela.
+
+    Por isso os dois números aparecem juntos, e a ponte fica ao lado: sem ela, o
+    analista lê "converte 34%" e vai procurar receita fictícia onde o que há é
+    dívida cara.
+    """
+    from valuation.qualidade import ponte_do_caixa
+
+    operacional = (
+        float(analise.mediana("Conversao operacional (CGO / EBITDA)"))
+        if "Conversao operacional (CGO / EBITDA)" in analise.indicadores.index
+        else float("nan")
+    )
+    if not (np.isfinite(qualidade.conversao_mediana) or np.isfinite(operacional)):
+        return
+
+    colunas = st.columns([1, 1, 2])
+    with colunas[0]:
+        metrica(
+            "Conversão operacional CGO / EBITDA",
+            operacional,
+            "pct",
+            ajuda="Caixa gerado pelas operações sobre EBITDA — antes de giro, "
+            "imposto e juro. É esta que fala da operação.",
+        )
+    with colunas[1]:
+        metrica(
+            "Conversão final FCO / EBITDA",
+            qualidade.conversao_mediana,
+            "pct",
+            ajuda="Depois de giro, imposto de renda e juros pagos.",
+        )
+    colunas[2].caption(
+        "**As duas medem coisas diferentes, e a distância entre elas é o ponto.** "
+        "Medido em 374 companhias de 2024: a mediana converte **105,9% do EBITDA "
+        "em CGO** e só **59,2% em FCO**. Os 42,4 pontos de diferença são capital "
+        "de giro, imposto e juro — e o **juro pago sozinho vale 25,8% do EBITDA "
+        "na mediana** da base. FCO fraco com CGO alto não é operação que não "
+        "gera caixa: é caixa que sai depois dela."
+    )
+
+    ponte = ponte_do_caixa(analise)
+    if ponte is None:
+        return
+
+    with st.expander(f"A ponte, degrau a degrau — {analise.anos[-1]}"):
+        unidade = analise.demonstracoes.unidade
+        tabela = pd.DataFrame(
+            {
+                f"Valor ({unidade_curta(unidade)})": [
+                    formatar(valor, "moeda") for _, valor, _ in ponte.degraus
+                ],
+                "% do EBITDA": [
+                    formatar(fracao, "pct") for _, _, fracao in ponte.degraus
+                ],
+            },
+            index=[rotulo for rotulo, _, _ in ponte.degraus],
+        )
+        tabela.index.name = "Degrau"
+        st.dataframe(tabela, width="stretch")
+        st.caption(
+            "`FCO = CGO + variação do giro + outros − imposto pago − juro pago`. "
+            + (
+                "A ponte fecha com o FCO publicado."
+                if ponte.fecha
+                else "**A ponte não fecha com o FCO publicado** — a companhia "
+                "publica a DFC pelo método direto ou abre a seção de um jeito "
+                "que estas linhas não reconstroem."
+            )
+        )
+
+
 def _retorno(analise) -> None:
     conceito("roic", "O indicador mais importante do valuation")
+    _formula_do_roic()
 
     resultado = estado.resultado()
     roic = analise.linha("ROIC").dropna()
@@ -702,6 +787,31 @@ def _retorno(analise) -> None:
         ),
         roic_decomposto.style.format("{:,.3f}", na_rep="—"),
     )
+
+
+
+def _formula_do_roic() -> None:
+    """Qual das várias contas de ROIC este número usou.
+
+    Há vários jeitos de chegar no ROIC e eles não dão o mesmo número: o
+    denominador pode ser capital de abertura, de fechamento ou médio; o
+    numerador pode usar alíquota nominal ou efetiva; o capital investido pode
+    incluir ou não o caixa. Mostrar 34,0% sem dizer qual dos jeitos foi usado
+    obriga quem lê a confiar ou a refazer a conta.
+
+    Fica **aberto**, e não atrás de um clique, porque é a primeira pergunta que
+    um analista faz ao ver um ROIC que não bate com o do terminal dele.
+    """
+    from valuation.formulas import formula as buscar_formula
+
+    verbete = buscar_formula("ROIC")
+    if verbete is None:
+        return
+    st.markdown("**Como este ROIC é calculado**")
+    st.markdown(verbete.formula)
+    if verbete.convencao:
+        with st.expander("As três escolhas que mudam o número"):
+            st.markdown(verbete.convencao)
 
 
 def _reinvestimento(analise) -> None:

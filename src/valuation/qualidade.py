@@ -167,6 +167,26 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
     if conversao >= CONVERSAO_BOA:
         return Sinal("conversao", BOM, "O EBITDA vira caixa", texto, conversao)
 
+    # **Antes de culpar a operacao, olhar o degrau de cima.** O FCO e liquido de
+    # giro, imposto e juro; o CGO nao e. Medido em 2024, 190 das 371 companhias
+    # com os dois numeros -- metade da base -- tem CGO acima de 78% do EBITDA e
+    # FCO abaixo disso. Nelas o resultado **vira** caixa, e o que consome esta
+    # abaixo da operacao. Dizer "o EBITDA nao vira caixa" ali manda o analista
+    # procurar receita fictícia onde o que ha e divida cara.
+    operacional = _mediana(analise, "Conversao operacional (CGO / EBITDA)")
+    if np.isfinite(operacional) and operacional >= CGO_BOM:
+        return Sinal(
+            "conversao", ATENCAO,
+            "A operação gera caixa; o consumo está abaixo dela",
+            texto
+            + f" Mas a conversão **até o caixa das operações** é de "
+            f"{operacional:.0%}: o resultado vira caixa, e a distância até o FCO "
+            "está no capital de giro, no imposto e no juro pagos — não na "
+            "operação. Veja a ponte para saber qual dos três, e quanto."
+            + _culpado_da_ponte(analise),
+            conversao,
+        )
+
     if conversao >= CONVERSAO_FRACA:
         return Sinal(
             "conversao", ATENCAO, "Parte do EBITDA não chega ao caixa",
@@ -192,6 +212,28 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
         conversao,
     )
 
+
+
+def _culpado_da_ponte(analise: AnaliseHistorica) -> str:
+    """Qual dos tres degraus abaixo do CGO consumiu mais caixa, com o numero.
+
+    "Esta no giro, no imposto ou no juro" nao dirige atencao -- sao tres lugares
+    para procurar. O maior deles, com o tamanho em percentual do EBITDA, e uma
+    frase so e manda o analista direto ao lugar certo.
+    """
+    ponte = ponte_do_caixa(analise)
+    if ponte is None or not np.isfinite(ponte.ebitda) or ponte.ebitda == 0:
+        return ""
+
+    consumos = {
+        "no capital de giro": -ponte.giro,
+        "no imposto de renda pago": abs(ponte.imposto),
+        "no juro pago": abs(ponte.juro),
+    }
+    onde, quanto = max(consumos.items(), key=lambda item: item[1])
+    if quanto <= 0:
+        return ""
+    return f" O maior consumo esta {onde}: {quanto / ponte.ebitda:.0%} do EBITDA."
 
 def _juros(analise: AnaliseHistorica) -> Sinal:
     competencia = _mediana(analise, "Custo da divida efetivo")
@@ -295,4 +337,122 @@ def avaliar_qualidade(analise: AnaliseHistorica) -> QualidadeDosLucros:
     return QualidadeDosLucros(
         sinais=sinais,
         conversao_mediana=_mediana(analise, "Conversao de caixa (FCO / EBITDA)"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# A ponte EBITDA -> CGO -> FCO
+# ---------------------------------------------------------------------------
+
+# Cortes da conversao **operacional**, medidos no consolidado de 2024 em 374
+# companhias com EBITDA positivo e CGO publicado:
+#
+#     P25 = 88,6%   P50 = 105,9%   P75 = 126,0%
+#
+# A mediana passa de 100% e isso nao e anomalia: o CGO devolve ao lucro toda
+# despesa que nao foi caixa, e boa parte das companhias tem provisao e
+# impairment que o EBITDA nao captura. Por isso o corte de baixo e o quartil
+# (0,89) e nao um numero redondo -- "converte menos de 90% do EBITDA em caixa
+# operacional" ja e o quarto inferior da base.
+CGO_BOM = 0.89
+CGO_FRACO = 0.60
+
+
+@dataclass(frozen=True)
+class PonteDoCaixa:
+    """De EBITDA a FCO, com cada degrau nomeado e medido em % do EBITDA.
+
+    A identidade que a DFC pelo metodo indireto publica::
+
+        FCO = CGO + variacao do giro + outros - imposto pago - juro pago
+
+    Ela existe para separar **tres perguntas que a conversao FCO/EBITDA junta
+    numa so**: o resultado virou caixa? o giro prendeu caixa? quanto saiu para
+    imposto e juro? Medido em 2024, metade da base (190 de 371) tem CGO acima de
+    78% do EBITDA e FCO abaixo disso -- o sinal antigo acusava essas companhias
+    de nao converter, quando a operacao converte e o consumo esta abaixo dela.
+    """
+
+    ebitda: float
+    cgo: float
+    giro: float
+    outros: float
+    imposto: float
+    juro: float
+    fco: float
+
+    def _fracao(self, valor: float) -> float:
+        if not np.isfinite(self.ebitda) or self.ebitda == 0:
+            return float("nan")
+        return valor / self.ebitda
+
+    @property
+    def conversao_operacional(self) -> float:
+        """Quanto do EBITDA chega ao caixa gerado pelas operacoes."""
+        return self._fracao(self.cgo)
+
+    @property
+    def conversao_final(self) -> float:
+        return self._fracao(self.fco)
+
+    @property
+    def degraus(self) -> list[tuple[str, float, float]]:
+        """Cada degrau da ponte: rotulo, valor e fracao do EBITDA."""
+        return [
+            ("EBITDA", self.ebitda, self._fracao(self.ebitda)),
+            ("(±) Ajustes que não são caixa", self.cgo - self.ebitda,
+             self._fracao(self.cgo - self.ebitda)),
+            ("= Caixa gerado pelas operações", self.cgo, self.conversao_operacional),
+            ("(±) Variação do capital de giro", self.giro, self._fracao(self.giro)),
+            ("(−) Imposto de renda pago", -abs(self.imposto),
+             self._fracao(-abs(self.imposto))),
+            ("(−) Juros pagos", -abs(self.juro), self._fracao(-abs(self.juro))),
+            ("(±) Outros operacionais", self.outros, self._fracao(self.outros)),
+            ("= Fluxo de caixa operacional", self.fco, self.conversao_final),
+        ]
+
+    @property
+    def fecha(self) -> bool:
+        """A ponte reconstroi o FCO publicado?
+
+        Medido na base: com o termo ``6.01.03`` incluido ela fecha em 96,8% das
+        companhias. Sem ele fechava em 59% -- e essa diferenca ja custou uma
+        auditoria inteira, entao a verificacao anda junto.
+        """
+        montado = (
+            self.cgo + self.giro + self.outros - abs(self.imposto) - abs(self.juro)
+        )
+        if not np.isfinite(montado) or not np.isfinite(self.fco):
+            return False
+        return abs(montado - self.fco) <= max(abs(self.fco), 1.0) * 0.01
+
+
+def ponte_do_caixa(analise: AnaliseHistorica, ano: int | None = None) -> PonteDoCaixa | None:
+    """Monta a ponte de um ano; ``None`` quando a DFC nao permite."""
+    d = analise.demonstracoes
+    ano = ano if ano is not None else d.ano_base
+    if ano is None:
+        return None
+
+    def v(chave: str) -> float:
+        return d.valor(chave, ano)
+
+    # O EBITDA nao e conta canonica: e derivado, EBIT + D&A.
+    ebitda = v("ebit") + v("depreciacao_amortizacao")
+    cgo, fco = v("caixa_das_operacoes"), v("fluxo_operacional")
+    if not (np.isfinite(ebitda) and np.isfinite(cgo) and np.isfinite(fco)):
+        return None
+
+    def ou_zero(chave: str) -> float:
+        valor = v(chave)
+        return valor if np.isfinite(valor) else 0.0
+
+    return PonteDoCaixa(
+        ebitda=ebitda,
+        cgo=cgo,
+        giro=ou_zero("variacao_capital_giro"),
+        outros=ou_zero("outros_operacionais"),
+        imposto=ou_zero("impostos_pagos"),
+        juro=ou_zero("juros_pagos"),
+        fco=fco,
     )

@@ -180,7 +180,11 @@ CSS = """
      dado: numa tela de 2.150px o texto corria 150 caracteres por linha, mais
      que o dobro do que se le sem perder o comeco da linha seguinte. A tabela e
      o grafico continuam largos; o texto e que para. */
-  .stMainBlockContainer { max-width: 1440px; }
+  /* 1.600px, e nao 1.440: o balanco lado a lado poe sete anos em cada metade,
+     e a 1.440 cada lado ficava 32px curto e as duas tabelas rolavam na
+     horizontal -- justamente o que a leitura em T existe para evitar. A medida
+     de linha do texto nao depende disto: ela e travada em 88ch logo abaixo. */
+  .stMainBlockContainer { max-width: 1600px; }
   .stMainBlockContainer [data-testid="stMarkdownContainer"] p,
   .stMainBlockContainer [data-testid="stCaptionContainer"] p { max-width: 88ch; }
 
@@ -306,6 +310,18 @@ TABELA_CSS = """
     min-width: 20rem;
     white-space: normal;
   }}
+
+  /* O balanco lado a lado poe sete anos em meia largura, duas vezes. A coluna
+     de rotulo tem de encolher, senao a tabela rola na horizontal em ambos os
+     lados e a leitura em T -- que e o motivo de estar lado a lado -- se perde. */
+  .df-publicada.compacta table {{ font-size: 0.78rem; }}
+  .df-publicada.compacta td.conta {{ min-width: 8.5rem; max-width: 13rem; }}
+  .df-publicada.compacta td,
+  .df-publicada.compacta thead th {{ padding-left: 0.3rem; padding-right: 0.3rem; }}
+  .df-publicada.compacta thead th {{ font-size: 0.66rem; letter-spacing: 0.02em; }}
+  .df-publicada.compacta tr.n1 {{ font-size: 0.85rem; }}
+  .df-publicada.compacta tr.n4 {{ font-size: 0.76rem; }}
+  .df-publicada.compacta tr.n5 {{ font-size: 0.74rem; }}
   .df-publicada tr {{ background: {superficie}; color: {texto}; }}
   .df-publicada tr.n1 {{
     background: {tinta_forte};
