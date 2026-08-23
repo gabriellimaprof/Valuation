@@ -17,6 +17,8 @@ from ..componentes import (
     formatar,
     grafico,
     metrica,
+    tabela_de_indicadores,
+    tabela_financeira,
     tabela_formatada,
 )
 from ..graficos import cascata_ponte, composicao_do_valor, fluxos_projetados
@@ -636,12 +638,25 @@ def _editar_ponte(ponte) -> None:
         st.rerun()
 
 
+# Os subtotais da projeção — as linhas que fecham um bloco e que o olho procura
+# primeiro. São os mesmos nomes que `Projecao.tabela()` escreve.
+SUBTOTAIS_DA_PROJECAO = {
+    "EBITDA",
+    "EBIT",
+    "NOPAT",
+    "FCFF (fluxo para a firma)",
+    "FCFE (fluxo para o acionista)",
+}
+
+
 def _resumo(resultado, unidade: str) -> None:
-    st.dataframe(
-        resultado.resumo().style.format("{:,.4f}"), width="stretch"
-    )
+    st.html(tabela_de_indicadores(resultado.resumo(), "numero"))
     with st.expander("Projeção completa"):
-        st.dataframe(
-            tabela_formatada(resultado.projecao.tabela(), "moeda", unidade),
-            width="stretch",
+        # A projeção é uma demonstração por ano, e se lê como uma: número à
+        # direita, subtotal em negrito. Em canvas ela saía com os números à
+        # esquerda, e comparar dois anos virava trabalho de leitura.
+        projecao = resultado.projecao.tabela()
+        projecao.columns = [str(c) for c in projecao.columns]
+        st.html(
+            tabela_financeira(projecao, SUBTOTAIS_DA_PROJECAO, "moeda", unidade)
         )

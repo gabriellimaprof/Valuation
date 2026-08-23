@@ -116,6 +116,40 @@ def _barra_lateral() -> None:
             elif alertas:
                 st.warning(f"{alertas} alerta(s) no diagnóstico")
 
+        _o_que_falta()
+
+
+def _o_que_falta() -> None:
+    """As etapas que ainda não têm o que precisam, na barra lateral.
+
+    O menu mostra doze telas com o mesmo peso, e quem abre o app não tem como
+    saber que **Histórico** não dirá nada sem demonstração importada. O Início
+    já marca isso na lista dele; aqui a mesma informação acompanha o usuário
+    pelas outras onze telas.
+
+    É deliberadamente **um aviso e não um bloqueio**: as telas continuam
+    abrindo, porque o app funciona sem histórico — perde a âncora das premissas,
+    não a capacidade de rodar.
+    """
+    pendentes = [
+        passo
+        for passo in navegacao.PASSOS
+        if passo.exige == "demonstracoes" and not estado.tem_historico()
+    ]
+    if not pendentes:
+        return
+
+    st.divider()
+    nomes = ", ".join(f"**{p.titulo}**" for p in pendentes)
+    st.caption(
+        f"Sem histórico importado, {nomes} "
+        + ("ficam" if len(pendentes) > 1 else "fica")
+        + " sem o que mostrar."
+    )
+    alvo = navegacao.pagina("dados")
+    if alvo is not None:
+        st.page_link(alvo, label="Importar em Dados", icon=":material/database:")
+
 
 def main() -> None:
     estado.iniciar()

@@ -15,7 +15,14 @@ from valuation.importacao.cvm import (
 )
 
 from .. import estado
-from ..componentes import conceito, em_texto, etapa, formatar, grafico
+from ..componentes import (
+    conceito,
+    em_texto,
+    etapa,
+    formatar,
+    grafico,
+    tabela_de_indicadores,
+)
 from ..graficos import barras_de_faixa
 
 COLUNAS_PEERS = [
@@ -530,7 +537,7 @@ def _alvo_atual() -> Alvo:
 def _peer_group(comparaveis) -> None:
     tabela = tabela_comparaveis(comparaveis)
     st.markdown("**Múltiplos de cada comparável**")
-    st.dataframe(tabela.style.format("{:,.2f}", na_rep="n/a"), width="stretch")
+    st.html(tabela_de_indicadores(tabela, "multiplo"))
     st.caption(
         "**n/a** marca múltiplo sem significado econômico — EBITDA ou lucro não "
         "positivo. Essas células ficam de fora das estatísticas em vez de puxar a "
@@ -539,12 +546,7 @@ def _peer_group(comparaveis) -> None:
 
     st.markdown("**Estatísticas do peer group**")
     resumo = estatisticas(comparaveis)
-    st.dataframe(
-        resumo.style.format(
-            {c: "{:,.2f}" for c in resumo.columns if c != "n"}, na_rep="n/a"
-        ),
-        width="stretch",
-    )
+    st.html(tabela_de_indicadores(resumo, "multiplo"))
     st.caption(
         "A mediana é a referência preferida: com peer group pequeno, a média é "
         "facilmente distorcida por um único comparável de múltiplo extremo."
@@ -558,7 +560,7 @@ def _implicito(alvo, comparaveis) -> None:
         index=0,
     )
     tabela = avaliar_por_multiplos(alvo, comparaveis, referencia)
-    st.dataframe(tabela.style.format("{:,.2f}", na_rep="n/a"), width="stretch")
+    st.html(tabela_de_indicadores(tabela, "numero"))
 
     st.caption(
         "Múltiplos de **EV** (EV/Receita, EV/EBITDA, EV/EBIT) produzem o valor da "

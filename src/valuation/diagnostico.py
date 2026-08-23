@@ -979,8 +979,8 @@ def _checar_perpetuidade_do_arrendamento(
             fluxo_final=fcff_final + adicao,
             taxa=dcf.taxa_desconto,
             crescimento=perpetuidade.crescimento_perpetuo,
-            nopat_final=float(projecao.nopat[-1]),
-            roic=perpetuidade.roic_perpetuidade,
+            base_normalizada=float(projecao.nopat[-1]),
+            retorno=perpetuidade.roic_perpetuidade,
         )
     except ValueError:  # inclui CombinacaoInviavel
         return []

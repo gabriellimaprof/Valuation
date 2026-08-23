@@ -40,6 +40,24 @@ linkUnderline = false
 metricValueFontSize = "1.75rem"
 metricValueFontWeight = 600
 
+# **As cores de grafico so existem em `[theme]`**, e nao em `[theme.light]` /
+# `[theme.dark]` -- postas la, o Streamlit as ignora e escreve um aviso no log
+# que ninguem le. Por isso elas nao acompanham o modo, e sao as da paleta clara.
+#
+# Na pratica isto e uma rede de seguranca: todo grafico do app e Plotly montado
+# em `graficos.py` com `tema.paleta()`, que **e** sensivel ao modo. Estas cores
+# so apareceriam num `st.line_chart` cru, que o app nao usa -- e e justamente
+# por isso que elas precisam estar certas: o dia em que alguem escrever um, ele
+# nao vai discordar do resto da tela.
+chartCategoricalColors = [
+  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+]
+chartSequentialColors = [
+  "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
+  "#2a78d6", "#256abf", "#184f95", "#0d366b",
+]
+
 [theme.light]
 backgroundColor = "#fcfcfb"
 secondaryBackgroundColor = "#f4f4f1"
@@ -53,14 +71,6 @@ linkColor = "#2a78d6"
 borderColor = "#e8e7e3"
 dataframeBorderColor = "#e8e7e3"
 dataframeHeaderBackgroundColor = "#f4f4f1"
-chartCategoricalColors = [
-  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
-  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
-]
-chartSequentialColors = [
-  "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
-  "#2a78d6", "#256abf", "#184f95", "#0d366b",
-]
 
 [theme.light.sidebar]
 backgroundColor = "#f7f7f5"
@@ -76,14 +86,6 @@ linkColor = "#6da7ec"
 borderColor = "#383835"
 dataframeBorderColor = "#383835"
 dataframeHeaderBackgroundColor = "#232322"
-chartCategoricalColors = [
-  "#3987e5", "#d95926", "#199e70", "#c98500",
-  "#d55181", "#008300", "#9085e9", "#e66767",
-]
-chartSequentialColors = [
-  "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
-  "#2a78d6", "#256abf", "#184f95", "#0d366b",
-]
 
 [theme.dark.sidebar]
 backgroundColor = "#161615"

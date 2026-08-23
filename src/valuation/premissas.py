@@ -214,6 +214,11 @@ class PremissasPerpetuidade:
     metodo: str = "gordon"
     crescimento_perpetuo: float = 0.04
     roic_perpetuidade: float | None = None
+    # O ROE de perpetuidade, para quando o fluxo descontado e o **do acionista**.
+    # A normalizacao do reinvestimento precisa do retorno sobre o capital que o
+    # fluxo remunera: ROIC para o FCFF, ROE para o FCFE. Ver
+    # ``dcf._normalizacao_do_gordon``.
+    roe_perpetuidade: float | None = None
     multiplo_saida: float | None = None
     # Sobre que conta o multiplo de saida incide. Depende do caso: uma industria
     # sai por EV/EBITDA, uma financeira ou uma empresa cujo par negocia por lucro
@@ -236,6 +241,8 @@ class PremissasPerpetuidade:
             )
         if self.roic_perpetuidade is not None and self.roic_perpetuidade <= 0:
             raise ValueError("roic_perpetuidade deve ser positivo.")
+        if self.roe_perpetuidade is not None and self.roe_perpetuidade <= 0:
+            raise ValueError("roe_perpetuidade deve ser positivo.")
         if self.roic_real is not None and self.roic_real <= 0:
             raise ValueError("roic_real deve ser positivo.")
         if self.ancora not in ANCORAS_PERPETUIDADE:

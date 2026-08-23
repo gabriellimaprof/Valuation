@@ -265,11 +265,20 @@ def _perpetuidade(empresa) -> None:
         )
     ]
 
+    # **O retorno da normalização depende de qual fluxo se desconta.** Crescer
+    # para sempre exige reinvestir para sempre, e a taxa é `g / retorno` — mas o
+    # retorno tem de descrever o mesmo capital que o fluxo remunera: ROIC para o
+    # FCFF, ROE para o FCFE. Rotular sempre "ROIC" fazia o campo pedir uma coisa
+    # e o modelo usar outra.
+    para_o_acionista = estado.config()["tipo_fluxo"] == "fcfe"
+    sigla = "ROE" if para_o_acionista else "ROIC"
+
     normalizar = colunas[2].checkbox(
         "Normalizar reinvestimento",
-        value=perpetuidade.roic_perpetuidade is not None,
+        value=(perpetuidade.roic_perpetuidade is not None)
+        or (perpetuidade.roe_perpetuidade is not None),
         disabled=not usar_gordon,
-        help="Desconta do fluxo perpétuo a taxa de reinvestimento g/ROIC.",
+        help=f"Desconta do fluxo perpétuo a taxa de reinvestimento g/{sigla}.",
     )
     roic_real = colunas[2].checkbox(
         "ROIC em termos reais",
@@ -286,7 +295,10 @@ def _perpetuidade(empresa) -> None:
     # Marcar a caixa nao pode mudar o valuation: o padrao do campo passa a ser o
     # equivalente real do nominal que ja estava la. Deixar 15% virar 15% real
     # seria subir o ROIC efetivo para 20,75% sem ninguem pedir.
-    nominal_atual = perpetuidade.roic_perpetuidade or 0.15
+    guardado = (
+        perpetuidade.roe_perpetuidade if para_o_acionista else None
+    ) or perpetuidade.roic_perpetuidade
+    nominal_atual = guardado or (0.18 if para_o_acionista else 0.15)
     if roic_real:
         padrao = (
             perpetuidade.roic_real
@@ -297,7 +309,7 @@ def _perpetuidade(empresa) -> None:
         padrao = nominal_atual
 
     roic = colunas[2].number_input(
-        "ROIC perpétuo real (%)" if roic_real else "ROIC perpétuo (%)",
+        f"{sigla} perpétuo real (%)" if roic_real else f"{sigla} perpétuo (%)",
         value=float(padrao * 100),
         step=0.5,
         format="%.2f",
@@ -383,10 +395,19 @@ def _perpetuidade(empresa) -> None:
                 alteracoes["perpetuidade.crescimento_perpetuo"] = crescimento / 100
             if normalizar and roic_real:
                 alteracoes["perpetuidade.roic_real"] = roic / 100
+            elif para_o_acionista:
+                # No FCFE o número digitado é ROE, e vai para o campo dele. O
+                # ROIC é zerado junto: deixar os dois preenchidos faria o motor
+                # escolher entre premissas que descrevem capitais diferentes.
+                alteracoes["perpetuidade.roe_perpetuidade"] = (
+                    (roic / 100) if normalizar else None
+                )
+                alteracoes["perpetuidade.roic_perpetuidade"] = None
             else:
                 alteracoes["perpetuidade.roic_perpetuidade"] = (
                     (roic / 100) if normalizar else None
                 )
+                alteracoes["perpetuidade.roe_perpetuidade"] = None
         else:
             alteracoes["perpetuidade.metodo"] = "multiplo"
             alteracoes["perpetuidade.multiplo_saida"] = multiplo

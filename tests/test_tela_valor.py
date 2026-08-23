@@ -82,9 +82,24 @@ def test_o_cronograma_nasce_com_divida_constante():
     # o numero: o que a tela mostrou tem que ser o do cronograma constante.
     from valuation import avaliar
 
-    constante = avaliar(empresa, tipo_fluxo="fcfe", divida_por_ano=[inicial] * anos)
+    # **Sob as mesmas convencoes que a tela usa.** Sem `meio_de_ano` o motor
+    # desconta no fim do ano e a tela no meio, e a diferenca (2,4% aqui) ficava
+    # escondida atras da tolerancia -- o teste passava comparando duas contas
+    # diferentes. Com a convencao certa a igualdade e exata, e a tolerancia
+    # existe so para o arredondamento do numero exibido.
+    constante = avaliar(
+        empresa,
+        tipo_fluxo="fcfe",
+        divida_por_ano=[inicial] * anos,
+        **{k: v for k, v in estado_de_conveniencia(teste).items() if k == "meio_de_ano"},
+    )
     na_tela = next(m for m in teste.metric if _sem_unidade(m.label) == "Equity Value")
-    assert _numero(na_tela.value) == pytest.approx(constante.equity_value, rel=0.02)
+    assert _numero(na_tela.value) == pytest.approx(constante.equity_value, rel=0.001)
+
+
+def estado_de_conveniencia(teste) -> dict:
+    """As convencoes de calculo que a sessao da tela esta usando."""
+    return teste.session_state["config"]
 
 
 def _numero(texto: str) -> float:

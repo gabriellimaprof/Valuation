@@ -31,33 +31,48 @@ def valor_terminal_gordon(
     fluxo_final: float,
     taxa: float,
     crescimento: float,
-    nopat_final: float | None = None,
-    roic: float | None = None,
+    base_normalizada: float | None = None,
+    retorno: float | None = None,
 ) -> float:
     """Valor terminal por crescimento perpetuo (Gordon), no fim do ano ``n``.
 
-    Sem ``roic``, cresce-se o fluxo do ultimo ano projetado: ``FC_n * (1+g)/(r-g)``.
+    Sem ``retorno``, cresce-se o fluxo do ultimo ano projetado:
+    ``FC_n * (1+g)/(r-g)``.
 
-    Com ``roic`` e ``nopat_final``, o fluxo perpetuo e normalizado pela taxa de
-    reinvestimento implicita ``g / ROIC``: ``NOPAT_n * (1+g) * (1 - g/ROIC) / (r-g)``.
+    Com ``retorno`` e ``base_normalizada``, o fluxo perpetuo desconta a taxa de
+    reinvestimento implicita ``g / retorno``::
+
+        base * (1+g) * (1 - g/retorno) / (r - g)
+
     Esta e a forma consistente, porque crescer para sempre exige reinvestir para
     sempre; usar o fluxo do ultimo ano projetado costuma superestimar o valor
     terminal quando aquele ano tinha capex baixo.
+
+    **Os dois argumentos andam juntos e tem de estar na mesma moeda que o
+    fluxo.** Numa serie para a firma sao NOPAT e ROIC; numa serie para o
+    acionista sao lucro liquido e ROE. Eles se chamavam ``nopat_final`` e
+    ``roic`` -- nomes que descreviam so o primeiro caso, e que faziam o segundo
+    parecer certo enquanto normalizava um fluxo desalavancado dentro de uma
+    serie de equity. Ver :func:`avaliar_dcf`.
     """
     if taxa <= crescimento:
         raise CombinacaoInviavel(
             f"Taxa de desconto ({taxa:.2%}) deve ser maior que o crescimento "
             f"perpetuo ({crescimento:.2%}); caso contrario o valor terminal e infinito."
         )
-    if roic is not None:
-        if nopat_final is None:
-            raise ValueError("Normalizacao por ROIC exige nopat_final.")
-        if crescimento > roic:
+    if retorno is not None:
+        if base_normalizada is None:
+            raise ValueError(
+                "Normalizacao do reinvestimento exige a base (NOPAT ou lucro)."
+            )
+        if crescimento > retorno:
             raise CombinacaoInviavel(
                 f"Crescimento perpetuo ({crescimento:.2%}) nao pode superar o "
-                f"ROIC de perpetuidade ({roic:.2%})."
+                f"retorno de perpetuidade ({retorno:.2%})."
             )
-        fluxo_perpetuo = nopat_final * (1 + crescimento) * (1 - crescimento / roic)
+        fluxo_perpetuo = (
+            base_normalizada * (1 + crescimento) * (1 - crescimento / retorno)
+        )
     else:
         fluxo_perpetuo = fluxo_final * (1 + crescimento)
     return fluxo_perpetuo / (taxa - crescimento)
@@ -127,6 +142,59 @@ def _terminal_na_moeda_do_fluxo(
         "dívida do ano terminal é suposta igual à de hoje."
     )
 
+
+
+def _normalizacao_do_gordon(
+    projecao: Projecao, perpetuidade: PremissasPerpetuidade, tipo_fluxo: str
+) -> tuple[float, float | None, str]:
+    """A base e o retorno da normalizacao, na moeda do fluxo que se desconta.
+
+    Crescer para sempre exige reinvestir para sempre, e a taxa de reinvestimento
+    e ``g / retorno``. **Mas os dois termos tem de descrever o mesmo capital que
+    o fluxo remunera:**
+
+    * numa serie **para a firma** (FCFF), a base e o NOPAT e o retorno e o ROIC;
+    * numa serie **para o acionista** (FCFE), a base e o **lucro liquido** e o
+      retorno e o **ROE**.
+
+    O app usava NOPAT e ROIC nos dois casos. Num FCFE isso normaliza um fluxo
+    desalavancado dentro de uma serie de equity e desconta o resultado ao Ke --
+    e o numero sai maior, nao menor, porque o NOPAT ignora o juro que o
+    acionista paga. Medido no fixture: **35,8% de equity value**, o mesmo tipo
+    de erro que o multiplo de saida ja tinha.
+
+    Quando o FCFE e escolhido e so o ROIC esta informado, ele e usado como ROE
+    **com aviso**: e aproximacao, e o sentido dela e conservador -- num negocio
+    alavancado e lucrativo o ROE supera o ROIC, entao usar o ROIC exagera a
+    retencao e subestima o valor. Trocar a base, que e o erro grande, nao depende
+    de premissa nova nenhuma.
+    """
+    if perpetuidade.roic_perpetuidade is None and perpetuidade.roe_perpetuidade is None:
+        return float(projecao.nopat[-1]), None, ""
+
+    if tipo_fluxo != "fcfe":
+        return float(projecao.nopat[-1]), perpetuidade.roic_perpetuidade, ""
+
+    if projecao.lucro_liquido is None:
+        return (
+            float(projecao.nopat[-1]),
+            perpetuidade.roe_perpetuidade or perpetuidade.roic_perpetuidade,
+            "A projeção não trouxe lucro líquido, então a normalização do "
+            "reinvestimento usou o NOPAT — que é desalavancado. Num fluxo para o "
+            "acionista isso superestima o valor terminal.",
+        )
+
+    base = float(projecao.lucro_liquido[-1])
+    if perpetuidade.roe_perpetuidade is not None:
+        return base, perpetuidade.roe_perpetuidade, ""
+
+    return base, perpetuidade.roic_perpetuidade, (
+        "O fluxo é para o acionista (FCFE) e a normalização do reinvestimento "
+        "usou o **ROIC** como se fosse ROE, porque só ele foi informado. A base "
+        "já é o lucro líquido, que é o que corrige o erro grande; o ROIC no "
+        "lugar do ROE é aproximação conservadora — num negócio alavancado e "
+        "lucrativo o ROE supera o ROIC, então isto exagera a retenção."
+    )
 
 @dataclass(frozen=True)
 class ResultadoDCF:
@@ -221,14 +289,16 @@ def avaliar_dcf(
     vp_explicito = float(descontados.sum())
 
     if perpetuidade.metodo == "gordon":
+        base, retorno, aviso_do_terminal = _normalizacao_do_gordon(
+            projecao, perpetuidade, tipo_fluxo
+        )
         vt = valor_terminal_gordon(
             fluxo_final=float(fluxos[-1]),
             taxa=taxa_desconto,
             crescimento=perpetuidade.crescimento_perpetuo,
-            nopat_final=float(projecao.nopat[-1]),
-            roic=perpetuidade.roic_perpetuidade,
+            base_normalizada=base,
+            retorno=retorno,
         )
-        aviso_do_terminal = ""
     else:
         base = perpetuidade.base_do_multiplo
         vt = valor_terminal_multiplo(

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 991 testes
+pytest                        # 1001 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -575,7 +575,15 @@ baixo da dobra — e `chartCategoricalColors` apontando para a paleta, para um
 `st.line_chart` cru não discordar do Plotly do app.
 
 `tests/test_tema.py` trava as duas cópias juntas: cor do `config.toml` e cor da
-`Paleta` têm de bater, nos dois modos. **A paleta continua não se trocando por
+`Paleta` têm de bater, nos dois modos.
+
+**E trava também que a opção existe.** `chartCategoricalColors` foi escrita sob
+`[theme.light]` e `[theme.dark]`, onde ela **não existe** — só há no nível
+`[theme]`. O Streamlit a descartava e escrevia um aviso no log que ninguém lia, e
+o teste passava porque conferia o **arquivo**, não o que o Streamlit aceita. Um
+teste que valida a própria configuração contra
+`streamlit.config._config_options_template` fecha isso: opção inventada agora
+reprova. **A paleta continua não se trocando por
 gosto** — o teste é o que impede que ela se troque por descuido.
 
 **O caminho é uma lista só, e virou navegável.** A ordem das doze telas estava
@@ -665,6 +673,28 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   juro efetivamente pago. Pela DRE, 28% das 467 companhias de 2024 recebiam Kd
   acima de 25% — WACC inflado, valor derrubado, sem aviso. Com o juro pago, zero.
   Acima de `KD_MAXIMO_PLAUSIVEL` o Kd é descartado e montado sinteticamente.
+- **O Gordon normalizado também carrega uma moeda, e ela é a do fluxo.** Crescer
+  para sempre exige reinvestir para sempre, e a taxa é `g / retorno` — mas os
+  dois termos têm de descrever o mesmo capital que o fluxo remunera: **NOPAT e
+  ROIC** numa série para a firma, **lucro líquido e ROE** numa série para o
+  acionista.
+
+  O app usava NOPAT e ROIC nos dois casos. Num FCFE isso normaliza um fluxo
+  desalavancado dentro de uma série de equity e desconta ao Ke — e o número sai
+  **maior**, porque o NOPAT ignora o juro que o acionista paga. Medido no
+  fixture: **35,8% de equity value**, o mesmo tipo de erro que o múltiplo de
+  saída tinha, no outro método de perpetuidade. Foi por isso que os parâmetros
+  de `valor_terminal_gordon` deixaram de se chamar `nopat_final` e `roic`: os
+  nomes descreviam só o primeiro caso e faziam o segundo parecer certo.
+
+  `PremissasPerpetuidade.roe_perpetuidade` existe para o caso do acionista, e a
+  tela de Premissas rotula o campo pelo fluxo escolhido — pedir "ROIC" e usar o
+  número como ROE é o campo pedindo uma coisa e o modelo fazendo outra. Quando
+  só o ROIC está informado num FCFE, ele é usado como ROE **com aviso**: a base
+  já foi corrigida, que é o erro grande, e o ROIC no lugar do ROE é aproximação
+  conservadora — num negócio alavancado e lucrativo o ROE supera o ROIC, então
+  isso exagera a retenção.
+
 - **Múltiplos de EV e de equity não se misturam** na ponte da dívida — e isso
   vale para o **múltiplo de saída**, que agora pode ser EV/EBITDA ou **P/L**
   (`PremissasPerpetuidade.base_do_multiplo`). O múltiplo carrega a moeda da
@@ -1085,7 +1115,7 @@ não é verificação.
 
 ## Estado atual
 
-991 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.001 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

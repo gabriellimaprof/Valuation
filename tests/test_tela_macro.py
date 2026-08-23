@@ -294,3 +294,47 @@ def test_a_base_escolhida_chega_ao_modelo():
     perpetuidade = teste.session_state["empresa"].perpetuidade
     assert perpetuidade.metodo == "multiplo"
     assert perpetuidade.base_do_multiplo == "lucro"
+
+
+# ---------------------------------------------------------------------------
+# A normalizacao pede o retorno do capital que o fluxo remunera
+# ---------------------------------------------------------------------------
+
+TELA_PREMISSAS_FCFE = CABECALHO + """
+st.session_state["config"]["tipo_fluxo"] = "fcfe"
+from app.paginas import premissas
+premissas.render()
+"""
+
+
+def test_no_fcff_o_campo_pede_roic():
+    teste = _rodar(TELA_PREMISSAS)
+    rotulos = [n.label for n in teste.number_input]
+    assert any("ROIC perpétuo" in r for r in rotulos), rotulos
+    assert not any("ROE perpétuo" in r for r in rotulos)
+
+
+def test_no_fcfe_o_campo_pede_roe():
+    """Rotular sempre "ROIC" fazia o campo pedir uma coisa e o modelo usar outra.
+
+    Crescer para sempre exige reinvestir para sempre, e a taxa e `g / retorno` --
+    mas o retorno tem de descrever o mesmo capital que o fluxo remunera: ROIC
+    para o fluxo da firma, ROE para o do acionista.
+    """
+    teste = _rodar(TELA_PREMISSAS_FCFE)
+    rotulos = [n.label for n in teste.number_input]
+    assert any("ROE perpétuo" in r for r in rotulos), rotulos
+    assert not any("ROIC perpétuo" in r for r in rotulos)
+
+
+def test_no_fcfe_o_numero_digitado_vai_para_o_campo_do_roe():
+    """Deixar os dois preenchidos faria o motor escolher entre capitais diferentes."""
+    teste = _rodar(TELA_PREMISSAS_FCFE)
+    campo = next(n for n in teste.number_input if "ROE perpétuo" in n.label)
+    campo.set_value(22.0).run()
+    next(b for b in teste.button if b.label == "Aplicar perpetuidade").click().run()
+    assert not teste.exception, teste.exception
+
+    perpetuidade = teste.session_state["empresa"].perpetuidade
+    assert perpetuidade.roe_perpetuidade == pytest.approx(0.22)
+    assert perpetuidade.roic_perpetuidade is None

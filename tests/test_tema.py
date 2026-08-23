@@ -46,11 +46,33 @@ def test_as_cores_de_grafico_do_tema_sao_a_serie_da_paleta(config):
     O app desenha em Plotly com a paleta; um `st.line_chart` cru usaria as cores
     padrao do Streamlit. Mesma tela, duas paletas.
     """
-    for modo, palheta in (("light", tema.CLARO), ("dark", tema.ESCURO)):
-        categoricas = [c.lower() for c in config["theme"][modo]["chartCategoricalColors"]]
-        assert categoricas == list(palheta.series)
-        sequenciais = [c.lower() for c in config["theme"][modo]["chartSequentialColors"]]
-        assert sequenciais == list(palheta.sequencial)
+    categoricas = [c.lower() for c in config["theme"]["chartCategoricalColors"]]
+    assert categoricas == list(tema.CLARO.series)
+    sequenciais = [c.lower() for c in config["theme"]["chartSequentialColors"]]
+    assert sequenciais == list(tema.CLARO.sequencial)
+
+
+def test_toda_opcao_de_tema_existe_no_streamlit(config):
+    """Opcao inventada e ignorada em silencio -- com um aviso que ninguem le.
+
+    `chartCategoricalColors` foi escrita sob `[theme.light]` e `[theme.dark]`,
+    onde ela **nao existe**: o Streamlit a descartava e seguia com as cores
+    padrao. O teste anterior passava porque conferia o **arquivo**, e nao o que
+    o Streamlit aceita -- que e o defeito que este aqui fecha.
+    """
+    from streamlit import config as config_do_streamlit
+
+    validas = set(config_do_streamlit._config_options_template)
+
+    def conferir(bloco: dict, prefixo: str) -> None:
+        for chave, valor in bloco.items():
+            caminho = f"{prefixo}.{chave}"
+            if isinstance(valor, dict):
+                conferir(valor, caminho)
+                continue
+            assert caminho in validas, f"{caminho} nao e opcao do Streamlit"
+
+    conferir(config["theme"], "theme")
 
 
 def test_o_tema_nao_forca_claro_nem_escuro(config):

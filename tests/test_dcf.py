@@ -77,8 +77,8 @@ def test_gordon_normalizado_por_roic():
         fluxo_final=999.0,  # ignorado quando ha ROIC
         taxa=0.10,
         crescimento=0.04,
-        nopat_final=100.0,
-        roic=0.16,
+        base_normalizada=100.0,
+        retorno=0.16,
     )
     assert vt == pytest.approx(100 * 1.04 * 0.75 / 0.06)
 
@@ -86,7 +86,7 @@ def test_gordon_normalizado_por_roic():
 def test_normalizacao_por_roic_reduz_o_valor_terminal_quando_o_capex_e_baixo():
     sem_roic = valor_terminal_gordon(100.0, taxa=0.10, crescimento=0.04)
     com_roic = valor_terminal_gordon(
-        100.0, taxa=0.10, crescimento=0.04, nopat_final=100.0, roic=0.12
+        100.0, taxa=0.10, crescimento=0.04, base_normalizada=100.0, retorno=0.12
     )
     assert com_roic < sem_roic
 
@@ -102,9 +102,11 @@ def test_crescimento_igual_a_taxa_e_rejeitado():
 
 
 def test_crescimento_acima_do_roic_e_rejeitado():
-    with pytest.raises(ValueError, match="ROIC"):
+    # A mensagem fala em "retorno" e nao em "ROIC": a mesma normalizacao serve
+    # ao FCFF (NOPAT e ROIC) e ao FCFE (lucro liquido e ROE).
+    with pytest.raises(ValueError, match="retorno de perpetuidade"):
         valor_terminal_gordon(
-            100, taxa=0.20, crescimento=0.15, nopat_final=100, roic=0.10
+            100, taxa=0.20, crescimento=0.15, base_normalizada=100, retorno=0.10
         )
 
 
@@ -327,3 +329,85 @@ def test_base_do_multiplo_desconhecida_e_erro_e_nao_silencio():
         PremissasPerpetuidade(
             metodo="multiplo", multiplo_saida=7.0, base_do_multiplo="receita"
         )
+
+
+# ---------------------------------------------------------------------------
+# Gordon normalizado: a base e o retorno na moeda do fluxo
+# ---------------------------------------------------------------------------
+
+
+def _com_cronograma(empresa):
+    """FCFE exige saldo de divida ano a ano; constante e a hipotese declarada."""
+    anos = empresa.operacionais.horizonte
+    return {"tipo_fluxo": "fcfe", "divida_por_ano": [empresa.ponte.divida_bruta] * anos}
+
+
+def test_o_fcfe_normaliza_sobre_o_lucro_liquido_e_nao_o_nopat(empresa_exemplo):
+    """O NOPAT e desalavancado; normaliza-lo dentro de uma serie de equity infla.
+
+    Ele ignora o juro que o acionista paga, entao o valor terminal sai **maior**.
+    Medido no fixture do motor: 35,8% de equity value -- o mesmo tipo de erro
+    que o multiplo de saida ja tinha, no outro metodo de perpetuidade.
+    """
+    resultado = avaliar(empresa_exemplo, **_com_cronograma(empresa_exemplo))
+    projecao, perp = resultado.projecao, empresa_exemplo.perpetuidade
+    g, ke = perp.crescimento_perpetuo, resultado.dcf.taxa_desconto
+
+    esperado = (
+        projecao.lucro_liquido[-1]
+        * (1 + g)
+        * (1 - g / perp.roic_perpetuidade)
+        / (ke - g)
+    )
+    assert resultado.dcf.valor_terminal == pytest.approx(esperado)
+    assert projecao.lucro_liquido[-1] < projecao.nopat[-1], "o caso precisa ter divida"
+
+
+def test_o_fcff_continua_normalizando_sobre_o_nopat(empresa_exemplo):
+    """A correcao nao pode vazar para a serie da firma, onde ela estava certa."""
+    resultado = avaliar(empresa_exemplo)
+    projecao, perp = resultado.projecao, empresa_exemplo.perpetuidade
+    g, wacc = perp.crescimento_perpetuo, resultado.dcf.taxa_desconto
+
+    esperado = (
+        projecao.nopat[-1] * (1 + g) * (1 - g / perp.roic_perpetuidade) / (wacc - g)
+    )
+    assert resultado.dcf.valor_terminal == pytest.approx(esperado)
+    assert resultado.dcf.avisos == ()
+
+
+def test_o_roe_de_perpetuidade_manda_quando_informado(empresa_exemplo):
+    """ROIC e ROE descrevem capitais diferentes; informado, o ROE ganha."""
+    empresa = substituir_varios(empresa_exemplo, {"perpetuidade.roe_perpetuidade": 0.22})
+    resultado = avaliar(empresa, **_com_cronograma(empresa))
+    projecao, g = resultado.projecao, empresa.perpetuidade.crescimento_perpetuo
+    ke = resultado.dcf.taxa_desconto
+
+    esperado = projecao.lucro_liquido[-1] * (1 + g) * (1 - g / 0.22) / (ke - g)
+    assert resultado.dcf.valor_terminal == pytest.approx(esperado)
+    assert resultado.dcf.avisos == (), "com ROE informado nao ha aproximacao a avisar"
+
+
+def test_usar_o_roic_como_roe_vira_aviso(empresa_exemplo):
+    """Aproximacao que muda o numero e nao aparece na tela e correcao escondida."""
+    resultado = avaliar(empresa_exemplo, **_com_cronograma(empresa_exemplo))
+    assert resultado.dcf.avisos, "a aproximacao aconteceu e nao foi anunciada"
+    aviso = " ".join(resultado.dcf.avisos)
+    assert "ROIC" in aviso and "ROE" in aviso
+
+
+def test_sem_normalizacao_o_fcfe_cresce_o_proprio_fluxo(empresa_exemplo):
+    """Sem retorno informado, Gordon simples sobre o FCFE -- que ja e de equity."""
+    empresa = substituir_varios(empresa_exemplo, {"perpetuidade.roic_perpetuidade": None})
+    resultado = avaliar(empresa, **_com_cronograma(empresa))
+    g = empresa.perpetuidade.crescimento_perpetuo
+    ke = resultado.dcf.taxa_desconto
+
+    esperado = resultado.projecao.fcfe[-1] * (1 + g) / (ke - g)
+    assert resultado.dcf.valor_terminal == pytest.approx(esperado)
+    assert resultado.dcf.avisos == ()
+
+
+def test_roe_de_perpetuidade_negativo_e_rejeitado():
+    with pytest.raises(ValueError, match="roe_perpetuidade"):
+        PremissasPerpetuidade(roe_perpetuidade=-0.1)
