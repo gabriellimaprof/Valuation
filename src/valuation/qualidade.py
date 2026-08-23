@@ -43,6 +43,11 @@ from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
 # a levou a 52%.
 CONVERSAO_BOA = 0.78
 CONVERSAO_FRACA = 0.17
+# Reconferidos depois que a conversao virou dois degraus: continuam sendo os
+# quartis da safra 2021-2025 em `referencias.BASE` (P25 = 0,166 e P75 = 0,785,
+# n = 409). A separacao entre CGO e FCO nao mudou a distribuicao do FCO -- ela
+# mudou o que se **conclui** de um FCO baixo --, entao nao ha o que recalibrar
+# aqui. O que faltava medir na safra era o corte da conversao operacional.
 # Crescimento acima disto justifica caixa preso no giro sem que seja sinal ruim.
 CRESCIMENTO_QUE_EXPLICA_GIRO = 0.15
 # Diferenca entre juro de competencia e juro pago que sugere capitalizacao.
@@ -180,9 +185,9 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
             "A operação gera caixa; o consumo está abaixo dela",
             texto
             + f" Mas a conversão **até o caixa das operações** é de "
-            f"{operacional:.0%}: o resultado vira caixa, e a distância até o FCO "
-            "está no capital de giro, no imposto e no juro pagos — não na "
-            "operação. Veja a ponte para saber qual dos três, e quanto."
+            f"{operacional:.0%}{_onde_na_base(operacional)}: o resultado vira "
+            "caixa, e a distância até o FCO está no capital de giro, no imposto "
+            "e no juro pagos — não na operação."
             + _culpado_da_ponte(analise),
             conversao,
         )
@@ -197,9 +202,9 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
             "Nem o caixa das operações acompanha o EBITDA",
             texto
             + f" E a conversão **até o caixa das operações** é de "
-            f"{operacional:.0%}: a distância aparece **antes** de giro, imposto "
-            "e juro, então não é consumo abaixo da operação — é resultado que "
-            "não se realiza em caixa.",
+            f"{operacional:.0%}{_onde_na_base(operacional)}: a distância aparece "
+            "**antes** de giro, imposto e juro, então não é consumo abaixo da "
+            "operação — é resultado que não se realiza em caixa.",
             conversao,
         )
 
@@ -230,6 +235,17 @@ def _conversao(analise: AnaliseHistorica) -> Sinal:
 
 
 
+
+def _onde_na_base(operacional: float) -> str:
+    """O percentil da conversao operacional, entre parenteses.
+
+    O corte absoluto diz o que a conta significa; o percentil diz se o numero e
+    incomum **aqui**. Numa conversao cuja mediana passa de 100%, o segundo
+    importa mais que o normal: 90% parece otimo e e quartil inferior.
+    """
+    onde = referencias.descrever("Conversao operacional (CGO / EBITDA)", operacional)
+    return f" ({onde})" if onde else ""
+
 def _culpado_da_ponte(analise: AnaliseHistorica) -> str:
     """Qual dos tres degraus abaixo do CGO consumiu mais caixa, com o numero.
 
@@ -249,7 +265,7 @@ def _culpado_da_ponte(analise: AnaliseHistorica) -> str:
     onde, quanto = max(consumos.items(), key=lambda item: item[1])
     if quanto <= 0:
         return ""
-    return f" O maior consumo esta {onde}: {quanto / ponte.ebitda:.0%} do EBITDA."
+    return f" O maior consumo está {onde}: {quanto / ponte.ebitda:.0%} do EBITDA."
 
 def _juros(analise: AnaliseHistorica) -> Sinal:
     competencia = _mediana(analise, "Custo da divida efetivo")
@@ -360,18 +376,29 @@ def avaliar_qualidade(analise: AnaliseHistorica) -> QualidadeDosLucros:
 # A ponte EBITDA -> CGO -> FCO
 # ---------------------------------------------------------------------------
 
-# Cortes da conversao **operacional**, medidos no consolidado de 2024 em 374
-# companhias com EBITDA positivo e CGO publicado:
+# Cortes da conversao **operacional**, agora medidos na safra 2021-2025 -- a
+# mesma de `referencias.BASE` e com a mesma metodologia (mediana por companhia,
+# quantis entre companhias), em 398 companhias:
 #
-#     P25 = 88,6%   P50 = 105,9%   P75 = 126,0%
+#     P10 = 53,7%   P25 = 85,9%   P50 = 102,9%   P75 = 115,9%
 #
-# A mediana passa de 100% e isso nao e anomalia: o CGO devolve ao lucro toda
-# despesa que nao foi caixa, e boa parte das companhias tem provisao e
-# impairment que o EBITDA nao captura. Por isso o corte de baixo e o quartil
-# (0,89) e nao um numero redondo -- "converte menos de 90% do EBITDA em caixa
-# operacional" ja e o quarto inferior da base.
-CGO_BOM = 0.89
-CGO_FRACO = 0.60
+# Sairam de uma medicao de **um ano so** (0,89 e 0,60), que e o defeito que este
+# projeto ja pagou duas vezes: corte de leitura calibrado fora da safra vira
+# ruido. Na safra os quartis mudaram pouco, o que e uma boa noticia -- mas so da
+# para dizer isso depois de medir.
+#
+# A mediana passa de 100% e nao e anomalia: o CGO devolve ao lucro despesas que
+# nao foram caixa e que o EBITDA nao captura -- provisao, impairment.
+#
+# `CGO_BOM` e o **P25**, e nao o P75 como em `CONVERSAO_BOA`, e a diferenca e
+# proposital: ele nao pergunta "esta entre as melhores?", pergunta "a operacao
+# converte?". Estar acima do quarto inferior ja responde que sim, e e por isso
+# que ele alcanca 73% da base -- para a maioria das companhias o FCO fraco e
+# mesmo giro, imposto e juro.
+CGO_BOM = 0.86
+# O P10. Um veredito **ruim** tem de ser mais raro que um de atencao: este
+# acusa 10% da base, contra os 25% do quartil inferior do FCO.
+CGO_FRACO = 0.54
 
 
 @dataclass(frozen=True)

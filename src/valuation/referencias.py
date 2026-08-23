@@ -129,6 +129,15 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "Conversao de caixa (FCO / EBITDA)": (409, (-0.824, -0.394, 0.166, 0.530, 0.785, 1.021, 1.295)),
+    # A conversao **operacional** -- caixa gerado pelas operacoes sobre EBITDA,
+    # antes de giro, imposto e juro. Medida na mesma safra e com a mesma
+    # metodologia (mediana por companhia, quantis entre companhias).
+    #
+    # Repare na mediana **acima de 100%**: nao e anomalia. O caixa gerado devolve
+    # ao lucro despesas que nao foram caixa e que o EBITDA nao captura --
+    # provisao, impairment. E a distancia para a conversao final, na mediana, e
+    # de **48,9 pontos**: e o que giro, imposto e juro consomem.
+    "Conversao operacional (CGO / EBITDA)": (398, (0.191, 0.537, 0.859, 1.029, 1.159, 1.421, 1.738)),
     "Margem EBITDA": (418, (-0.214, 0.035, 0.103, 0.208, 0.399, 0.598, 0.733)),
     "Margem liquida": (418, (-0.410, -0.161, -0.004, 0.062, 0.140, 0.283, 0.417)),
     "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.093, 0.199, 0.371, 0.515)),

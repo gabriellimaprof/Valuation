@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 989 testes
+pytest                        # 991 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -473,20 +473,46 @@ giro prendeu caixa?" e "quanto saiu para imposto e juro?" — e só a primeira f
 da operação. Medido no consolidado de 2024, em 374 companhias com EBITDA
 positivo:
 
-| | Mediana |
-|---|---|
-| **CGO / EBITDA** (antes de giro, imposto e juro) | **105,9%** |
-| **FCO / EBITDA** (depois dos três) | **59,2%** |
-| Distância | **42,4 p.p.** |
-| Juro pago / EBITDA | **25,8%** (P75 = 42,7%) |
-| Imposto pago / EBITDA | 6,3% |
+Medido primeiro num ano só, e **depois na safra 2021-2025** — a mesma de
+`referencias.BASE`, com a mesma metodologia (mediana por companhia, quantis
+entre companhias). Os dois números importam, e o segundo é o que vale:
+
+| | 2024, n=374 | **Safra 2021-2025, n=398** |
+|---|---|---|
+| CGO / EBITDA — P25 | 88,6% | **85,9%** |
+| CGO / EBITDA — mediana | 105,9% | **102,9%** |
+| CGO / EBITDA — P75 | 126,0% | **115,9%** |
+| FCO / EBITDA — mediana | 59,2% | **53,0%** |
+| Distância mediana | 42,4 p.p. | **48,9 p.p.** |
 
 A mediana passa de 100% no CGO e isso não é anomalia: o caixa gerado devolve ao
 lucro despesas que não foram caixa e o EBITDA não captura — provisão,
-impairment.
+impairment. Na base, juro pago vale **25,8% do EBITDA na mediana** (P75 = 42,7%)
+e imposto pago 6,3% — juntos, quase toda a distância.
 
-**190 das 371 companhias com os dois números — metade da base — têm CGO acima de
-78% do EBITDA e FCO abaixo disso.** Nelas o resultado vira caixa e o consumo
+**A medição da safra confirmou que `CONVERSAO_BOA` e `CONVERSAO_FRACA` não
+precisavam mudar.** Ela reproduziu a distribuição do FCO que já estava em
+`referencias.BASE` (P25 0,164 contra 0,166; P75 0,791 contra 0,785), o que é a
+melhor validação possível da metodologia: separar CGO de FCO não mudou a
+distribuição do FCO — mudou o que se **conclui** de um FCO baixo.
+
+**Os cortes do CGO foram recalibrados na safra**, porque tinham saído de um ano
+só — o defeito que este projeto já pagou duas vezes:
+
+| | Antes (2024) | Depois (safra) | Acusa |
+|---|---|---|---|
+| `CGO_BOM` | 0,89 | **0,86** (P25) | 27% da base fica abaixo |
+| `CGO_FRACO` | 0,60 | **0,54** (P10) | 10% |
+
+`CGO_BOM` é o **P25**, e não o P75 como `CONVERSAO_BOA`, e a diferença é
+proposital: ele não pergunta "está entre as melhores?", pergunta "a operação
+converte?". Estar acima do quarto inferior já responde que sim — e é por isso que
+ele alcança 73% da base. O sinal cita o percentil junto do número, porque numa
+distribuição cuja mediana passa de 100% um "90%" parece ótimo e é quartil
+inferior.
+
+**204 das 393 companhias com os dois números — 52% da base — têm CGO acima de
+89% do EBITDA e FCO abaixo de 78%.** Nelas o resultado vira caixa e o consumo
 está abaixo da operação; dizer "o EBITDA não vira caixa" ali manda o analista
 procurar receita fictícia onde o que há é dívida cara. O sinal passa a olhar o
 degrau de cima antes de culpar a operação, e nomeia o maior consumo **com o
@@ -1053,7 +1079,7 @@ não é verificação.
 
 ## Estado atual
 
-989 testes passando. Verificado de verdade: contas financeiras, identidades,
+991 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

@@ -391,3 +391,40 @@ def test_cgo_fraco_ganha_o_nome_certo():
     assert "caixa das operações" in sinal.titulo
     assert "não se realiza" in sinal.detalhe
     assert 400.0 / 1000.0 < CGO_FRACO
+
+
+def test_os_cortes_do_cgo_sao_os_percentis_da_safra():
+    """Corte calibrado fora da safra vira ruido -- o projeto ja pagou isso duas vezes.
+
+    `CGO_BOM` e o **P25** e nao o P75 como em `CONVERSAO_BOA`, de proposito: ele
+    nao pergunta "esta entre as melhores?", pergunta "a operacao converte?".
+    """
+    from valuation import referencias
+    from valuation.qualidade import CGO_BOM, CGO_FRACO
+
+    n, quantis = referencias.BASE["Conversao operacional (CGO / EBITDA)"]
+    p10, p25 = quantis[1], quantis[2]
+
+    assert CGO_BOM == pytest.approx(p25, abs=0.01), f"P25 = {p25}"
+    assert CGO_FRACO == pytest.approx(p10, abs=0.01), f"P10 = {p10}"
+    assert CGO_FRACO < CGO_BOM
+    # E a mediana passa de 100%: a conversao operacional nao se le como a final.
+    assert quantis[3] > 1.0
+
+
+def test_o_sinal_cita_o_percentil_da_conversao_operacional():
+    """Numa conversao cuja mediana passa de 100%, 90% parece otimo e e quartil inferior.
+
+    O corte absoluto diz o que a conta significa; o percentil diz se o numero e
+    incomum aqui. Sem o segundo, o leitor aceita o quarto inferior por ele
+    parecer um numero alto.
+    """
+    from valuation.historico import analisar
+    from valuation.qualidade import avaliar_qualidade
+
+    dfs = _com_dfc(cgo=1100.0, giro=-50.0, imposto=100.0, juro=400.0)
+    sinal = next(
+        s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
+    )
+    assert "percentil" in sinal.detalhe
+    assert "398 companhias" in sinal.detalhe
