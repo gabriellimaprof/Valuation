@@ -394,3 +394,72 @@ def test_adicao_pequena_nao_vira_achado(empresa_exemplo):
     assert "arrendamento_cresce_para_sempre" not in _codigos(
         diagnosticar(avaliar(pouco))
     )
+
+
+# ---------------------------------------------------------------------------
+# O achado de conversao olha o degrau de cima antes de acusar a operacao
+# ---------------------------------------------------------------------------
+
+
+def _analise_com_dfc(cgo, giro, imposto, juro, ebit=800.0, da=200.0):
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    fco = cgo + giro - abs(imposto) - abs(juro)
+    linha = {
+        "receita_liquida": 5000.0, "ebit": ebit, "depreciacao_amortizacao": da,
+        "lucro_liquido": 500.0, "lucro_antes_impostos": 700.0, "impostos": 200.0,
+        "patrimonio_liquido": 3000.0, "ativo_total": 6000.0,
+        "caixa_das_operacoes": cgo, "fluxo_operacional": fco,
+        "variacao_capital_giro": giro, "impostos_pagos": imposto,
+        "juros_pagos": juro,
+    }
+    valores = pd.DataFrame({2023: dict(linha), 2024: dict(linha)})
+    return analisar(
+        Demonstracoes(empresa="Teste", valores=valores, unidade="R$ milhões")
+    )
+
+
+def _achado_da_conversao(resultado, analise):
+    from valuation.diagnostico import diagnosticar
+
+    return next(
+        (
+            a
+            for a in diagnosticar(resultado, analise).achados
+            if a.codigo == "ebitda_nao_vira_caixa"
+        ),
+        None,
+    )
+
+
+def test_o_achado_nao_acusa_a_operacao_quando_o_cgo_e_alto(empresa_exemplo):
+    """Metade da base tem CGO alto e FCO baixo.
+
+    O achado dizia "receita reconhecida antes de ser recebida" para todas elas,
+    quando o resultado vira caixa e o consumo esta abaixo da operacao.
+    """
+    from valuation import avaliar
+
+    # CGO = 110% do EBITDA, e juro come 85% dele.
+    analise = _analise_com_dfc(cgo=1100.0, giro=-50.0, imposto=100.0, juro=850.0)
+    achado = _achado_da_conversao(avaliar(empresa_exemplo), analise)
+
+    assert achado is not None, "o achado precisa continuar disparando"
+    assert "a operação converte" in achado.titulo
+    assert "resultado vira caixa" in achado.detalhe
+    assert "ponte" in achado.acao
+
+
+def test_o_achado_acusa_a_operacao_quando_o_cgo_e_baixo(empresa_exemplo):
+    """A ressalva nao pode virar desculpa."""
+    from valuation import avaliar
+
+    analise = _analise_com_dfc(cgo=200.0, giro=-50.0, imposto=50.0, juro=50.0)
+    achado = _achado_da_conversao(avaliar(empresa_exemplo), analise)
+
+    assert achado is not None
+    assert "a operação converte" not in achado.titulo
+    assert "antes de ser recebida" in achado.detalhe

@@ -268,3 +268,52 @@ def test_o_relatorio_completo_traz_a_secao_qualitativa():
     # A secao qualitativa reune evidencia e nao conclui.
     assert texto.count("**Leitura do analista:**") == 6
     assert "Nenhuma evidência quantitativa" in texto
+
+
+# ---------------------------------------------------------------------------
+# A ponte do caixa no relatorio
+# ---------------------------------------------------------------------------
+
+
+def test_a_ponte_do_caixa_entra_no_relatorio(empresa_exemplo, tmp_path):
+    """O relatorio e o que sobra depois que a tela fecha.
+
+    Sem a ponte, quem le em tres meses ve "converte 34%" e refaz do zero a
+    pergunta que a tela ja tinha respondido: **onde** o caixa se perdeu.
+    """
+    from pathlib import Path
+
+    from valuation import avaliar
+    from valuation.historico import analisar
+    from valuation.importacao.cvm import importar_cvm
+    from valuation.qualidade import avaliar_qualidade
+    from valuation.relatorio import montar
+
+    dados = Path(__file__).parent / "dados" / "cvm"
+    weg = importar_cvm(5410, [2023, 2024], cache=dados).escalar(1e6, "R$ milhões")
+    analise = analisar(weg)
+
+    texto = montar(
+        avaliar(empresa_exemplo),
+        analise=analise,
+        qualidade=avaliar_qualidade(analise),
+    )
+    assert "De EBITDA a caixa" in texto
+    assert "Caixa gerado pelas operações" in texto
+    assert "a ponte fecha com o FCO publicado" in texto
+
+
+def test_sem_dfc_indireta_a_ponte_fica_de_fora(empresa_exemplo):
+    """Tabela que nao reconstroi o FCO descreveria outra companhia.
+
+    Companhia que publica a DFC pelo metodo direto nao tem caixa gerado pelas
+    operacoes -- a demonstracao dela nao reconcilia lucro com caixa, ela lista
+    recebimentos e pagamentos. Inventar a ponte ali seria pior que a ausencia.
+    """
+    from valuation import avaliar
+    from valuation.relatorio import _ponte_do_caixa
+
+    assert _ponte_do_caixa(None) == []
+    # E o relatorio inteiro continua saindo sem ela.
+    texto = montar(avaliar(empresa_exemplo))
+    assert "De EBITDA a caixa" not in texto
