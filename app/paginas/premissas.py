@@ -10,6 +10,7 @@ import streamlit as st
 
 from valuation.casos_especiais import normalizar_margem_ciclica
 from valuation.historico import sugerir_premissas
+from valuation.premissas import BASES_DO_MULTIPLO
 
 from .. import estado
 from ..componentes import conceito, etapa, formatar, grafico, tabela_formatada
@@ -308,9 +309,29 @@ def _perpetuidade(empresa) -> None:
             f"**{formatar((1 + roic / 100) * (1 + ipca) - 1, 'pct')}**"
         )
 
+    # A base do múltiplo depende do caso: uma indústria sai por EV/EBITDA, uma
+    # empresa cujo par negocia por lucro sai por P/L. **A escolha muda a moeda
+    # do valor terminal** — EV/EBITDA dá valor de firma, P/L dá valor de equity
+    # —, e é o app que faz a conversão para a moeda do fluxo, avisando.
+    bases = list(BASES_DO_MULTIPLO.values())
+    base = colunas[3].radio(
+        "Múltiplo sobre",
+        bases,
+        index=bases.index(BASES_DO_MULTIPLO[perpetuidade.base_do_multiplo]),
+        horizontal=True,
+        disabled=usar_gordon,
+        help=(
+            "**EV/EBITDA** precifica a firma inteira e a dívida sai na ponte. "
+            "**P/L** precifica o que sobra para o acionista — o lucro já é "
+            "depois do juro —, então o app soma a dívida líquida de volta ao "
+            "valor terminal para ela não ser descontada duas vezes."
+        ),
+    )
+    base_escolhida = next(k for k, v in BASES_DO_MULTIPLO.items() if v == base)
+
     multiplo = colunas[3].number_input(
-        "Múltiplo de saída (EV/EBITDA)",
-        value=float(perpetuidade.multiplo_saida or 7.0),
+        f"Múltiplo de saída ({base})",
+        value=float(perpetuidade.multiplo_saida or (7.0 if base_escolhida == "ebitda" else 12.0)),
         step=0.5,
         disabled=usar_gordon,
     )
@@ -369,6 +390,7 @@ def _perpetuidade(empresa) -> None:
         else:
             alteracoes["perpetuidade.metodo"] = "multiplo"
             alteracoes["perpetuidade.multiplo_saida"] = multiplo
+            alteracoes["perpetuidade.base_do_multiplo"] = base_escolhida
         try:
             estado.atualizar(alteracoes)
         except ValueError as erro:

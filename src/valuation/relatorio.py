@@ -33,6 +33,7 @@ import pandas as pd
 from .diagnostico import ALERTA, ERRO, Diagnostico
 from .margem import MargemDeSeguranca
 from .modelo import ResultadoValuation
+from .premissas import BASES_DO_MULTIPLO
 
 # Indicadores que sustentam a leitura do historico, na ordem em que sao lidos.
 INDICADORES_DO_HISTORICO = (
@@ -334,10 +335,23 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
                 f"{_pct(reinvestimento)} do NOPAT perpétuo.{indexado}"
             )
     else:
+        conta = "EBITDA" if perp.base_do_multiplo == "ebitda" else "lucro líquido"
         linhas.append(
-            f"- **Perpetuidade por múltiplo de saída**: {_num(perp.multiplo_saida, 1)}x "
-            "EV/EBITDA sobre o último ano projetado."
+            f"- **Perpetuidade por múltiplo de saída**: "
+            f"{_num(perp.multiplo_saida, 1)}x "
+            f"{BASES_DO_MULTIPLO[perp.base_do_multiplo]} sobre o {conta} do último "
+            "ano projetado."
         )
+        # O P/L devolve valor de equity dentro de uma serie de firma, e a
+        # conversao usa a divida liquida de hoje. Quem le o relatorio em tres
+        # meses precisa saber que esse numero e hipotese, e nao projecao.
+        if perp.base_do_multiplo == "lucro":
+            linhas.append(
+                "  O P/L precifica o acionista, então a dívida líquida de hoje "
+                "volta ao valor terminal para não ser descontada duas vezes na "
+                "ponte. O modelo não projeta balanço: a dívida do ano terminal é "
+                "suposta igual à de hoje."
+            )
 
     if op.arrendamento_pct_receita is not None:
         linhas.append(

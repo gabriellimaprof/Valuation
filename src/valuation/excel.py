@@ -26,6 +26,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .modelo import ResultadoValuation
+from .premissas import BASES_DO_MULTIPLO
 from .multiplos import Alvo, Comparavel, avaliar_por_multiplos, estatisticas, tabela_comparaveis
 from .sensibilidade import ResultadoSimulacao
 
@@ -304,7 +305,7 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
             PCT,
         )
     refs["multiplo_saida"] = aba.entrada(
-        "Multiplo de saida EV/EBITDA",
+        f"Multiplo de saida {BASES_DO_MULTIPLO[perp.base_do_multiplo]}",
         perp.multiplo_saida if perp.multiplo_saida is not None else "",
         MULTIPLO,
     )
@@ -624,6 +625,27 @@ def _aba_dcf(
             )
             aba.nota("Gordon simples sobre o FCFF do ultimo ano projetado.")
         valor_terminal = aba.formula("Valor terminal (fim do ano n)", expressao, MOEDA)
+    elif perp.base_do_multiplo == "lucro":
+        # O P/L incide sobre o **lucro do acionista**, e nao sobre o NOPAT: o
+        # NOPAT e desalavancado por construcao. O juro sai da divida bruta ao Kd,
+        # mantida no saldo de partida -- a mesma hipotese do motor.
+        lucro = aba.formula(
+            "Lucro liquido do ano n (NOPAT - juros apos IR)",
+            f"={proj['nopat'][str(n - 1)]}"
+            f"-{p['divida_bruta']}*{cc['kd_bruto']}*(1-{p['aliquota_ir']})",
+            MOEDA,
+        )
+        valor_terminal = aba.formula(
+            "Valor terminal (fim do ano n)",
+            f"={lucro}*{p['multiplo_saida']}"
+            f"+{p['divida_bruta']}-{p['caixa']}-{p['aplicacoes']}",
+            MOEDA,
+        )
+        aba.nota(
+            "P/L de saida sobre o lucro liquido do ultimo ano. O P/L devolve valor "
+            "de equity; a divida liquida volta aqui para nao ser descontada duas "
+            "vezes na ponte, que a tira de novo abaixo."
+        )
     else:
         valor_terminal = aba.formula(
             "Valor terminal (fim do ano n)",

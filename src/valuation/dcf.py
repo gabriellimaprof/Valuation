@@ -63,11 +63,69 @@ def valor_terminal_gordon(
     return fluxo_perpetuo / (taxa - crescimento)
 
 
-def valor_terminal_multiplo(ebitda_final: float, multiplo: float) -> float:
-    """Valor terminal por multiplo de saida sobre o EBITDA do ultimo ano."""
+def valor_terminal_multiplo(base_final: float, multiplo: float) -> float:
+    """Valor terminal por multiplo de saida sobre a conta do ultimo ano.
+
+    A conta e o EBITDA (EV/EBITDA) ou o lucro liquido (P/L), conforme
+    ``PremissasPerpetuidade.base_do_multiplo``. **Os dois nao dao a mesma
+    moeda**: EV/EBITDA devolve valor de firma e P/L devolve valor de equity --
+    ver :func:`_terminal_na_moeda_do_fluxo`.
+    """
     if multiplo < 0:
         raise ValueError("multiplo_saida nao pode ser negativo.")
-    return ebitda_final * multiplo
+    return base_final * multiplo
+
+
+def _base_do_multiplo(projecao: Projecao, base: str) -> float:
+    """A conta do ultimo ano projetado sobre a qual o multiplo incide."""
+    if base == "lucro":
+        if projecao.lucro_liquido is None:
+            raise ValueError(
+                "A projecao nao tem lucro liquido; o P/L de saida precisa dele."
+            )
+        return float(projecao.lucro_liquido[-1])
+    return float(projecao.ebitda[-1])
+
+
+def _terminal_na_moeda_do_fluxo(
+    valor_terminal: float,
+    e_de_equity: bool,
+    tipo_fluxo: str,
+    ponte: PonteValor,
+) -> tuple[float, str]:
+    """Converte o valor terminal para a moeda da serie que ele fecha.
+
+    **O multiplo carrega a moeda da conta em que incide.** EV/EBITDA devolve
+    valor de firma; P/L devolve valor de equity, porque o lucro liquido ja e
+    depois do juro. Somar um ao outro na mesma serie e o erro que a regra da
+    casa proibe -- multiplos de EV e de equity nao se misturam na ponte --, e
+    aqui ele nao aparece como numero absurdo: a ponte roda, o valor sai, e a
+    divida foi contada duas vezes ou nenhuma.
+
+    A conversao usa a **divida liquida de hoje**, porque o modelo nao projeta
+    balanco. E hipotese, entao ela volta como aviso em vez de sumir dentro do
+    numero.
+    """
+    fluxo_e_de_equity = tipo_fluxo == "fcfe"
+    if e_de_equity == fluxo_e_de_equity:
+        return valor_terminal, ""
+
+    divida_liquida = ponte.divida_liquida
+    if e_de_equity:
+        # Terminal de equity dentro de uma serie de firma: devolve-se a divida,
+        # que a ponte vai tirar de novo la na frente.
+        return valor_terminal + divida_liquida, (
+            "O múltiplo de saída é de equity (P/L) e o fluxo é para a firma "
+            "(FCFF): a dívida líquida de hoje foi somada ao valor terminal para "
+            "não ser descontada duas vezes na ponte. O modelo não projeta "
+            "balanço, então a dívida do ano terminal é suposta igual à de hoje."
+        )
+    return valor_terminal - divida_liquida, (
+        "O múltiplo de saída é de firma (EV/EBITDA) e o fluxo é para o acionista "
+        "(FCFE): a dívida líquida de hoje foi tirada do valor terminal — sem "
+        "isso ela nunca seria descontada. O modelo não projeta balanço, então a "
+        "dívida do ano terminal é suposta igual à de hoje."
+    )
 
 
 @dataclass(frozen=True)
@@ -87,6 +145,9 @@ class ResultadoDCF:
     tipo_fluxo: str
     anos: list[int]
     meio_de_ano: bool = False
+    # O que o modelo assumiu e o numero sozinho nao conta. Hoje so o multiplo de
+    # saida escreve aqui, quando a moeda do terminal nao era a da serie.
+    avisos: tuple[str, ...] = ()
 
     @property
     def peso_perpetuidade(self) -> float:
@@ -167,9 +228,14 @@ def avaliar_dcf(
             nopat_final=float(projecao.nopat[-1]),
             roic=perpetuidade.roic_perpetuidade,
         )
+        aviso_do_terminal = ""
     else:
+        base = perpetuidade.base_do_multiplo
         vt = valor_terminal_multiplo(
-            float(projecao.ebitda[-1]), perpetuidade.multiplo_saida
+            _base_do_multiplo(projecao, base), perpetuidade.multiplo_saida
+        )
+        vt, aviso_do_terminal = _terminal_na_moeda_do_fluxo(
+            vt, base == "lucro", tipo_fluxo, ponte or PonteValor()
         )
 
     # O valor terminal esta posicionado no fim do ano n, entao desconta por n
@@ -204,4 +270,5 @@ def avaliar_dcf(
         tipo_fluxo=tipo_fluxo,
         anos=projecao.anos,
         meio_de_ano=meio_de_ano,
+        avisos=(aviso_do_terminal,) if aviso_do_terminal else (),
     )

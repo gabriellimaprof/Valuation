@@ -20,6 +20,11 @@ ALIQUOTA_IR_BRASIL = 0.34
 # Como o crescimento perpetuo e determinado. Ver PremissasPerpetuidade.ancora.
 ANCORAS_PERPETUIDADE = ("livre", "ipca", "pib_nominal")
 
+# Sobre que conta o multiplo de saida incide, e como ele se chama na tela. A
+# chave e a conta do ultimo ano projetado; o rotulo e o nome do multiplo, que e
+# o que o analista digita.
+BASES_DO_MULTIPLO = {"ebitda": "EV/EBITDA", "lucro": "P/L"}
+
 
 @dataclass(frozen=True)
 class PremissasMacro:
@@ -210,6 +215,12 @@ class PremissasPerpetuidade:
     crescimento_perpetuo: float = 0.04
     roic_perpetuidade: float | None = None
     multiplo_saida: float | None = None
+    # Sobre que conta o multiplo de saida incide. Depende do caso: uma industria
+    # sai por EV/EBITDA, uma financeira ou uma empresa cujo par negocia por lucro
+    # sai por P/L. **A escolha muda a moeda do valor terminal** -- EV/EBITDA da
+    # valor de firma, P/L da valor de equity --, e e por isso que ela e premissa
+    # e nao detalhe de apresentacao. Ver ``dcf._terminal_na_moeda_do_fluxo``.
+    base_do_multiplo: str = "ebitda"
     ancora: str = "livre"
     roic_real: float | None = None
 
@@ -218,6 +229,11 @@ class PremissasPerpetuidade:
             raise ValueError(f"metodo de perpetuidade desconhecido: {self.metodo!r}")
         if self.metodo == "multiplo" and self.multiplo_saida is None:
             raise ValueError("metodo 'multiplo' exige multiplo_saida.")
+        if self.base_do_multiplo not in BASES_DO_MULTIPLO:
+            raise ValueError(
+                f"base_do_multiplo desconhecida: {self.base_do_multiplo!r}. "
+                f"Use uma de {list(BASES_DO_MULTIPLO)}."
+            )
         if self.roic_perpetuidade is not None and self.roic_perpetuidade <= 0:
             raise ValueError("roic_perpetuidade deve ser positivo.")
         if self.roic_real is not None and self.roic_real <= 0:

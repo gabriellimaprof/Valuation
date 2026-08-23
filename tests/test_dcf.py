@@ -216,3 +216,114 @@ def test_caminho_inexistente_e_rejeitado(empresa_exemplo):
 def test_escalar_aplicado_a_lista_vale_para_todos_os_anos(empresa_exemplo):
     empresa = substituir_varios(empresa_exemplo, {"operacionais.margem_ebitda": 0.25})
     assert empresa.operacionais.margem_ebitda == [0.25, 0.25, 0.25]
+
+
+# ---------------------------------------------------------------------------
+# P/L de saida: o multiplo carrega a moeda da conta em que incide
+# ---------------------------------------------------------------------------
+
+
+def _com_multiplo(empresa, multiplo: float, base: str, **extra):
+    return substituir_varios(
+        empresa,
+        {
+            "perpetuidade.metodo": "multiplo",
+            "perpetuidade.multiplo_saida": multiplo,
+            "perpetuidade.base_do_multiplo": base,
+            **extra,
+        },
+    )
+
+
+def test_o_pl_de_saida_incide_sobre_o_lucro_e_nao_sobre_o_nopat(empresa_exemplo):
+    """O NOPAT e desalavancado; quem sai por P/L precifica o lucro do acionista.
+
+    Numa empresa com divida os dois nao se parecem, e usar o NOPAT inflaria o
+    valor terminal pelo juro que a divida cobra -- ainda por cima antes de somar
+    a divida de volta.
+    """
+    resultado = avaliar(_com_multiplo(empresa_exemplo, 12.0, "lucro"))
+    projecao = resultado.projecao
+
+    juros = empresa_exemplo.ponte.divida_bruta * resultado.custo_capital.kd_bruto_brl
+    esperado = projecao.nopat[-1] - juros * (1 - empresa_exemplo.macro.aliquota_ir)
+    assert projecao.lucro_liquido[-1] == pytest.approx(esperado)
+    assert projecao.lucro_liquido[-1] < projecao.nopat[-1]
+
+    # E o valor terminal e o P/L sobre esse lucro, mais a divida liquida que a
+    # ponte vai tirar de novo.
+    assert resultado.dcf.valor_terminal == pytest.approx(
+        12.0 * projecao.lucro_liquido[-1] + empresa_exemplo.ponte.divida_liquida
+    )
+
+
+def test_o_pl_equivalente_ao_ev_ebitda_da_exatamente_o_mesmo_equity(empresa_exemplo):
+    """A identidade que trava a conversao de moeda do valor terminal.
+
+    Se o P/L escolhido produz o mesmo valor de firma que o EV/EBITDA, os dois
+    caminhos tem de chegar ao mesmo equity. Sem a conversao a igualdade se perde
+    -- e se perde **em silencio**, porque a ponte roda e o numero sai.
+    """
+    referencia = avaliar(_com_multiplo(empresa_exemplo, 7.0, "ebitda"))
+    projecao = referencia.projecao
+    divida_liquida = empresa_exemplo.ponte.divida_liquida
+
+    equivalente = (7.0 * projecao.ebitda[-1] - divida_liquida) / projecao.lucro_liquido[-1]
+    por_lucro = avaliar(_com_multiplo(empresa_exemplo, equivalente, "lucro"))
+
+    assert por_lucro.dcf.valor_terminal == pytest.approx(referencia.dcf.valor_terminal)
+    assert por_lucro.dcf.equity_value == pytest.approx(referencia.dcf.equity_value)
+
+
+def test_multiplo_de_firma_num_fluxo_de_acionista_desconta_a_divida(empresa_exemplo):
+    """EV/EBITDA num FCFE punha um valor de firma dentro de uma serie de equity.
+
+    Medido no caso do fixture: a divida liquida nunca era subtraida, e isso valia
+    metade do equity value. Nenhuma identidade denunciava -- o FCFE nao passa
+    pela ponte, entao nao havia onde a diferenca aparecer.
+    """
+    divida = [900.0] * empresa_exemplo.operacionais.horizonte
+    resultado = avaliar(
+        _com_multiplo(empresa_exemplo, 7.0, "ebitda"),
+        tipo_fluxo="fcfe",
+        divida_por_ano=divida,
+    )
+    esperado = 7.0 * resultado.projecao.ebitda[-1] - empresa_exemplo.ponte.divida_liquida
+    assert resultado.dcf.valor_terminal == pytest.approx(esperado)
+    assert any("FCFE" in aviso for aviso in resultado.dcf.avisos)
+
+
+def test_o_pl_num_fluxo_de_acionista_nao_precisa_de_conversao(empresa_exemplo):
+    """As duas moedas ja batem: lucro do acionista, fluxo do acionista."""
+    divida = [900.0] * empresa_exemplo.operacionais.horizonte
+    resultado = avaliar(
+        _com_multiplo(empresa_exemplo, 12.0, "lucro"),
+        tipo_fluxo="fcfe",
+        divida_por_ano=divida,
+    )
+    assert resultado.dcf.valor_terminal == pytest.approx(
+        12.0 * resultado.projecao.lucro_liquido[-1]
+    )
+    assert resultado.dcf.avisos == ()
+
+
+def test_a_conversao_de_moeda_do_terminal_vira_aviso(empresa_exemplo):
+    """Hipotese que muda o numero e nao aparece na tela e correcao escondida."""
+    resultado = avaliar(_com_multiplo(empresa_exemplo, 12.0, "lucro"))
+    assert resultado.dcf.avisos, "a conversao aconteceu e nao foi anunciada"
+    assert "dívida líquida" in " ".join(resultado.dcf.avisos)
+
+
+def test_o_ev_ebitda_num_fluxo_de_firma_segue_sem_conversao(empresa_exemplo):
+    resultado = avaliar(_com_multiplo(empresa_exemplo, 7.0, "ebitda"))
+    assert resultado.dcf.valor_terminal == pytest.approx(
+        7.0 * resultado.projecao.ebitda[-1]
+    )
+    assert resultado.dcf.avisos == ()
+
+
+def test_base_do_multiplo_desconhecida_e_erro_e_nao_silencio():
+    with pytest.raises(ValueError, match="base_do_multiplo"):
+        PremissasPerpetuidade(
+            metodo="multiplo", multiplo_saida=7.0, base_do_multiplo="receita"
+        )

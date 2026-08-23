@@ -48,6 +48,13 @@ def render() -> None:
 
     _cartoes(resultado, unidade)
 
+    # O que o modelo assumiu e o numero sozinho nao conta. Hoje so o multiplo de
+    # saida escreve aqui — quando a conta em que ele incide (EBITDA ou lucro) dá
+    # uma moeda diferente da série de fluxos que ele fecha, e a dívida líquida
+    # entrou ou saiu do valor terminal para as duas conversarem.
+    for aviso in dcf.avisos:
+        st.info(aviso)
+
     st.divider()
     grafico(
         composicao_do_valor(

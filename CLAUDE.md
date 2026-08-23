@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 936 testes
+pytest                        # 950 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -386,6 +386,50 @@ livre. Cada um chega partido em várias rubricas e é remontado por soma em
 em 80 companhias e não é dividendo pago; venda de imobilizado fala de
 imobilizado e não é capex. A direção é o que separa, não o assunto.
 
+**A demonstração publicada é uma árvore, e a tela tinha de mostrar isso.** O
+nível do plano de contas já estava na tabela — era o recuo —, mas "Ativo Total" e
+"JSCP a receber" saíam com o mesmo peso, e achar os totais exigia ler os 210
+rótulos. Agora: cabeçalho grudado no topo, níveis 1 e 2 com fundo e negrito,
+níveis 4 e 5 menores e mais fracos, negativo em vermelho, primeira coluna grudada
+na esquerda.
+
+Vai como **HTML** (`componentes.tabela_de_demonstracao`), e não como
+`st.dataframe`: o Styler do pandas só atravessa cor para o canvas do Streamlit,
+não peso nem tamanho de fonte — que são justamente o que separa um total de um
+item folha. Efeito colateral bem-vindo: o número passa a existir no DOM, então
+teste e navegador conseguem lê-lo; dentro do canvas nunca deu.
+
+O CSS sai da paleta em `tema.tabela_css()`, e os fundos são **opacos**: a
+primeira coluna é `position: sticky`, e com fundo translúcido os números
+passariam por trás do rótulo durante a rolagem.
+
+**E 37,1% das linhas publicadas são zero em todos os anos.** Medido em 40
+companhias de 2019 a 2025 — 51,6% no balanço, 47,8% na DMPL, 8,8% no fluxo de
+caixa. A companhia entrega o plano de contas inteiro e marca com zero o que não
+tem. Na WEG o balanço cai de 188 para 96 linhas. Somem por padrão, com o número
+do que sumiu escrito na legenda e uma alavanca para trazê-las de volta: linha
+escondida sem aviso é o app decidindo pelo analista o que ele pode ver.
+
+A regra olha a **subárvore**, e não a linha. A mesma medição achou 97 linhas
+zeradas com filha viva, e **todas são o bloco `3.99`** — o pai é título sem valor
+próprio e o número mora em `3.99.01.01`. Esconder pela leitura da própria linha
+apagaria o lucro por ação junto com o caminho até ele.
+
+**O lucro por ação estava mil vezes maior, e foi a tela nova que mostrou.** A CVM
+declara `ESCALA_MOEDA = MIL` para o arquivo inteiro e escreve o lucro por ação em
+reais na mesma linha — o rótulo diz, "Lucro por Ação - (Reais / Ação)". O R$ 1,44
+da WEG virava R$ 1.440,26, e a conversão para R$ milhões depois o achatava em 0,0
+na tela.
+
+Medido no DRE consolidado de 2024: **889 linhas de 384 companhias**, mediana de
+|valor| bruto em **1,31** e 99% abaixo de 1.000 — ordem de grandeza de reais por
+ação, não de milhares deles. No ITR de 2025, 3.858 linhas de 388 companhias.
+`cvm.e_conta_por_acao` tira o bloco `3.99` da escala do arquivo **e** da troca de
+unidade, e a tabela marca a linha com "R$/ação" — um "1,4" sem marca, na coluna
+de um balanço em R$ milhões, se lê errado. Nenhuma conta canônica sai de `3.99`,
+então nada disso move valuation nenhum: o que muda é o número que estava errado
+na tela.
+
 **Textos em português acentuado, números no padrão brasileiro** (milhar com
 ponto, decimal com vírgula). Use os formatadores existentes; não escreva
 `f"{x:.1%}"` em texto de usuário.
@@ -414,7 +458,35 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   juro efetivamente pago. Pela DRE, 28% das 467 companhias de 2024 recebiam Kd
   acima de 25% — WACC inflado, valor derrubado, sem aviso. Com o juro pago, zero.
   Acima de `KD_MAXIMO_PLAUSIVEL` o Kd é descartado e montado sinteticamente.
-- **Múltiplos de EV e de equity não se misturam** na ponte da dívida.
+- **Múltiplos de EV e de equity não se misturam** na ponte da dívida — e isso
+  vale para o **múltiplo de saída**, que agora pode ser EV/EBITDA ou **P/L**
+  (`PremissasPerpetuidade.base_do_multiplo`). O múltiplo carrega a moeda da
+  conta em que incide: EV/EBITDA devolve valor de firma, P/L devolve valor de
+  equity, porque o lucro líquido já é depois do juro.
+
+  Somar um ao outro na mesma série não aparece como número absurdo — a ponte
+  roda, o valor sai, e a dívida foi contada duas vezes ou nenhuma.
+  `_terminal_na_moeda_do_fluxo` converte, e **avisa**. Medido no fixture, o caso
+  que já existia e ninguém tinha visto — **FCFE com múltiplo de EV/EBITDA**, em
+  que a dívida líquida nunca era subtraída — valia **50,7% do equity value**.
+
+  Duas coisas que a implementação exige e que são fáceis de errar:
+
+  1. **O P/L incide sobre o lucro líquido, não sobre o NOPAT.** O NOPAT é
+     desalavancado por construção (imposto sobre o EBIT, como o FCFF pede). No
+     fixture, NOPAT de 124,7 contra lucro de 72,4 — usar o NOPAT inflaria o
+     terminal em **72%**, e ainda antes de somar a dívida de volta.
+     `Projecao.lucro_liquido` é `NOPAT − juros × (1 − t)`; sem cronograma de
+     dívida o saldo fica no de partida, que é a única hipótese que os números na
+     mesa sustentam — e é declarada, porque a alternativa (fingir que não há
+     dívida) é hipótese pior, calada.
+  2. **A conversão usa a dívida líquida de hoje**, porque o modelo não projeta
+     balanço. Vira aviso na tela de Valor e linha no relatório, em vez de sumir
+     dentro do número.
+
+  A identidade que trava tudo isso: o P/L que produz o mesmo valor de firma que
+  um dado EV/EBITDA tem de chegar **exatamente** ao mesmo equity. Fecha com
+  diferença zero, e sem a conversão a igualdade se perde em silêncio.
 - **TSR decomposto pela identidade exata**, com o termo cruzado explícito:
   `g_lucro + g_múltiplo + (g_lucro × g_múltiplo) + dividendos`. A regra de bolso
   do mercado omite o termo cruzado.
@@ -806,7 +878,7 @@ não é verificação.
 
 ## Estado atual
 
-936 testes passando. Verificado de verdade: contas financeiras, identidades,
+950 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

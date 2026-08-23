@@ -250,3 +250,47 @@ def test_ligar_a_comparacao_nao_altera_premissa_nenhuma(focus_offline):
     assert teste.session_state["empresa"].macro.inflacao_brl == antes
     rotulos = {m.label for m in teste.metric}
     assert "Selic (Focus)" in rotulos, rotulos
+
+
+# ---------------------------------------------------------------------------
+# A base do multiplo de saida: EV/EBITDA ou P/L
+# ---------------------------------------------------------------------------
+
+
+def test_a_tela_oferece_as_duas_bases_do_multiplo():
+    """Depende do caso: uma industria sai por EV/EBITDA, outra sai por P/L."""
+    teste = _rodar(TELA_PREMISSAS)
+    escolha = next(r for r in teste.radio if r.label == "Múltiplo sobre")
+    assert escolha.options == ["EV/EBITDA", "P/L"]
+    assert escolha.value == "EV/EBITDA", "o padrao continua sendo o de firma"
+
+
+def test_o_rotulo_do_campo_acompanha_a_base_escolhida():
+    """"Multiplo de saida (EV/EBITDA)" com um P/L digitado dentro engana."""
+    teste = _rodar(
+        TELA_PREMISSAS,
+        {
+            "perpetuidade.metodo": "multiplo",
+            "perpetuidade.multiplo_saida": 12.0,
+            "perpetuidade.base_do_multiplo": "lucro",
+        },
+    )
+    rotulos = [n.label for n in teste.number_input]
+    assert "Múltiplo de saída (P/L)" in rotulos
+    assert "Múltiplo de saída (EV/EBITDA)" not in rotulos
+
+
+def test_a_base_escolhida_chega_ao_modelo():
+    """A escolha muda a moeda do valor terminal — ela e premissa, nao rotulo."""
+    teste = _rodar(TELA_PREMISSAS)
+    metodo = next(s for s in teste.selectbox if s.label == "Método")
+    metodo.set_value("Múltiplo de saída").run()
+    next(r for r in teste.radio if r.label == "Múltiplo sobre").set_value("P/L").run()
+    next(b for b in teste.button if b.label == "Aplicar perpetuidade").click().run()
+    assert not teste.exception, teste.exception
+
+    from app import estado  # noqa: F401  (o estado vive no processo do AppTest)
+
+    perpetuidade = teste.session_state["empresa"].perpetuidade
+    assert perpetuidade.metodo == "multiplo"
+    assert perpetuidade.base_do_multiplo == "lucro"

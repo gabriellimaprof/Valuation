@@ -45,6 +45,9 @@ class Projecao:
     juros: np.ndarray | None = None
     variacao_divida: np.ndarray | None = None
     fcfe: np.ndarray | None = None
+    # Lucro do acionista, depois do juro -- e nao o NOPAT. So o P/L de saida o
+    # usa hoje, e a diferenca entre os dois e exatamente a alavancagem.
+    lucro_liquido: np.ndarray | None = None
     prejuizo_fiscal_saldo: np.ndarray | None = None
 
     @property
@@ -215,6 +218,23 @@ def projetar(
         variacao_divida = np.diff(saldos, prepend=divida_inicial)
         fcfe = fcff - juros * (1 - t) + variacao_divida
 
+    # **O lucro liquido nao e o NOPAT.** O NOPAT e desalavancado -- imposto sobre
+    # o EBIT, como o FCFF pede --, e quem sai por P/L esta precificando o lucro
+    # do acionista, que e depois do juro. Numa empresa alavancada os dois nao se
+    # parecem: usar o NOPAT como lucro inflaria o valor terminal pelo juro que a
+    # divida cobra, e ainda por cima antes de somar a divida de volta.
+    #
+    # Sem cronograma de divida o saldo fica no de partida. E hipotese, e nao
+    # dado, mas e a unica que os numeros na mesa sustentam -- e o alternativo
+    # (fingir que a empresa nao tem divida) e uma hipotese pior, calada.
+    if juros is not None:
+        juros_do_lucro = juros
+    elif divida_inicial and custo_divida:
+        juros_do_lucro = np.full(n, float(divida_inicial) * float(custo_divida))
+    else:
+        juros_do_lucro = np.zeros(n)
+    lucro_liquido = nopat - juros_do_lucro * (1 - t)
+
     return Projecao(
         anos=anos,
         receita=receita,
@@ -232,5 +252,6 @@ def projetar(
         juros=juros,
         variacao_divida=variacao_divida,
         fcfe=fcfe,
+        lucro_liquido=lucro_liquido,
         prejuizo_fiscal_saldo=prejuizo_saldo,
     )

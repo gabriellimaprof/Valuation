@@ -104,8 +104,17 @@ def test_excel_reproduz_a_projecao(empresa_exemplo, tmp_path):
             )
 
 
-def test_excel_reproduz_multiplo_de_saida(empresa_exemplo, tmp_path):
-    """A perpetuidade por multiplo usa um ramo de formula diferente do Gordon."""
+@pytest.mark.parametrize(
+    ("base", "multiplo"), [("ebitda", 7.5), ("lucro", 12.0)]
+)
+def test_excel_reproduz_multiplo_de_saida(empresa_exemplo, tmp_path, base, multiplo):
+    """A perpetuidade por multiplo usa um ramo de formula diferente do Gordon.
+
+    E o P/L usa um terceiro: ele incide sobre o lucro liquido -- que a planilha
+    monta a partir do NOPAT e do juro -- e devolve valor de equity, entao a
+    formula tem de somar a divida liquida de volta. Planilha que calcula
+    diferente do motor e pior que planilha nenhuma.
+    """
     from openpyxl import load_workbook
 
     from valuation import substituir_varios
@@ -114,11 +123,12 @@ def test_excel_reproduz_multiplo_de_saida(empresa_exemplo, tmp_path):
         empresa_exemplo,
         {
             "perpetuidade.metodo": "multiplo",
-            "perpetuidade.multiplo_saida": 7.5,
+            "perpetuidade.multiplo_saida": multiplo,
+            "perpetuidade.base_do_multiplo": base,
         },
     )
     resultado = avaliar(empresa)
-    caminho = tmp_path / "multiplo.xlsx"
+    caminho = tmp_path / f"multiplo_{base}.xlsx"
     exportar_excel(resultado, caminho)
 
     valores = _valores_calculados(caminho)
@@ -126,6 +136,13 @@ def test_excel_reproduz_multiplo_de_saida(empresa_exemplo, tmp_path):
     linha = _localizar_linha(ws, "Valor terminal (fim do ano n)")
     obtido = _buscar(valores, "DCF", f"B{linha}", caminho)
     assert obtido == pytest.approx(resultado.dcf.valor_terminal, rel=1e-9)
+
+    if base == "lucro":
+        linha_lucro = _localizar_linha(ws, "Lucro liquido do ano n (NOPAT - juros apos IR)")
+        na_planilha = _buscar(valores, "DCF", f"B{linha_lucro}", caminho)
+        assert na_planilha == pytest.approx(
+            float(resultado.projecao.lucro_liquido[-1]), rel=1e-9
+        )
 
 
 # ---------------------------------------------------------------------------
