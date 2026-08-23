@@ -122,6 +122,7 @@ def _fluxos_do_acionista(resultado):
     colunas[3].metric(
         "Horizonte", f"{resultado.projecao.horizonte} anos",
         help="Igual ao horizonte da projeção, definido na tela de Premissas.",
+        border=True,
     )
 
     empresa = estado.empresa()
@@ -198,14 +199,14 @@ def _decompor(resultado, acionista):
         )
 
     if modo == "dcf" and multiplo_saida is not None:
-        colunas[2].metric("P/L de saída implícito", formatar(multiplo_saida, "multiplo"))
+        colunas[2].metric("P/L de saída implícito", formatar(multiplo_saida, "multiplo"), border=True)
         st.caption(
             "O valor terminal do DCF **é** o valor da empresa no fim do horizonte. "
             "Sair por esse múltiplo mantém o DCF e o TSR contando a mesma história — "
             "qualquer múltiplo diferente é uma aposta sobre o mercado, não sobre a empresa."
         )
     elif modo == "entrada":
-        colunas[2].metric("P/L de saída", formatar(multiplo_entrada, "multiplo"))
+        colunas[2].metric("P/L de saída", formatar(multiplo_entrada, "multiplo"), border=True)
 
     try:
         return decompor_tsr(
@@ -309,10 +310,12 @@ def _explicar_divergencia(decomposicao, resultado, ke: float) -> None:
         if np.isfinite(alavancagem_efetiva):
             colunas = st.columns(2)
             colunas[0].metric(
-                "D/E alvo usado no WACC", formatar(alavancagem_alvo, "numero")
+                "D/E alvo usado no WACC", formatar(alavancagem_alvo, "numero"),
+                border=True,
             )
             colunas[1].metric(
-                "D/E efetivo neste valuation", formatar(alavancagem_efetiva, "numero")
+                "D/E efetivo neste valuation", formatar(alavancagem_efetiva, "numero"),
+                border=True,
             )
             if abs(alavancagem_efetiva - alavancagem_alvo) > 0.15:
                 st.warning(

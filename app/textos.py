@@ -154,60 +154,6 @@ CONCEITOS: dict[str, str] = {
 }
 
 
-PASSOS: tuple[tuple[str, str, str], ...] = (
-    (
-        "Dados",
-        "Importe as demonstrações ou preencha à mão",
-        "Tudo começa no histórico. Sem ele, as premissas ficam sem âncora.",
-    ),
-    (
-        "Histórico",
-        "Entenda o que a empresa entregou",
-        "Margens, retorno sobre o capital e reinvestimento dos últimos anos.",
-    ),
-    (
-        "Premissas",
-        "Projete o futuro a partir do passado",
-        "Crescimento, margem e intensidade de capital, ano a ano.",
-    ),
-    (
-        "Custo de capital",
-        "Defina a taxa de desconto",
-        "Beta do setor, risco-país e estrutura de capital alvo.",
-    ),
-    (
-        "Valor",
-        "Veja o resultado e de onde ele vem",
-        "Fluxos descontados, perpetuidade e a ponte até o acionista.",
-    ),
-    (
-        "Retorno esperado",
-        "Descubra a TIR e de onde ela vem",
-        "TSR aberto em crescimento de lucro, dividendo e re-rating de múltiplo.",
-    ),
-    (
-        "Sensibilidade",
-        "Descubra a faixa, não o ponto",
-        "Como o valor reage quando as premissas mudam.",
-    ),
-    (
-        "Múltiplos",
-        "Confronte com o mercado",
-        "O que empresas comparáveis sugerem para esta.",
-    ),
-    (
-        "Diagnóstico",
-        "Deixe o app criticar seu modelo",
-        "Verificações de consistência antes de defender o número.",
-    ),
-    (
-        "Exportar",
-        "Leve para o Excel",
-        "Modelo com fórmulas vivas, pronto para revisão.",
-    ),
-)
-
-
 BOAS_VINDAS = """
 Este app faz valuation de empresas do começo ao fim: importa as demonstrações
 financeiras, analisa o histórico, projeta o futuro, monta o custo de capital,

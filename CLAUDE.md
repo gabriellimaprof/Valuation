@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 950 testes
+pytest                        # 965 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -433,6 +433,75 @@ na tela.
 **Textos em português acentuado, números no padrão brasileiro** (milhar com
 ponto, decimal com vírgula). Use os formatadores existentes; não escreva
 `f"{x:.1%}"` em texto de usuário.
+
+## O revamp de UI/UX, e o que o benchmark mostrou
+
+Comparado com stockanalysis.com, Koyfin, Fiscal.ai e com as práticas de
+tipografia financeira (algarismo tabular, número à direita, cor reservada para
+estado). Três achados, e os três estavam no app.
+
+**A identidade visual vem dos tokens nativos, não de CSS por cima.** O Streamlit
+1.61 expõe um sistema de design completo — `[theme.light]` e `[theme.dark]`
+separados, fonte, escala de título, raio, borda, cores de gráfico —, e usá-lo
+alcança todo componente, inclusive os que o CSS do app não pega. Sobra para o
+CSS o que token nenhum resolve: medida de linha, os blocos próprios e densidade.
+
+O achado mais caro: **a cor primária era o vermelho padrão do Streamlit**. Ele
+pintava a aba ativa, o radio e o botão enquanto todo gráfico usava azul — a tela
+dizia duas coisas diferentes sobre qual é "a cor daqui". Junto vieram Inter
+(algarismo tabular, que é o que faz coluna de número alinhar), h1 de 2,75rem
+para 2rem — tamanho de landing page numa tela de análise empurra o dado para
+baixo da dobra — e `chartCategoricalColors` apontando para a paleta, para um
+`st.line_chart` cru não discordar do Plotly do app.
+
+`tests/test_tema.py` trava as duas cópias juntas: cor do `config.toml` e cor da
+`Paleta` têm de bater, nos dois modos. **A paleta continua não se trocando por
+gosto** — o teste é o que impede que ela se troque por descuido.
+
+**O caminho é uma lista só, e virou navegável.** A ordem das doze telas estava
+em três lugares — o menu, a lista do Início e a cabeça de quem usa — e quem
+terminava uma tela voltava ao menu para lembrar qual era a próxima.
+`navegacao.PASSOS` é a fonte única: dela saem as páginas do `st.navigation`, os
+cartões do Início (cada um linkando para a própria etapa) e o rodapé "próximo
+passo", que mora no `main` depois do `run` porque a mesma peça em doze cópias
+diverge na primeira mudança. `textos.PASSOS` foi apagada.
+
+Ícones do conjunto Material no lugar de emoji: emoji renderiza com a fonte do
+sistema operacional, muda de desenho entre Windows e macOS, não herda a cor do
+tema e desalinha da altura do texto.
+
+**Número de demonstração se lê à direita.** A DRE gerencial era `st.dataframe`,
+que desenha em canvas e alinha texto à esquerda: "13.347,4" e "9.394,2" não
+compartilhavam posição de casa decimal, e comparar dois anos virava trabalho de
+leitura. `componentes.tabela_financeira` é a mesma peça da árvore publicada —
+número à direita em algarismo tabular, subtotal em negrito com fundo, negativo
+em vermelho ao lado do sinal que já estava lá (reforço redundante, não a única
+pista). Efeito colateral: o texto passa a existir no DOM, e a varredura do
+navegador leu 4.360 caracteres na tela de Histórico contra 2.824 antes.
+
+**Dois defeitos saíram do revamp, e nenhum era de layout:**
+
+- **A unidade dentro do número truncava o número.** "930,0 R$ milhões" não cabe
+  num cartão e o Streamlit corta em "930,0 R$ mil…" — pior que sem unidade,
+  porque parece um número inteiro. A unidade foi para o rótulo, abreviada
+  ("R$ mi"). É a convenção da própria demonstração: unidade no cabeçalho, uma
+  vez. **E eu repeti o mesmo erro dentro do componente novo** — a primeira
+  versão de `tabela_financeira` escrevia "R$ milhões" nas 154 células e cortava
+  três anos de coluna. Há teste travando as duas pontas.
+- **A barra lateral dizia "Nova empresa" com a WEG importada.** E `empresa.nome`
+  alimenta o título da planilha e o cabeçalho do relatório: o app **exportava**
+  um valuation da WEG assinado como "Nova empresa". `definir_demonstracoes`
+  passa a adotar o nome da companhia, e só por cima do nome padrão — quem
+  renomeou à mão escolheu aquele nome.
+
+Os testes de tela deixaram de pinar o rótulo inteiro da métrica: o que eles
+verificam é **que a métrica existe**, não como a unidade é escrita.
+
+**Não verificado:** o modo escuro foi montado a partir dos mesmos tokens e tem
+teste de coerência de cor, mas não foi olhado no navegador — a varredura roda no
+tema claro. E a fonte é remota (Google Fonts), com fallback declarado para
+`sans-serif`: sem rede o app cai na fonte do sistema, o que degrada bem mas
+muda a métrica do texto.
 
 **Gráficos** seguem `app/graficos.py`: nenhum eixo secundário, cor por
 identidade em ordem fixa, escala sequencial de um tom só, tabela de dados ao
@@ -878,7 +947,7 @@ não é verificação.
 
 ## Estado atual
 
-950 testes passando. Verificado de verdade: contas financeiras, identidades,
+965 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

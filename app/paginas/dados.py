@@ -155,12 +155,13 @@ def _mostrar_comparacao(resultado, nome_antigo: str) -> None:
 
     unidade = estado.empresa().unidade
     colunas = st.columns(3)
-    colunas[0].metric(f"{nome_antigo} (guardado)", formatar(resultado.valor_antes, "moeda", unidade))
-    colunas[1].metric("Aberto agora", formatar(resultado.valor_depois, "moeda", unidade))
+    colunas[0].metric(f"{nome_antigo} (guardado)", formatar(resultado.valor_antes, "moeda", unidade), border=True)
+    colunas[1].metric("Aberto agora", formatar(resultado.valor_depois, "moeda", unidade), border=True)
     colunas[2].metric(
         "Variação",
         formatar(resultado.variacao, "moeda", unidade),
         delta=formatar(resultado.variacao_relativa, "pct"),
+        border=True,
     )
 
     for aviso in resultado.avisos:
@@ -255,14 +256,16 @@ def _retomar() -> None:
         f"{len(projeto.demonstracoes.anos)} anos"
         if projeto.demonstracoes is not None
         else "sem histórico",
+        border=True,
     )
     colunas[1].metric(
         "Horizonte",
         f"{projeto.empresa.operacionais.horizonte} anos"
         if projeto.empresa.operacionais
         else "—",
+        border=True,
     )
-    colunas[2].metric("Comparáveis", len(projeto.comparaveis))
+    colunas[2].metric("Comparáveis", len(projeto.comparaveis), border=True)
 
     st.warning(
         "Carregar substitui o que está aberto agora. Se houver trabalho não salvo "
@@ -342,9 +345,9 @@ def _cvm() -> None:
     companhia = rotulos[escolhido]
 
     colunas = st.columns(3)
-    colunas[0].metric("Código CVM", companhia.codigo_cvm)
-    colunas[1].metric("Setor", companhia.setor or "—")
-    colunas[2].metric("Mercado", companhia.mercado or "—")
+    colunas[0].metric("Código CVM", companhia.codigo_cvm, border=True)
+    colunas[1].metric("Setor", companhia.setor or "—", border=True)
+    colunas[2].metric("Mercado", companhia.mercado or "—", border=True)
 
     anos_ok = _anos_cvm()
     # De 2019 ate o ultimo exercicio com dado. O arquivo do ano corrente existe

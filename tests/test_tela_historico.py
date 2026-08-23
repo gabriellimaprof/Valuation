@@ -153,17 +153,44 @@ def test_a_aba_de_dre_e_a_primeira(weg):
     assert rotulos[0] == "DRE"
 
 
+
+def _dre_na_tela(teste) -> str:
+    """O HTML da DRE gerencial desenhada, ou string vazia se ela nao apareceu."""
+    for elemento in teste.get("html"):
+        corpo = elemento.body or ""
+        if "= EBITDA ajustado" in corpo:
+            return corpo
+    return ""
+
+
+def _rotulos_da_tabela(corpo: str) -> list[str]:
+    """Os rotulos da primeira coluna, na ordem em que a tabela os desenhou.
+
+    Passa pelo ``unescape`` porque a tabela escapa o que precisa ser escapado --
+    "SG&A" viaja como "SG&amp;A", e comparar sem desfazer isso reprovaria a
+    tabela por ela estar certa.
+    """
+    import html as _html
+
+    return [
+        _html.unescape(pedaco.split("</td>")[0])
+        for pedaco in corpo.split('<td class="conta">')[1:]
+    ]
+
+
 def test_a_tela_mostra_a_ponte_na_ordem_da_especificacao(weg):
     teste = _rodar(weg)
     dre = weg.dre_gerencial()
     assert list(dre.index)[:3] == ["Receita líquida", "(−) Custos", "= Lucro bruto"]
 
-    # A tabela exibida e a mesma que o motor monta, so formatada.
-    exibidas = [
-        quadro for quadro in teste.dataframe if "= EBITDA ajustado" in list(quadro.value.index)
-    ]
-    assert exibidas, "a DRE gerencial nao chegou a tela"
-    assert list(exibidas[0].value.index) == list(dre.index)
+    # A tabela exibida e a mesma que o motor monta, so formatada. Ela deixou de
+    # ser `st.dataframe` e virou HTML: numero de demonstracao se le a direita,
+    # em algarismo tabular, com o subtotal em negrito -- e o canvas do Streamlit
+    # nao faz nada disso. Como o texto agora existe no DOM, da para conferir a
+    # ordem da ponte aqui, o que dentro do canvas nunca deu.
+    tabela = _dre_na_tela(teste)
+    assert tabela, "a DRE gerencial nao chegou a tela"
+    assert _rotulos_da_tabela(tabela) == list(dre.index)
 
 
 def test_a_conferencia_aparece_junto_e_nao_escondida(weg):
@@ -194,11 +221,11 @@ def test_a_dre_em_percentual_da_receita(weg):
     radios[0].set_value("% da receita líquida").run()
     assert not teste.exception, [str(e.value) for e in teste.exception]
 
-    exibidas = [
-        quadro for quadro in teste.dataframe if "= EBITDA ajustado" in list(quadro.value.index)
-    ]
-    assert exibidas
-    assert exibidas[0].value.loc["Receita líquida"].iloc[0].startswith("100,0%")
+    tabela = _dre_na_tela(teste)
+    assert tabela
+    primeira = tabela.split("<tr class=")[1]
+    assert "Receita líquida" in primeira
+    assert "100,0%" in primeira
 
 
 def test_a_tela_diz_que_o_ebitda_ajustado_nao_e_o_do_release(weg):

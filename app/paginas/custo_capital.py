@@ -85,7 +85,7 @@ def _risco_pais_de_mercado(empresa) -> None:
         help="Longo o bastante para não depender do ciclo de juros, curto o bastante "
         "para ter liquidez.",
     )
-    colunas[1].metric("Risco-país no modelo", formatar(premissas.risco_pais, "pct2"))
+    colunas[1].metric("Risco-país no modelo", formatar(premissas.risco_pais, "pct2"), border=True)
 
     if not colunas[2].button("Medir agora", type="primary"):
         st.caption(

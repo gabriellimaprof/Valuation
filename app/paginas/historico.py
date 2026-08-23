@@ -16,6 +16,7 @@ from ..componentes import (
     formatar,
     grafico,
     metrica,
+    tabela_financeira,
     tabela_formatada,
 )
 from ..graficos import (
@@ -143,30 +144,14 @@ def _dre_gerencial(dfs) -> None:
 
     subtotais = set(dfs.SUBTOTAIS_DRE)
 
-    def destacar(linha):
-        return [
-            "font-weight: 700" if linha.name in subtotais else "" for _ in linha
-        ]
-
+    # A unidade fica no rótulo da coluna e não em cada célula: com 22 linhas e 7
+    # anos, repeti-la são 154 vezes o mesmo texto empurrando o número para fora
+    # da largura útil. Visto no navegador, não no teste.
     if base == "Valores":
-        # A unidade fica no rótulo da coluna e não em cada célula: com 22 linhas
-        # e 7 anos, repeti-la são 154 vezes o mesmo texto empurrando o número
-        # para fora da largura útil. Visto no navegador, não no teste.
-        formatada = tabela_formatada(dre, "moeda")
-        st.caption(f"Valores em {dfs.unidade}.")
+        st.html(tabela_financeira(dre, subtotais, "moeda", dfs.unidade))
     else:
         receita = dre.loc["Receita líquida"].replace(0, np.nan)
-        formatada = tabela_formatada(dre.div(receita, axis=1), "pct")
-
-    st.dataframe(
-        formatada.style.apply(destacar, axis=1),
-        width="stretch",
-        # Sem isto o Streamlit corta o rótulo: "(+/−) Equivalência patrimonial"
-        # virava "(+/−) Equivalência" e "(−) Itens não recorrentes" virava
-        # "(−) Itens não reco" -- justamente as duas linhas que o leitor precisa
-        # distinguir das vizinhas.
-        column_config={"_index": st.column_config.Column("Linha", width="medium")},
-    )
+        st.html(tabela_financeira(dre.div(receita, axis=1), subtotais, "pct"))
 
     _conferencia_da_dre(dfs)
 

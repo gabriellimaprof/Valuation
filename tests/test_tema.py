@@ -110,3 +110,56 @@ def test_numero_do_passo_segue_a_ordem_da_lista():
     assert numero(PASSOS[-1].chave) == len(PASSOS) - 1
     with pytest.raises(KeyError):
         numero("nao-existe")
+
+
+# ---------------------------------------------------------------------------
+# A tabela financeira
+# ---------------------------------------------------------------------------
+
+
+def test_a_unidade_nao_se_repete_em_cada_celula():
+    """O erro que a arvore publicada ja tinha custado, e que eu repeti aqui.
+
+    Numa DRE de 22 linhas por 7 anos, "R$ milhoes" em cada celula sao 154 vezes
+    o mesmo texto -- e o que ele empurra para fora da largura util e o numero.
+    Foi assim que a tabela antiga perdeu tres anos de coluna, e foi assim que a
+    primeira versao deste componente saiu.
+    """
+    import pandas as pd
+
+    from app.componentes import tabela_financeira
+
+    tabela = pd.DataFrame(
+        {2024: [1000.0, -400.0], 2025: [1200.0, -450.0]},
+        index=["Receita líquida", "(−) Custos"],
+    )
+    html = tabela_financeira(tabela, {"Receita líquida"}, "moeda", "R$ milhões")
+
+    corpo = html.split("</thead>")[1]
+    assert "R$" not in corpo, "a unidade vazou para dentro das celulas"
+    # E aparece uma vez so, no cabecalho da primeira coluna.
+    assert html.split("</thead>")[0].count("R$ mi") == 1
+
+
+def test_o_subtotal_sai_com_peso_diferente_do_item():
+    import pandas as pd
+
+    from app.componentes import tabela_financeira
+
+    tabela = pd.DataFrame(
+        {2024: [1000.0, -400.0]}, index=["= Lucro bruto", "(−) Custos"]
+    )
+    html = tabela_financeira(tabela, {"= Lucro bruto"}, "moeda")
+    assert '<tr class="n2">' in html, "o subtotal nao ganhou destaque"
+    assert '<tr class="n3">' in html, "o item comum nao ficou recessivo"
+
+
+def test_o_negativo_ganha_marca_alem_do_sinal():
+    import pandas as pd
+
+    from app.componentes import tabela_financeira
+
+    tabela = pd.DataFrame({2024: [-400.0, 0.0]}, index=["(−) Custos", "Vazio"])
+    html = tabela_financeira(tabela, formato="moeda")
+    assert 'class="negativo"' in html
+    assert 'class="nulo"' in html

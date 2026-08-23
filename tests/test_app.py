@@ -27,7 +27,7 @@ from app.graficos import (
     roic_versus_wacc,
 )
 from app.tema import CLARO, ESCURO
-from app.textos import CONCEITOS, PASSOS
+from app.textos import CONCEITOS
 
 # ---------------------------------------------------------------------------
 # Formatacao
@@ -212,14 +212,19 @@ def test_conceitos_explicam_e_nao_so_definem():
 
 
 def test_passos_cobrem_o_fluxo():
-    """O roteiro da tela inicial precisa acompanhar as telas que existem."""
-    from app.main import main  # noqa: F401 - garante que o modulo importa
+    """O roteiro da tela inicial e o menu sao a mesma lista.
 
-    nomes = [nome for nome, _, _ in PASSOS]
-    assert "Retorno esperado" in nomes
-    assert len(PASSOS) == 10
-    for nome, resumo, detalhe in PASSOS:
-        assert nome and resumo and detalhe
+    Eram duas -- `textos.PASSOS` desenhava o Inicio e o `main` montava o menu --,
+    e nada obrigava as duas a concordarem. Agora ha uma so, em `navegacao`, e o
+    que se verifica e que ela cobre as telas que o app de fato tem.
+    """
+    from app.main import main  # noqa: F401 - garante que o modulo importa
+    from app.navegacao import PASSOS
+
+    titulos = [passo.titulo for passo in PASSOS]
+    assert "Retorno esperado" in titulos
+    assert titulos[0] == "Início", "o caminho comeca no Inicio"
+    assert len(PASSOS) == 12
 
 
 # ---------------------------------------------------------------------------

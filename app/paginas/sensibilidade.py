@@ -341,6 +341,7 @@ def _cenarios_macro(empresa) -> None:
             nome,
             formatar(valor, "moeda", empresa.unidade),
             delta=formatar(variacao, "pct") if np.isfinite(variacao) else None,
+            border=True,
         )
 
     st.caption(_leitura_do_estresse(empresa, variacoes, nome_ipca, nome_pib, nome_risco))
@@ -517,4 +518,5 @@ def _monte_carlo(resultado) -> None:
     st.metric(
         "Chance de o valor superar esse preço",
         formatar(simulacao.probabilidade_acima(preco), "pct"),
+        border=True,
     )

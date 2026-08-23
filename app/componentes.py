@@ -308,6 +308,64 @@ def tabela_de_demonstracao(linhas: pd.DataFrame, unidade: str = "") -> str:
     )
 
 
+def _celula_de_numero(valor, formato: str) -> str:
+    """Uma celula de numero: alinhada a direita, negativo marcado, zero recessivo.
+
+    **Sem unidade.** Ela mora no cabecalho da coluna, uma vez. Repeti-la aqui sao
+    154 vezes o mesmo texto numa DRE de 22 linhas por 7 anos, e o que ele empurra
+    para fora da largura util e o numero -- foi assim que a tabela antiga perdeu
+    tres anos de coluna. E o erro e facil de repetir: escrevi este componente e
+    o cometi de novo na primeira versao.
+    """
+    vazio = valor is None or (isinstance(valor, float) and not np.isfinite(valor))
+    classe = "nulo" if vazio or valor == 0 else ""
+    if not vazio and valor < 0:
+        classe = "negativo"
+    atributo = f' class="{classe}"' if classe else ""
+    return f"<td{atributo}>{formatar(valor, formato)}</td>"
+
+
+def tabela_financeira(
+    tabela: pd.DataFrame,
+    subtotais: set[str] | None = None,
+    formato: str = "moeda",
+    unidade: str = "",
+) -> str:
+    """Uma demonstracao em forma de tabela: rotulo a esquerda, anos a direita.
+
+    Serve a DRE gerencial e qualquer outra tabela de linha contabil por ano. A
+    diferenca para o ``st.dataframe`` que estava aqui nao e enfeite:
+
+    * **numero a direita, em algarismo tabular.** Alinhado a esquerda, como o
+      canvas do Streamlit desenha, "13.347,4" e "9.394,2" nao compartilham
+      posicao de casa decimal e comparar dois anos vira trabalho de leitura;
+    * **subtotal em negrito e com fundo**, para a ponte se ler como ponte -- o
+      olho acha "= EBITDA" sem percorrer as 22 linhas;
+    * **negativo em vermelho** junto do sinal de menos, que ja estava la: e
+      reforco redundante, e nao a unica pista.
+
+    ``subtotais`` sao os rotulos que fecham um bloco. Sem eles a tabela sai toda
+    no mesmo peso, o que e o comportamento certo para uma tabela sem hierarquia.
+    """
+    subtotais = subtotais or set()
+    colunas = list(tabela.columns)
+    cabecalho = "".join(f"<th>{_texto_seguro(c)}</th>" for c in colunas)
+
+    corpo = []
+    for rotulo, linha in tabela.iterrows():
+        nivel = "n2" if rotulo in subtotais else "n3"
+        celulas = [f'<td class="conta">{_texto_seguro(rotulo)}</td>']
+        celulas += [_celula_de_numero(linha[c], formato) for c in colunas]
+        corpo.append(f'<tr class="{nivel}">{"".join(celulas)}</tr>')
+
+    rotulo_coluna = f"Linha ({unidade_curta(unidade)})" if unidade else "Linha"
+    return (
+        '<div class="df-publicada"><table><thead><tr>'
+        f'<th class="conta">{_texto_seguro(rotulo_coluna)}</th>{cabecalho}'
+        f'</tr></thead><tbody>{"".join(corpo)}</tbody></table></div>'
+    )
+
+
 def aviso_sem_modelo(erro: str | None) -> None:
     """Mensagem padrao quando as premissas nao fecham."""
     st.error(
@@ -325,9 +383,9 @@ def aviso_sem_modelo(erro: str | None) -> None:
 def barra_de_severidade(erros: int, alertas: int, informacoes: int) -> None:
     """Resumo do diagnostico em tres numeros."""
     colunas = st.columns(3)
-    colunas[0].metric("🔴 Erros", erros)
-    colunas[1].metric("🟡 Alertas", alertas)
-    colunas[2].metric("🔵 Observações", informacoes)
+    colunas[0].metric("🔴 Erros", erros, border=True)
+    colunas[1].metric("🟡 Alertas", alertas, border=True)
+    colunas[2].metric("🔵 Observações", informacoes, border=True)
 
 
 def linha_de_premissas_anuais(

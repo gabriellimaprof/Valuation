@@ -339,7 +339,7 @@ def _perpetuidade(empresa) -> None:
     st.markdown("**Economia de longo prazo** — os dois números que formam o teto do g")
     colunas = st.columns(4)
 
-    colunas[0].metric("IPCA de longo prazo", formatar(ipca, "pct"))
+    colunas[0].metric("IPCA de longo prazo", formatar(ipca, "pct"), border=True)
     colunas[0].caption("Editável em **Custo de capital** — de lá ele também entra no WACC.")
 
     pib_real = colunas[1].number_input(
@@ -354,7 +354,7 @@ def _perpetuidade(empresa) -> None:
     )
 
     pib_nominal = (1 + ipca) * (1 + pib_real / 100) - 1
-    colunas[2].metric("PIB nominal", formatar(pib_nominal, "pct"))
+    colunas[2].metric("PIB nominal", formatar(pib_nominal, "pct"), border=True)
     colunas[2].caption("Os dois compostos, não somados.")
 
     previsto = {"livre": None, "ipca": ipca, "pib_nominal": pib_nominal}[ancora]
@@ -452,15 +452,16 @@ def _confrontar_com_o_focus(ipca: float, pib_real: float) -> None:
         ),
     ):
         if rotulo == "Câmbio":
-            coluna.metric("Câmbio (Focus)", formatar(no_focus, "numero"))
+            coluna.metric("Câmbio (Focus)", formatar(no_focus, "numero"), border=True)
         elif no_modelo is None:
-            coluna.metric(f"{rotulo} (Focus)", formatar(no_focus, "pct"))
+            coluna.metric(f"{rotulo} (Focus)", formatar(no_focus, "pct"), border=True)
         else:
             coluna.metric(
                 rotulo,
                 formatar(no_modelo, "pct"),
                 delta=f"{formatar(no_modelo - no_focus, 'pct')} vs. Focus",
                 delta_color="off",
+                border=True,
             )
         coluna.caption(f"{casas} casas responderam")
 
