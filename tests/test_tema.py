@@ -282,13 +282,8 @@ def test_todo_indicador_que_o_balizador_cita_tem_distribuicao():
         "ROE",
         "Divida bruta / Patrimonio liquido",
     }
-    faltando = {i for i in citados if i not in referencias.BASE}
-    # A exceção fica **declarada**, e não escondida numa lista de asserts que
-    # cobre só o que já existe: o balizador degrada mostrando o histórico da
-    # empresa e omitindo o percentil, o que é aceitável — mas tem de ser
-    # deliberado. Sair daqui quando a medição do arrendamento fechar.
-    sem_distribuicao_ainda = {"Arrendamento / Divida bruta"}
-    assert faltando <= sem_distribuicao_ainda, sorted(faltando - sem_distribuicao_ainda)
+    faltando = sorted(i for i in citados if i not in referencias.BASE)
+    assert not faltando, faltando
 
 
 def test_o_corte_de_divida_pl_continua_no_quartil_alto():

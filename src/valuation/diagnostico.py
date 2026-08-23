@@ -100,6 +100,12 @@ JUROS_CAPITALIZADOS = 0.100
 # Medido: o peso do aluguel no EBITDA tem P75 de **0,206** nas 297 companhias que
 # publicam o desembolso, e o corte acusa 26,3%. E o quartil, por acaso e nao por
 # projeto -- mas agora esta medido.
+# Reconferido na safra 2021-2025 (n=417): P75 = 0,227, e o corte de 0,20 cai no
+# **percentil 71**. Segue sendo o quartil alto, como foi calibrado.
+#
+# A distribuicao e bimodal na pratica -- P10 = 0 e P95 = 1,0 --, entao a mediana
+# de 4,1% engana: ou a companhia quase nao tem arrendamento, ou ele **e** a
+# divida dela. E isso que faz o corte valer a pena.
 LEASING_RELEVANTE = 0.20
 
 

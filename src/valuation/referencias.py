@@ -166,6 +166,11 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # de incorporadora. Num intervalo desses, "4,5%" nao se le sozinho.
     "Depreciacao / Receita": (394, (0.005, 0.010, 0.025, 0.059, 0.128, 0.202, 0.271)),
     "Capital de giro / Receita": (418, (-0.068, -0.021, 0.048, 0.144, 0.307, 0.607, 1.138)),
+    # O arrendamento do IFRS 16 como fracao da divida bruta. A distribuicao e
+    # **bimodal na pratica**: P10 = 0 (uma em cada dez nao tem arrendamento
+    # nenhum) e P95 = 1,0 (em uma em cada vinte, o arrendamento **e** toda a
+    # divida). E por isso que a mediana de 4,1% engana quem so olha ela.
+    "Arrendamento / Divida bruta": (417, (0.000, 0.000, 0.003, 0.041, 0.227, 0.584, 1.000)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de
