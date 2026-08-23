@@ -257,12 +257,43 @@ def test_ligar_a_comparacao_nao_altera_premissa_nenhuma(focus_offline):
 # ---------------------------------------------------------------------------
 
 
+def _escolher_multiplo(teste):
+    """Troca o metodo para "Multiplo de saida" e devolve a tela redesenhada.
+
+    Os campos do multiplo **so existem quando ele e o metodo escolhido**: a tela
+    desenhava os dois caminhos ao mesmo tempo, com o nao escolhido em cinza, e
+    campo desabilitado nao ajuda quem nao vai usa-lo.
+    """
+    metodo = next(r for r in teste.radio if r.label == "Método")
+    metodo.set_value("Múltiplo de saída").run()
+    assert not teste.exception, teste.exception
+    return teste
+
+
 def test_a_tela_oferece_as_duas_bases_do_multiplo():
     """Depende do caso: uma industria sai por EV/EBITDA, outra sai por P/L."""
-    teste = _rodar(TELA_PREMISSAS)
+    teste = _escolher_multiplo(_rodar(TELA_PREMISSAS))
     escolha = next(r for r in teste.radio if r.label == "Múltiplo sobre")
     assert escolha.options == ["EV/EBITDA", "P/L"]
     assert escolha.value == "EV/EBITDA", "o padrao continua sendo o de firma"
+
+
+def test_so_os_campos_do_metodo_escolhido_aparecem():
+    """Oito controles a vista para quatro decisoes, metade deles inertes.
+
+    Era a maior parte do "e muita opcao" da queixa: a tela desenhava Gordon e
+    multiplo ao mesmo tempo, com o nao escolhido em cinza.
+    """
+    teste = _rodar(TELA_PREMISSAS)
+    rotulos = {r.label for r in teste.radio}
+    assert "Múltiplo sobre" not in rotulos, "campo do multiplo apareceu no Gordon"
+    assert any(s.label == "De onde vem o g" for s in teste.selectbox)
+
+    teste = _escolher_multiplo(teste)
+    assert "Múltiplo sobre" in {r.label for r in teste.radio}
+    assert not any(s.label == "De onde vem o g" for s in teste.selectbox), (
+        "campo do Gordon sobreviveu ao multiplo"
+    )
 
 
 def test_o_rotulo_do_campo_acompanha_a_base_escolhida():
@@ -282,9 +313,7 @@ def test_o_rotulo_do_campo_acompanha_a_base_escolhida():
 
 def test_a_base_escolhida_chega_ao_modelo():
     """A escolha muda a moeda do valor terminal — ela e premissa, nao rotulo."""
-    teste = _rodar(TELA_PREMISSAS)
-    metodo = next(s for s in teste.selectbox if s.label == "Método")
-    metodo.set_value("Múltiplo de saída").run()
+    teste = _escolher_multiplo(_rodar(TELA_PREMISSAS))
     next(r for r in teste.radio if r.label == "Múltiplo sobre").set_value("P/L").run()
     next(b for b in teste.button if b.label == "Aplicar perpetuidade").click().run()
     assert not teste.exception, teste.exception

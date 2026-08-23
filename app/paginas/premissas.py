@@ -294,187 +294,50 @@ def _balizadores_da_projecao(editada, analise, tem_arrendamento: bool) -> None:
     )
 
 def _perpetuidade(empresa, analise=None) -> None:
-    st.subheader("Perpetuidade")
+    """A perpetuidade, mostrando **só os campos do método escolhido**.
+
+    A tela desenhava os dois caminhos ao mesmo tempo — Gordon e múltiplo de
+    saída — com o não escolhido em cinza. Oito controles à vista para quatro
+    decisões, e metade deles inertes: era a maior parte do "é muita opção" da
+    queixa. Campo desabilitado não ajuda quem não vai usá-lo; ele só ocupa a
+    largura de que o campo usado precisava.
+    """
+    secao("Perpetuidade")
     conceito("perpetuidade", "A parte do modelo que mais pesa no valor")
 
     perpetuidade = empresa.perpetuidade
     ipca = empresa.macro.inflacao_brl
-    colunas = st.columns(4)
 
-    metodo = colunas[0].selectbox(
+    metodo = st.radio(
         "Método",
         ["Crescimento perpétuo (Gordon)", "Múltiplo de saída"],
         index=0 if perpetuidade.metodo == "gordon" else 1,
+        horizontal=True,
     )
     usar_gordon = metodo.startswith("Crescimento")
 
-    rotulos = list(ANCORAS)
-    ancora = ANCORAS[
-        colunas[1].selectbox(
-            "De onde vem o g",
-            rotulos,
-            index=rotulos.index(
-                next(r for r, v in ANCORAS.items() if v == perpetuidade.ancora)
-            ),
-            disabled=not usar_gordon,
-            help=(
-                "Ancorado, o crescimento perpétuo deixa de ser um número solto: "
-                "estressar a macro passa a movê-lo junto. **IPCA** supõe crescimento "
-                "real zero para sempre — a empresa acompanha os preços e nada mais. "
-                "**PIB nominal** é o teto lógico: acima dele, a empresa acabaria "
-                "maior que o país."
-            ),
-        )
-    ]
+    pib_real, pib_nominal = _economia_de_longo_prazo(empresa, ipca)
 
-    # **O retorno da normalização depende de qual fluxo se desconta.** Crescer
-    # para sempre exige reinvestir para sempre, e a taxa é `g / retorno` — mas o
-    # retorno tem de descrever o mesmo capital que o fluxo remunera: ROIC para o
-    # FCFF, ROE para o FCFE. Rotular sempre "ROIC" fazia o campo pedir uma coisa
-    # e o modelo usar outra.
-    para_o_acionista = estado.config()["tipo_fluxo"] == "fcfe"
-    sigla = "ROE" if para_o_acionista else "ROIC"
+    base_escolhida = perpetuidade.base_do_multiplo
+    multiplo = perpetuidade.multiplo_saida
+    ancora, crescimento, previsto = perpetuidade.ancora, 0.0, None
+    normalizar = roic_real = para_o_acionista = False
+    roic = 0.0
 
-    normalizar = colunas[2].checkbox(
-        "Normalizar reinvestimento",
-        value=(perpetuidade.roic_perpetuidade is not None)
-        or (perpetuidade.roe_perpetuidade is not None),
-        disabled=not usar_gordon,
-        help=f"Desconta do fluxo perpétuo a taxa de reinvestimento g/{sigla}.",
-    )
-    roic_real = colunas[2].checkbox(
-        "ROIC em termos reais",
-        value=perpetuidade.roic_real is not None,
-        disabled=not (usar_gordon and normalizar),
-        help=(
-            "O ROIC de g/ROIC é nominal. Com o g ancorado na macro, deixar o ROIC "
-            "parado faz a taxa de reinvestimento subir sozinha quando a inflação "
-            "sobe — e o estresse de inflação sai exagerado. Marcando aqui, o "
-            "número abaixo é lido como real e o nominal acompanha o IPCA. **O "
-            "valor de hoje não muda**; muda a resposta ao estresse."
-        ),
-    )
-    # Marcar a caixa nao pode mudar o valuation: o padrao do campo passa a ser o
-    # equivalente real do nominal que ja estava la. Deixar 15% virar 15% real
-    # seria subir o ROIC efetivo para 20,75% sem ninguem pedir.
-    guardado = (
-        perpetuidade.roe_perpetuidade if para_o_acionista else None
-    ) or perpetuidade.roic_perpetuidade
-    nominal_atual = guardado or (0.18 if para_o_acionista else 0.15)
-    if roic_real:
-        padrao = (
-            perpetuidade.roic_real
-            if perpetuidade.roic_real is not None
-            else (1 + nominal_atual) / (1 + ipca) - 1
-        )
+    if usar_gordon:
+        (
+            ancora,
+            crescimento,
+            previsto,
+            normalizar,
+            roic_real,
+            roic,
+            para_o_acionista,
+        ) = _campos_do_gordon(perpetuidade, analise, ipca, pib_nominal)
     else:
-        padrao = nominal_atual
+        base_escolhida, multiplo = _campos_do_multiplo(perpetuidade)
 
-    roic = colunas[2].number_input(
-        f"{sigla} perpétuo real (%)" if roic_real else f"{sigla} perpétuo (%)",
-        value=float(padrao * 100),
-        step=0.5,
-        format="%.2f",
-        disabled=not (usar_gordon and normalizar),
-    )
-    if roic_real:
-        colunas[2].caption(
-            f"Nominal a {formatar(ipca, 'pct')} de IPCA: "
-            f"**{formatar((1 + roic / 100) * (1 + ipca) - 1, 'pct')}**"
-        )
-    with colunas[2]:
-        # A pergunta que este campo levanta e nao respondia: 25% e muito ou
-        # pouco? A resposta estava duas telas atras, no Historico.
-        balizador(
-            roic / 100,
-            "ROE" if para_o_acionista else "ROIC",
-            analise,
-            "pct",
-            contexto=(
-                "Acima do histórico exige motivo: é dizer que a empresa vai "
-                "empregar capital novo melhor do que empregou o antigo."
-            )
-            if normalizar
-            else "",
-        )
-
-    # A base do múltiplo depende do caso: uma indústria sai por EV/EBITDA, uma
-    # empresa cujo par negocia por lucro sai por P/L. **A escolha muda a moeda
-    # do valor terminal** — EV/EBITDA dá valor de firma, P/L dá valor de equity
-    # —, e é o app que faz a conversão para a moeda do fluxo, avisando.
-    bases = list(BASES_DO_MULTIPLO.values())
-    base = colunas[3].radio(
-        "Múltiplo sobre",
-        bases,
-        index=bases.index(BASES_DO_MULTIPLO[perpetuidade.base_do_multiplo]),
-        horizontal=True,
-        disabled=usar_gordon,
-        help=(
-            "**EV/EBITDA** precifica a firma inteira e a dívida sai na ponte. "
-            "**P/L** precifica o que sobra para o acionista — o lucro já é "
-            "depois do juro —, então o app soma a dívida líquida de volta ao "
-            "valor terminal para ela não ser descontada duas vezes."
-        ),
-    )
-    base_escolhida = next(k for k, v in BASES_DO_MULTIPLO.items() if v == base)
-
-    multiplo = colunas[3].number_input(
-        f"Múltiplo de saída ({base})",
-        value=float(perpetuidade.multiplo_saida or (7.0 if base_escolhida == "ebitda" else 12.0)),
-        step=0.5,
-        disabled=usar_gordon,
-    )
-
-    st.markdown("**Economia de longo prazo** — os dois números que formam o teto do g")
-    colunas = st.columns(4)
-
-    colunas[0].metric("IPCA de longo prazo", formatar(ipca, "pct"), border=True)
-    colunas[0].caption("Editável em **Custo de capital** — de lá ele também entra no WACC.")
-
-    pib_real = colunas[1].number_input(
-        "PIB real de longo prazo (%)",
-        value=float(empresa.macro.pib_real * 100),
-        step=0.25,
-        format="%.2f",
-        help=(
-            "Crescimento real da economia. Não entra no custo de capital: serve "
-            "para compor o teto do crescimento perpétuo, e como âncora dele."
-        ),
-    )
-
-    pib_nominal = (1 + ipca) * (1 + pib_real / 100) - 1
-    colunas[2].metric("PIB nominal", formatar(pib_nominal, "pct"), border=True)
-    colunas[2].caption("Os dois compostos, não somados.")
-
-    previsto = {"livre": None, "ipca": ipca, "pib_nominal": pib_nominal}[ancora]
-    crescimento = colunas[3].number_input(
-        "Crescimento perpétuo (%)",
-        value=float((previsto if previsto is not None else perpetuidade.crescimento_perpetuo) * 100),
-        step=0.25,
-        format="%.2f",
-        disabled=not usar_gordon or previsto is not None,
-        help=(
-            "Teto natural: o crescimento nominal da economia. Acima disso, a "
-            "empresa acabaria maior que o país."
-        ),
-    )
-    if previsto is not None:
-        colunas[3].caption("Derivado da âncora — para digitá-lo, escolha *Livre*.")
-    with colunas[3]:
-        balizador(
-            crescimento / 100,
-            "Crescimento da receita",
-            analise,
-            "pct",
-            contexto=(
-                f"Teto: {formatar(pib_nominal, 'pct')} — o PIB nominal."
-                if crescimento / 100 <= pib_nominal
-                else f"**Acima do PIB nominal ({formatar(pib_nominal, 'pct')})**: "
-                "a empresa acabaria maior que o país."
-            ),
-        )
-
-    if st.button("Aplicar perpetuidade"):
+    if st.button("Aplicar perpetuidade", type="primary"):
         alteracoes: dict = {"macro.pib_real": pib_real / 100}
         if usar_gordon:
             alteracoes["perpetuidade.metodo"] = "gordon"
@@ -519,6 +382,203 @@ def _perpetuidade(empresa, analise=None) -> None:
             f"{formatar(ipca, 'pct')} composto com PIB real de "
             f"{formatar(pib_real / 100, 'pct')})."
         )
+
+
+def _economia_de_longo_prazo(empresa, ipca: float) -> tuple[float, float]:
+    """IPCA e PIB, recolhidos — com os números no próprio título do expansor.
+
+    Ocupavam uma fila de quatro colunas para um único campo editável. No título
+    eles continuam à vista sem gastar a largura, e quem quer mexer abre.
+    """
+    pib_real_atual = empresa.macro.pib_real
+    nominal_atual = (1 + ipca) * (1 + pib_real_atual) - 1
+
+    with st.expander(
+        f"Economia de longo prazo — IPCA {formatar(ipca, 'pct')} · "
+        f"PIB nominal {formatar(nominal_atual, 'pct')}"
+    ):
+        st.caption(
+            "Os dois números que formam o teto do crescimento perpétuo, "
+            "**compostos e não somados**. O IPCA é editável em **Custo de "
+            "capital** — de lá ele também entra no WACC."
+        )
+        pib_real = st.number_input(
+            "PIB real de longo prazo (%)",
+            value=float(pib_real_atual * 100),
+            step=0.25,
+            format="%.2f",
+            help=(
+                "Crescimento real da economia. Não entra no custo de capital: "
+                "serve para compor o teto do crescimento perpétuo, e como "
+                "âncora dele."
+            ),
+        )
+    return pib_real, (1 + ipca) * (1 + pib_real / 100) - 1
+
+
+def _campos_do_gordon(perpetuidade, analise, ipca: float, pib_nominal: float):
+    """Âncora, crescimento e normalização do reinvestimento."""
+    colunas = st.columns(3)
+
+    rotulos = list(ANCORAS)
+    ancora = ANCORAS[
+        colunas[0].selectbox(
+            "De onde vem o g",
+            rotulos,
+            index=rotulos.index(
+                next(r for r, v in ANCORAS.items() if v == perpetuidade.ancora)
+            ),
+            help=(
+                "Ancorado, o crescimento perpétuo deixa de ser um número solto: "
+                "estressar a macro passa a movê-lo junto. **IPCA** supõe crescimento "
+                "real zero para sempre — a empresa acompanha os preços e nada mais. "
+                "**PIB nominal** é o teto lógico: acima dele, a empresa acabaria "
+                "maior que o país."
+            ),
+        )
+    ]
+
+    previsto = {"livre": None, "ipca": ipca, "pib_nominal": pib_nominal}[ancora]
+    crescimento = colunas[1].number_input(
+        "Crescimento perpétuo (%)",
+        value=float(
+            (previsto if previsto is not None else perpetuidade.crescimento_perpetuo)
+            * 100
+        ),
+        step=0.25,
+        format="%.2f",
+        disabled=previsto is not None,
+        help=(
+            "Teto natural: o crescimento nominal da economia. Acima disso, a "
+            "empresa acabaria maior que o país."
+        ),
+    )
+    if previsto is not None:
+        colunas[1].caption("Derivado da âncora — para digitá-lo, escolha *Livre*.")
+    with colunas[1]:
+        balizador(
+            crescimento / 100,
+            "Crescimento da receita",
+            analise,
+            "pct",
+            contexto=(
+                f"Teto: {formatar(pib_nominal, 'pct')} — o PIB nominal."
+                if crescimento / 100 <= pib_nominal
+                else f"**Acima do PIB nominal ({formatar(pib_nominal, 'pct')})**: "
+                "a empresa acabaria maior que o país."
+            ),
+        )
+
+    # **O retorno da normalização depende de qual fluxo se desconta.** Crescer
+    # para sempre exige reinvestir para sempre, e a taxa é `g / retorno` — mas o
+    # retorno tem de descrever o mesmo capital que o fluxo remunera: ROIC para o
+    # FCFF, ROE para o FCFE. Rotular sempre "ROIC" fazia o campo pedir uma coisa
+    # e o modelo usar outra.
+    para_o_acionista = estado.config()["tipo_fluxo"] == "fcfe"
+    sigla = "ROE" if para_o_acionista else "ROIC"
+
+    normalizar = colunas[2].checkbox(
+        "Normalizar reinvestimento",
+        value=(perpetuidade.roic_perpetuidade is not None)
+        or (perpetuidade.roe_perpetuidade is not None),
+        help=f"Desconta do fluxo perpétuo a taxa de reinvestimento g/{sigla}.",
+    )
+    roic_real = False
+    roic = 0.0
+    if normalizar:
+        roic_real = colunas[2].checkbox(
+            f"{sigla} em termos reais",
+            value=perpetuidade.roic_real is not None,
+            help=(
+                f"O {sigla} de g/{sigla} é nominal. Com o g ancorado na macro, "
+                "deixá-lo parado faz a taxa de reinvestimento subir sozinha "
+                "quando a inflação sobe — e o estresse de inflação sai "
+                "exagerado. Marcando aqui, o número abaixo é lido como real e o "
+                "nominal acompanha o IPCA. **O valor de hoje não muda**; muda a "
+                "resposta ao estresse."
+            ),
+        )
+        # Marcar a caixa nao pode mudar o valuation: o padrao do campo passa a
+        # ser o equivalente real do nominal que ja estava la. Deixar 15% virar
+        # 15% real seria subir o ROIC efetivo para 20,75% sem ninguem pedir.
+        guardado = (
+            perpetuidade.roe_perpetuidade if para_o_acionista else None
+        ) or perpetuidade.roic_perpetuidade
+        nominal_atual = guardado or (0.18 if para_o_acionista else 0.15)
+        padrao = (
+            (
+                perpetuidade.roic_real
+                if perpetuidade.roic_real is not None
+                else (1 + nominal_atual) / (1 + ipca) - 1
+            )
+            if roic_real
+            else nominal_atual
+        )
+        roic = colunas[2].number_input(
+            f"{sigla} perpétuo real (%)" if roic_real else f"{sigla} perpétuo (%)",
+            value=float(padrao * 100),
+            step=0.5,
+            format="%.2f",
+        )
+        if roic_real:
+            colunas[2].caption(
+                f"Nominal a {formatar(ipca, 'pct')} de IPCA: "
+                f"**{formatar((1 + roic / 100) * (1 + ipca) - 1, 'pct')}**"
+            )
+        with colunas[2]:
+            # A pergunta que este campo levanta e nao respondia: 25% e muito ou
+            # pouco? A resposta estava duas telas atras, no Historico.
+            balizador(
+                roic / 100,
+                sigla,
+                analise,
+                "pct",
+                contexto=(
+                    "Acima do histórico exige motivo: é dizer que a empresa vai "
+                    "empregar capital novo melhor do que empregou o antigo."
+                ),
+            )
+
+    return ancora, crescimento, previsto, normalizar, roic_real, roic, para_o_acionista
+
+
+def _campos_do_multiplo(perpetuidade):
+    """A conta em que o múltiplo incide, e o múltiplo."""
+    colunas = st.columns(3)
+
+    # A base do múltiplo depende do caso: uma indústria sai por EV/EBITDA, uma
+    # empresa cujo par negocia por lucro sai por P/L. **A escolha muda a moeda
+    # do valor terminal** — EV/EBITDA dá valor de firma, P/L dá valor de equity
+    # —, e é o app que faz a conversão para a moeda do fluxo, avisando.
+    bases = list(BASES_DO_MULTIPLO.values())
+    base = colunas[0].radio(
+        "Múltiplo sobre",
+        bases,
+        index=bases.index(BASES_DO_MULTIPLO[perpetuidade.base_do_multiplo]),
+        horizontal=True,
+        help=(
+            "**EV/EBITDA** precifica a firma inteira e a dívida sai na ponte. "
+            "**P/L** precifica o que sobra para o acionista — o lucro já é "
+            "depois do juro —, então o app soma a dívida líquida de volta ao "
+            "valor terminal para ela não ser descontada duas vezes."
+        ),
+    )
+    base_escolhida = next(k for k, v in BASES_DO_MULTIPLO.items() if v == base)
+
+    multiplo = colunas[1].number_input(
+        f"Múltiplo de saída ({base})",
+        value=float(
+            perpetuidade.multiplo_saida or (7.0 if base_escolhida == "ebitda" else 12.0)
+        ),
+        step=0.5,
+    )
+    colunas[2].caption(
+        "O múltiplo troca duas premissas de perpetuidade por uma — e por uma que "
+        "o mercado observa. O custo é que ele **não diz de onde vem o valor**: "
+        "7x embute crescimento e retorno que ficam implícitos. Em **Retorno "
+        "esperado** o app mostra qual múltiplo o próprio DCF implica."
+    )
+    return base_escolhida, multiplo
 
 
 def _confrontar_com_o_focus(ipca: float, pib_real: float) -> None:
