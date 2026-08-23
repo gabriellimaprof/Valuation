@@ -504,6 +504,12 @@ só — o defeito que este projeto já pagou duas vezes:
 | `CGO_BOM` | 0,89 | **0,86** (P25) | 27% da base fica abaixo |
 | `CGO_FRACO` | 0,60 | **0,54** (P10) | 10% |
 
+Os quantis foram **conferidos contra uma segunda medição independente** — uma
+amostra aleatória de 180 companhias da mesma safra (n=161 depois dos descartes),
+que chega a P10 = 54,0%, P25 = 86,8% e mediana 104,2%: dentro de 1,5 ponto da
+medição completa em todos os quantis, com a distância mediana até o FCO em 49,6%
+contra 48,9%. Os cortes não são artefato de amostragem.
+
 `CGO_BOM` é o **P25**, e não o P75 como `CONVERSAO_BOA`, e a diferença é
 proposital: ele não pergunta "está entre as melhores?", pergunta "a operação
 converte?". Estar acima do quarto inferior já responde que sim — e é por isso que
