@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1038 testes
+pytest                        # 1040 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1161,7 +1161,7 @@ não é verificação.
 
 ## Estado atual
 
-1.038 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.040 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1312,6 +1312,19 @@ o app abre funcionando offline.
 E o botão da curva **passou a poder aplicar**. Antes ele só mostrava o número e
 mandava digitar dois centímetros acima: ler e transcrever à mão é trabalho braçal
 e é onde entra erro de digitação, justamente no campo que decide o WACC inteiro.
+
+### O múltiplo que o mercado paga pela própria empresa
+
+A tela de Múltiplos sabia o que os comparáveis valem e o que o DCF diz, e não
+sabia o número do meio: quanto a bolsa paga pela companhia em avaliação. Sem ele,
+"está cara em relação aos pares?" ficava sem o lado esquerdo.
+
+Ela agora monta a própria empresa como um comparável de si mesma e põe os
+múltiplos ao lado da mediana do peer group, com o prêmio (ou desconto) em
+percentual — **razão e não diferença**: 12x contra 8x é 50% de prêmio, não 4.
+
+O preço vem de onde já estava, o informado em Margem de segurança, então nada é
+buscado ali e as duas telas não podem discordar.
 
 ### O prêmio de risco local não tem percentil, e inventar um seria pior
 

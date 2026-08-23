@@ -21,6 +21,7 @@ from ..componentes import (
     etapa,
     formatar,
     grafico,
+    secao,
     tabela_de_indicadores,
 )
 from ..graficos import barras_de_faixa
@@ -56,6 +57,8 @@ def render() -> None:
     alvo = _alvo_atual()
     st.divider()
 
+    _multiplos_do_alvo(alvo, comparaveis)
+
     abas = st.tabs(["Múltiplos do peer group", "Valor implícito", "Comparação com o DCF"])
     with abas[0]:
         _peer_group(comparaveis)
@@ -63,6 +66,80 @@ def render() -> None:
         _implicito(alvo, comparaveis)
     with abas[2]:
         _comparar(alvo, comparaveis)
+
+
+
+def _multiplos_do_alvo(alvo: Alvo, comparaveis) -> None:
+    """O múltiplo que o mercado paga **por esta empresa**, ao lado dos pares.
+
+    A tela sabia o que os comparáveis valem e o que o DCF diz, e não sabia o
+    número do meio: quanto a bolsa paga pela companhia em avaliação. Sem ele, a
+    pergunta "está cara em relação aos pares?" ficava sem o lado esquerdo.
+
+    O preço vem de onde já estava — o informado em **Margem de segurança** —,
+    então nada é buscado aqui e as duas telas não podem discordar.
+    """
+    guardado = estado.preco()
+    if guardado is None:
+        st.caption(
+            "Informe a cotação em **Margem de segurança** para ver, aqui, o "
+            "múltiplo que o mercado paga por esta empresa ao lado do que paga "
+            "pelos pares."
+        )
+        return
+
+    acoes = alvo.acoes_em_circulacao
+    valor_mercado = (
+        guardado["valor"] * acoes if guardado["por_acao"] and acoes else guardado["valor"]
+    )
+    if not valor_mercado or not np.isfinite(valor_mercado):
+        return
+
+    do_alvo = Comparavel(
+        nome=alvo.nome,
+        valor_mercado=float(valor_mercado),
+        divida_liquida=alvo.divida_liquida,
+        receita=alvo.receita,
+        ebitda=alvo.ebitda,
+        ebit=alvo.ebit,
+        lucro_liquido=alvo.lucro_liquido,
+        patrimonio_liquido=alvo.patrimonio_liquido,
+    ).multiplos()
+
+    medianas = estatisticas(comparaveis)["Mediana"]
+    linhas = []
+    for nome, valor in do_alvo.items():
+        par = float(medianas.get(nome, float("nan")))
+        linhas.append(
+            {
+                "Múltiplo": nome,
+                "Esta empresa": valor,
+                "Mediana dos pares": par,
+                "Prêmio sobre os pares": (valor / par - 1)
+                if np.isfinite(valor) and np.isfinite(par) and par
+                else float("nan"),
+            }
+        )
+
+    ticker = estado.config().get("ticker")
+    secao(
+        "O que o mercado paga por esta empresa",
+        f"A {em_texto(valor_mercado, estado.empresa().unidade)} de valor de "
+        f"mercado{f' ({ticker})' if ticker else ''}, contra a mediana do peer "
+        "group.",
+    )
+    tabela = pd.DataFrame(linhas).set_index("Múltiplo")
+    st.html(
+        tabela_de_indicadores(tabela[["Esta empresa", "Mediana dos pares"]], "multiplo")
+    )
+    st.caption(
+        " · ".join(
+            f"**{l['Múltiplo']}** {formatar(l['Prêmio sobre os pares'], 'pct')}"
+            for l in linhas
+            if np.isfinite(l["Prêmio sobre os pares"])
+        )
+        + "  — prêmio (ou desconto) sobre a mediana dos pares."
+    )
 
 
 def _pares_por_perfil() -> None:

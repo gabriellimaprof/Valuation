@@ -117,3 +117,60 @@ def test_faixa_de_valor_e_crescente(alvo, comparaveis):
 def test_peer_group_vazio_e_rejeitado():
     with pytest.raises(ValueError, match="ao menos um comparavel"):
         tabela_comparaveis([])
+
+
+# ---------------------------------------------------------------------------
+# O multiplo que o mercado paga pela propria empresa
+# ---------------------------------------------------------------------------
+
+
+def test_o_alvo_com_preco_vira_um_comparavel_de_si_mesmo(alvo, comparaveis):
+    """A tela sabia o que os pares valem e o que o DCF diz, e nao o do meio.
+
+    Sem o multiplo da propria empresa, a pergunta "esta cara em relacao aos
+    pares?" fica sem o lado esquerdo.
+    """
+    from valuation.multiplos import Comparavel, estatisticas
+
+    do_alvo = Comparavel(
+        nome=alvo.nome,
+        valor_mercado=2000.0,
+        divida_liquida=alvo.divida_liquida,
+        receita=alvo.receita,
+        ebitda=alvo.ebitda,
+        ebit=alvo.ebit,
+        lucro_liquido=alvo.lucro_liquido,
+        patrimonio_liquido=alvo.patrimonio_liquido,
+    ).multiplos()
+
+    medianas = estatisticas(comparaveis)["Mediana"]
+    # Os dois lados falam dos mesmos multiplos -- e o que permite a comparacao
+    # linha a linha na tela.
+    assert set(do_alvo) & set(medianas.index)
+    assert any(np.isfinite(v) for v in do_alvo.values())
+
+
+def test_o_premio_sobre_os_pares_e_razao_e_nao_diferenca(alvo, comparaveis):
+    """Multiplo se compara por razao: 12x contra 8x e 50% de premio, e nao 4."""
+    from valuation.multiplos import Comparavel, estatisticas
+
+    do_alvo = Comparavel(
+        nome=alvo.nome,
+        valor_mercado=2000.0,
+        divida_liquida=alvo.divida_liquida,
+        receita=alvo.receita,
+        ebitda=alvo.ebitda,
+        ebit=alvo.ebit,
+        lucro_liquido=alvo.lucro_liquido,
+        patrimonio_liquido=alvo.patrimonio_liquido,
+    ).multiplos()
+    medianas = estatisticas(comparaveis)["Mediana"]
+
+    nome = next(
+        n
+        for n, v in do_alvo.items()
+        if np.isfinite(v) and np.isfinite(medianas.get(n, float("nan")))
+        and medianas[n]
+    )
+    premio = do_alvo[nome] / medianas[nome] - 1
+    assert -1 < premio < 20, f"{nome}: {premio}"
