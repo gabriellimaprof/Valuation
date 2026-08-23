@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 978 testes
+pytest                        # 989 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -492,6 +492,24 @@ procurar receita fictícia onde o que há é dívida cara. O sinal passa a olhar
 degrau de cima antes de culpar a operação, e nomeia o maior consumo **com o
 tamanho** — "está no juro pago: 40% do EBITDA" dirige atenção, "está no giro, no
 imposto ou no juro" não.
+
+**Os três diagnósticos são distintos, e cada um manda o analista a um lugar
+diferente:**
+
+| O que se vê | O que é | Onde procurar |
+|---|---|---|
+| CGO alto, FCO baixo | o consumo está abaixo da operação | giro, imposto ou juro — a ponte diz qual, com o tamanho |
+| CGO baixo | a operação não converte | resultado que não se realiza em caixa |
+| os dois altos | o EBITDA vira caixa | — |
+
+O ramo do CGO baixo entra **antes** dos que olham só o FCO: com CGO em 40% e FCO
+em 25%, o ramo antigo ganhava e mandava procurar no capital de giro, que é o
+lugar errado. `CGO_FRACO` existia sem disparar nunca — constante que não acusa
+nada é o mesmo defeito de um corte não calibrado, do lado oposto.
+
+A ponte entra no **relatório** e o achado do **diagnóstico** muda de título, de
+detalhe e de ação conforme o CGO. O relatório omite a ponte quando ela não fecha:
+uma tabela que não reconstrói o FCO publicado descreveria outra companhia.
 
 `qualidade.ponte_do_caixa` monta a identidade que a DFC indireta publica:
 
@@ -1035,7 +1053,7 @@ não é verificação.
 
 ## Estado atual
 
-978 testes passando. Verificado de verdade: contas financeiras, identidades,
+989 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
