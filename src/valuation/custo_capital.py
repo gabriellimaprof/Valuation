@@ -21,6 +21,18 @@ from dataclasses import dataclass
 from .premissas import PremissasCustoCapital, PremissasMacro
 
 
+
+# Taxa **real** de referencia da NTN-B longa, usada quando o analista nao informa
+# um ``rf_brl``. E um valor de referencia como os betas setoriais: medido na
+# curva do Tesouro Transparente em agosto de 2026 (7,82% no vencimento de
+# referencia), e envelhece.
+#
+# A tela mostra a curva de verdade a um clique, e o numero digitado la substitui
+# este. Deixa-lo aqui e o que permite o app abrir funcionando sem rede -- a mesma
+# escolha ja feita para beta e premio de risco-pais.
+NTNB_REAL_REFERENCIA = 0.0782
+
+
 def desalavancar_beta(beta_alavancado: float, divida_pl: float, aliquota_ir: float) -> float:
     """Beta desalavancado (Hamada): ``bL / (1 + (1 - t) * D/E)``."""
     if divida_pl < 0:
@@ -60,6 +72,20 @@ def rf_local(taxa_real: float, inflacao: float) -> float:
     return (1 + taxa_real) * (1 + inflacao) - 1
 
 
+def rf_brl_efetivo(premissas: PremissasCustoCapital, macro: PremissasMacro) -> float:
+    """A taxa livre de risco em BRL que o Ke usa, derivando-a quando preciso.
+
+    Existe como funcao propria porque **dois lugares precisam da mesma conta**:
+    o calculo do Ke e a inversao que da o beta de indiferenca de um banco. Duas
+    implementacoes da mesma derivacao divergem no dia em que uma delas muda.
+    """
+    if premissas.metodo == "local":
+        if premissas.rf_brl is not None:
+            return premissas.rf_brl
+        return rf_local(NTNB_REAL_REFERENCIA, macro.inflacao_brl)
+    return converter_taxa(premissas.rf_usd, macro.inflacao_brl, macro.inflacao_usd)
+
+
 def pesos_estrutura_capital(divida_pl: float) -> tuple[float, float]:
     """Converte D/E em pesos ``(peso_divida, peso_equity)`` que somam 1."""
     if divida_pl < 0:
@@ -78,6 +104,12 @@ class ResultadoCustoCapital:
 
     beta_desalavancado: float
     beta_realavancado: float
+    # A taxa livre de risco **em BRL** de que o Ke partiu. Nos dois caminhos ela
+    # existe: no local e a NTN-B nominalizada, no caminho em dolar e o rf
+    # americano trazido pela mesma paridade. Guardada porque a planilha e a tela
+    # precisam reproduzir a conta, e no local ela pode ser **derivada** -- quem
+    # nao informou `rf_brl` nao tem de onde tira-la.
+    rf_brl: float
     ke_usd: float
     ke_brl: float
     kd_bruto_brl: float
@@ -127,17 +159,17 @@ def calcular_custo_capital(
         beta_l = realavancar_beta(beta_u, premissas.divida_pl_alvo, t)
 
     if premissas.metodo == "local":
+        rf = rf_brl_efetivo(premissas, macro)
         # **O rf ja e brasileiro, e ja embute risco soberano e inflacao.** Por
         # isso nao ha termo de risco-pais aqui: some-lo seria conta-lo duas
         # vezes, que e exatamente o erro que o caminho em dolar existe para
         # evitar -- so que pelo outro lado.
         ke_brl = (
-            premissas.rf_brl
-            + beta_l * premissas.erp_local
-            + premissas.premio_tamanho
+            rf + beta_l * premissas.erp_local + premissas.premio_tamanho
         )
         ke_usd = converter_taxa(ke_brl, macro.inflacao_usd, macro.inflacao_brl)
     else:
+        rf = rf_brl_efetivo(premissas, macro)
         ke_usd = (
             premissas.rf_usd
             + beta_l * premissas.erp_maduro
@@ -152,7 +184,7 @@ def calcular_custo_capital(
         # O Kd sintetico acompanha o mesmo rf do Ke: em reais, e o titulo
         # soberano local mais o spread de credito da empresa. Nao ha risco-pais
         # separado, pela mesma razao de cima.
-        kd_bruto_brl = premissas.rf_brl + premissas.spread_credito
+        kd_bruto_brl = rf + premissas.spread_credito
     else:
         # Kd sintetico: livre de risco global + risco soberano + spread de credito
         # da empresa, montado em USD e trazido para BRL pela mesma paridade.
@@ -168,6 +200,7 @@ def calcular_custo_capital(
     return ResultadoCustoCapital(
         beta_desalavancado=beta_u,
         beta_realavancado=beta_l,
+        rf_brl=rf,
         ke_usd=ke_usd,
         ke_brl=ke_brl,
         kd_bruto_brl=kd_bruto_brl,

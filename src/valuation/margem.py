@@ -59,15 +59,30 @@ MARGEM_EXIGIDA = 0.30
 # justamente para as companhias atipicas, que sao as que mais precisam da
 # resposta.
 #
-# ``crescimento_perpetuo`` e ``risco_pais`` nao vem da base: o primeiro e
-# limitado por cima pelo desconto, e o segundo e premio de mercado.
+# ``crescimento_perpetuo`` e os premios de risco nao vem da base: o primeiro e
+# limitado por cima pelo desconto, e os outros sao premios de mercado.
 REVERSIVEIS: dict[str, tuple[str, tuple[float, float]]] = {
     "operacionais.margem_ebitda": ("Margem EBITDA", (0.005, 1.10)),
     "operacionais.crescimento_receita": ("Crescimento da receita", (-0.30, 0.80)),
     "operacionais.capex_pct_receita": ("Capex / receita", (0.0, 1.20)),
     "perpetuidade.crescimento_perpetuo": ("Crescimento perpétuo", (-0.05, 0.12)),
-    "custo_capital.risco_pais": ("Prêmio de risco-país", (0.0, 0.30)),
 }
+
+# **A premissa do desconto depende do caminho que monta o Ke.** No caminho em
+# dolar quem carrega o risco do pais e ``risco_pais``; no local ele esta dentro
+# da NTN-B e quem sobra e o premio de acoes local. Oferecer a premissa errada
+# faz a busca varrer um numero que **nao move o valor** -- e devolver "nao ha
+# premissa que justifique o preco" por um motivo que nao e do negocio.
+PREMIO_REVERSIVEL = {
+    "usd": ("custo_capital.risco_pais", "Prêmio de risco-país", (0.0, 0.30)),
+    "local": ("custo_capital.erp_local", "Prêmio de risco local", (0.0, 0.30)),
+}
+
+
+def reversiveis_de(empresa) -> dict[str, tuple[str, tuple[float, float]]]:
+    """As premissas que a busca pode varrer nesta empresa."""
+    caminho, rotulo, faixa = PREMIO_REVERSIVEL[empresa.custo_capital.metodo]
+    return {**REVERSIVEIS, caminho: (rotulo, faixa)}
 
 PONTOS_DA_VARREDURA = 40
 ITERACOES = 60
@@ -244,7 +259,7 @@ def expectativas_implicitas(
     ceder para o preco fazer sentido. Uma margem implicita 6 p.p. abaixo da
     entregue e uma afirmacao verificavel sobre o negocio; "acho caro" nao e.
     """
-    caminhos = caminhos or REVERSIVEIS
+    caminhos = caminhos or reversiveis_de(empresa)
     linhas = []
     for caminho, (rotulo, faixa) in caminhos.items():
         atual = _valor_atual(empresa, caminho)

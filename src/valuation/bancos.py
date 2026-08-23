@@ -215,6 +215,21 @@ def beta_de_indiferenca(custo_capital, macro, roe: float) -> float:
     """
     if not np.isfinite(roe):
         return float("nan")
+
+    # **A inversão segue o caminho que montou o Ke.** No local ela é direta --
+    # o Ke já está em reais e não há conversão a desfazer nem termo de
+    # risco-país a descontar; no caminho em dólar é preciso voltar à moeda em
+    # que a soma acontece. Inverter sempre a fórmula em dólar dava um beta de
+    # indiferença que não correspondia ao Ke que a tela mostra.
+    from .custo_capital import rf_brl_efetivo
+
+    if custo_capital.metodo == "local":
+        erp = custo_capital.erp_local
+        if not erp:
+            return float("nan")
+        sem_beta = rf_brl_efetivo(custo_capital, macro) + custo_capital.premio_tamanho
+        return float((roe - sem_beta) / erp)
+
     erp = custo_capital.erp_maduro
     if not erp:
         return float("nan")

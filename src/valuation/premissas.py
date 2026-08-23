@@ -102,13 +102,18 @@ class PremissasCustoCapital:
     # O custo do caminho local esta no ERP: um premio de risco de acoes estimado
     # na serie brasileira e ruidoso demais para ser observado, entao ``erp_local``
     # e uma premissa do analista -- e a que mais move o Ke.
-    metodo: str = "usd"
+    metodo: str = "local"
     rf_usd: float = 0.045
     erp_maduro: float = 0.045
     risco_pais: float = 0.025
     # Usados so quando ``metodo == "local"``.
+    #
+    # ``rf_brl`` vazio nao e erro: ele e **derivado** da NTN-B de referencia
+    # composta com a inflacao do bloco macro, em ``calcular_custo_capital`` --
+    # que e onde a inflacao existe. Informa-lo aqui fixa o numero e ignora a
+    # macro, o que e o comportamento certo para quem quer um rf especifico.
     rf_brl: float | None = None
-    erp_local: float = 0.075
+    erp_local: float = 0.03
     beta_alavancado_setor: float | None = 1.0
     beta_desalavancado: float | None = None
     divida_pl_setor: float = 0.0
@@ -132,11 +137,6 @@ class PremissasCustoCapital:
             raise ValueError(
                 f"metodo de custo de capital desconhecido: {self.metodo!r}. "
                 f"Use um de {list(METODOS_DE_CUSTO_DE_CAPITAL)}."
-            )
-        if self.metodo == "local" and self.rf_brl is None:
-            raise ValueError(
-                "metodo 'local' exige rf_brl -- a taxa livre de risco em reais, "
-                "que sai da NTN-B nominalizada pela inflacao."
             )
         if self.beta_alavancado_setor is None and self.beta_desalavancado is None:
             raise ValueError(

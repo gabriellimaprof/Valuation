@@ -74,6 +74,34 @@ def _sem_unidade(rotulo: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+# A convencao com que o app abre. Fora da sessao do Streamlit nao da para ler
+# `estado.config()`, entao ela e declarada aqui -- e travada logo abaixo, para as
+# duas nao poderem divergir.
+MEIO_DE_ANO_PADRAO = True
+
+
+def test_o_app_abre_com_a_convencao_que_os_testes_assumem():
+    teste = _rodar(TELA_MARGEM)
+    assert teste.session_state["config"]["meio_de_ano"] is MEIO_DE_ANO_PADRAO
+
+
+def _valor_da_empresa_inicial() -> float:
+    """O equity value que a tela mostra, sob as convencoes que ela usa.
+
+    Derivado, e nao fixado: ele muda quando o custo de capital padrao muda, e um
+    numero cravado transformaria essa mudanca numa falsa regressao. E vai com
+    `meio_de_ano`, senao o teste compara a conta da tela com outra conta -- erro
+    que a tolerancia de 2% ja escondeu uma vez neste projeto.
+    """
+    from app import estado
+    from valuation import avaliar
+
+    return avaliar(
+        estado._empresa_inicial(), meio_de_ano=MEIO_DE_ANO_PADRAO
+    ).equity_value
+
+
 def test_a_tela_abre_sem_preco_e_sem_placar():
     """O campo nasce **vazio**, e nao igual ao valor calculado.
 
@@ -102,7 +130,7 @@ def test_a_tela_diz_que_nao_busca_cotacao():
 
 
 def test_preco_abaixo_do_valor_da_margem_positiva():
-    empresa_valor = 930.0  # equity value da empresa inicial do app
+    empresa_valor = _valor_da_empresa_inicial()
     teste = _rodar(TELA_MARGEM, preco=(empresa_valor * 0.6, False))
     rotulos = {_sem_unidade(m.label): m.value for m in teste.metric}
     assert rotulos["Margem sobre o valor"] == "40,0%"
@@ -123,7 +151,9 @@ def test_preco_acima_do_valor_e_apontado_como_caro():
 
 
 def test_as_expectativas_implicitas_saem_na_tela():
-    teste = _rodar(TELA_MARGEM, preco=(700.0, False))
+    # Abaixo do valor, para cair no ramo da folga -- acima dele a tela diz o
+    # contrario, que as premissas teriam de **melhorar**.
+    teste = _rodar(TELA_MARGEM, preco=(_valor_da_empresa_inicial() * 0.75, False))
     tabela = teste.session_state["expectativas_implicitas"]
     assert "Margem EBITDA" in tabela.index
     assert not tabela["Implícita no preço"].isna().all()

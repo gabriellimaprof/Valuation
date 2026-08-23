@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1021 testes
+pytest                        # 1026 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -665,8 +665,15 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   | `"usd"` (padrão) | `rf_usd + β × ERP_maduro + λ × risco-país`, convertido para BRL por diferencial de inflação | somar prêmio americano a taxa brasileira contaria risco soberano duas vezes |
   | `"local"` | `rf_BRL + β × ERP_local`, com `rf_BRL` = NTN-B real **composta** com o IPCA | **não há risco-país**: ele já está dentro da NTN-B, e somá-lo o contaria duas vezes — o mesmo erro, pelo outro lado |
 
-  O caminho local foi pedido pelo dono do projeto e é construção legítima (CAPM
-  local). **O custo dele está no prêmio de risco:** um ERP estimado na série
+  **O caminho local é o padrão**, a pedido do dono do projeto, com `erp_local` de
+  3,0%; o caminho em dólar continua disponível como alternativa. Quando `rf_brl`
+  não é informado ele é **derivado**: `NTNB_REAL_REFERENCIA` (7,82%, medido na
+  curva do Tesouro em agosto de 2026) composta com a inflação do bloco macro — a
+  composição acontece no cálculo, e não nas premissas, porque é lá que a
+  inflação existe.
+
+  O caminho local é construção legítima (CAPM local). **O custo dele está no
+  prêmio de risco:** um ERP estimado na série
   brasileira é ruidoso demais para ser observado, então `erp_local` é premissa
   do analista — e é o número que mais move o Ke ali. No caminho em dólar o ERP é
   de mercado maduro, onde a série sustenta a estimativa.
@@ -674,14 +681,29 @@ Estas afetam o número final. Não as altere sem entender o porquê.
   Os dois discordam por construção, e a distância é informação. Medido com
   NTN-B a 8,0% real, IPCA 4,0%, ERP local 7,5% e β de 1,08:
 
-  | | USD + risco-país | NTN-B + ERP local |
+  | | USD + risco-país | NTN-B + ERP local (padrão) |
   |---|---|---|
-  | Ke BRL | 13,70% | **20,40%** |
-  | WACC BRL | 11,63% | **16,86%** |
+  | Ke BRL | 13,70% | **15,36%** |
+  | Kd bruto BRL | 11,32% | **14,63%** |
+  | WACC BRL | 11,63% | **13,46%** |
 
-  A diferença é quase toda o risco-país: o padrão embarcado é 2,5% e a NTN-B
-  implica perto de 5,5 p.p. Trocar de caminho **move o valuation muito**, e por
-  isso o método é escolha explícita e o padrão não mudou.
+  Trocar de caminho **move o valuation**, e o padrão novo desconta mais.
+
+  **A troca de padrão expôs quatro lugares que assumiam a construção em dólar**,
+  e nenhum deles dava erro — todos davam número:
+
+  | Onde | O que fazia |
+  |---|---|
+  | `bancos.beta_de_indiferenca` | invertia sempre a fórmula em dólar, devolvendo um beta que não correspondia ao Ke da tela |
+  | DCF reverso (`margem.py`) | varria `risco_pais`, **inerte** no caminho local — e concluía "não há premissa que justifique o preço" |
+  | Estresse macro | chocava `risco_pais`, deixando o cenário idêntico ao base: um estresse que não estressa |
+  | Planilha Excel | escrevia a construção em dólar, calculando 11,63% onde o motor calcula 13,46% |
+
+  Os três primeiros passaram a seguir o método; a planilha ganhou o ramo local, e
+  `tools/conferir_no_excel.py` reconfirmou as dez contas com **desvio zero** no
+  Excel de verdade. `rf_brl_efetivo` existe como função própria porque o cálculo
+  do Ke e a inversão do beta de banco precisam da **mesma** derivação — duas
+  implementações divergiriam no dia em que uma mudasse.
 
   O `λ` some da tela no caminho local: ele escala o termo de risco-país, e ali
   não há termo para escalar.
@@ -1139,7 +1161,7 @@ não é verificação.
 
 ## Estado atual
 
-1.021 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.026 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

@@ -199,20 +199,35 @@ def test_com_reinvestimento_normalizado_a_inflacao_continua_cara(empresa_exemplo
     assert depois > antes, "a taxa de reinvestimento sobe com a inflacao"
 
 
-def test_risco_pais_aperta_o_desconto_sem_contrapartida_no_crescimento(empresa_exemplo):
+@pytest.mark.parametrize("metodo", ["usd", "local"])
+def test_risco_pais_aperta_o_desconto_sem_contrapartida_no_crescimento(
+    empresa_exemplo, metodo
+):
     """O que distingue os dois estresses macro -- e vale para toda empresa.
 
     A magnitude relativa nao vale: na WEG o choque de IPCA chega a bater mais
     que o de risco-pais. O que e sempre verdade e o mecanismo -- risco-pais so
     entra no desconto, enquanto a inflacao, ancorada, entra tambem no fluxo.
     """
-    ancorada = substituir(empresa_exemplo, "perpetuidade.ancora", "pib_nominal")
+    # **O prêmio de risco que se estressa depende do caminho que monta o Ke.**
+    # No caminho em dólar é o risco-país; no local ele já está dentro da NTN-B, e
+    # quem sobra é o prêmio de ações local. O mecanismo que este teste afirma é o
+    # mesmo nos dois -- prêmio de risco entra só no desconto --, mas a alavanca
+    # não é.
+    ancorada = substituir_varios(
+        empresa_exemplo,
+        {"perpetuidade.ancora": "pib_nominal", "custo_capital.metodo": metodo},
+    )
+    caminho = (
+        "custo_capital.risco_pais"
+        if metodo == "usd"
+        else "custo_capital.erp_local"
+    )
     g_base = ancorada.perpetuidade.crescimento_perpetuo
     wacc_base = avaliar(ancorada).dcf.taxa_desconto
 
-    por_risco = substituir(
-        ancorada, "custo_capital.risco_pais", ancorada.custo_capital.risco_pais + 0.02
-    )
+    atual = getattr(ancorada.custo_capital, caminho.split(".")[-1])
+    por_risco = substituir(ancorada, caminho, atual + 0.02)
     assert avaliar(por_risco).dcf.taxa_desconto > wacc_base
     assert por_risco.perpetuidade.crescimento_perpetuo == pytest.approx(g_base)
 

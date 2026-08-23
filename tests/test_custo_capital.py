@@ -52,6 +52,7 @@ def test_pesos_da_estrutura_de_capital_somam_um():
 def test_capm_com_risco_pais(macro):
     """Confere o Ke contra a conta feita a mao, passo a passo."""
     premissas = PremissasCustoCapital(
+        metodo="usd",
         rf_usd=0.045,
         erp_maduro=0.045,
         risco_pais=0.025,
@@ -106,9 +107,11 @@ def test_mais_divida_reduz_o_wacc_ate_certo_ponto(macro):
 
 
 def test_lambda_modula_a_exposicao_ao_risco_pais(macro):
-    base = PremissasCustoCapital(beta_desalavancado=1.0, risco_pais=0.03, lambda_pais=1.0)
+    base = PremissasCustoCapital(
+        metodo="usd", beta_desalavancado=1.0, risco_pais=0.03, lambda_pais=1.0
+    )
     exportadora = PremissasCustoCapital(
-        beta_desalavancado=1.0, risco_pais=0.03, lambda_pais=0.4
+        metodo="usd", beta_desalavancado=1.0, risco_pais=0.03, lambda_pais=0.4
     )
     ke_base = calcular_custo_capital(base, macro).ke_usd
     ke_exp = calcular_custo_capital(exportadora, macro).ke_usd
@@ -117,7 +120,11 @@ def test_lambda_modula_a_exposicao_ao_risco_pais(macro):
 
 def test_kd_sintetico_soma_risco_pais_e_spread(macro):
     premissas = PremissasCustoCapital(
-        beta_desalavancado=1.0, rf_usd=0.045, risco_pais=0.025, spread_credito=0.03
+        metodo="usd",
+        beta_desalavancado=1.0,
+        rf_usd=0.045,
+        risco_pais=0.025,
+        spread_credito=0.03,
     )
     resultado = calcular_custo_capital(premissas, macro)
     kd_usd = 0.045 + 0.025 + 0.03
@@ -154,7 +161,7 @@ def test_o_beta_de_banco_nao_e_realavancado():
     from valuation.custo_capital import calcular_custo_capital
     from valuation.premissas import PremissasCustoCapital, PremissasMacro
 
-    base = dict(beta_desalavancado=0.95, divida_pl_alvo=11.2)
+    base = dict(metodo="usd", beta_desalavancado=0.95, divida_pl_alvo=11.2)
     industria = calcular_custo_capital(
         PremissasCustoCapital(**base), PremissasMacro()
     )
@@ -205,7 +212,6 @@ def _premissas_locais(**extra):
     from valuation.custo_capital import rf_local
 
     padrao = dict(
-        metodo="local",
         rf_brl=rf_local(0.08, 0.04),
         erp_local=0.075,
         beta_alavancado_setor=1.05,
@@ -265,7 +271,10 @@ def test_o_caminho_em_dolar_nao_mudou():
 
     macro = PremissasMacro(inflacao_brl=0.04, inflacao_usd=0.023, aliquota_ir=0.34)
     p = PremissasCustoCapital(
-        beta_alavancado_setor=1.05, divida_pl_setor=0.45, divida_pl_alvo=0.50
+        metodo="usd",
+        beta_alavancado_setor=1.05,
+        divida_pl_setor=0.45,
+        divida_pl_alvo=0.50,
     )
     r = calcular_custo_capital(p, macro)
     esperado = (
@@ -277,12 +286,43 @@ def test_o_caminho_em_dolar_nao_mudou():
     )
 
 
-def test_metodo_local_sem_rf_e_rejeitado():
-    """Premissa que falta tem de levantar erro, e nao virar zero calado."""
+def test_sem_rf_informado_ele_e_derivado_da_ntnb_de_referencia():
+    """`rf_brl` vazio nao e erro: e derivado, e por isso o app abre funcionando.
+
+    A taxa real de referencia e composta com a inflacao do bloco macro -- e a
+    composicao acontece **ali**, e nao nas premissas, porque e ali que a inflacao
+    existe. Quem informa um `rf_brl` fixa o numero e ignora a macro, que e o
+    comportamento certo para quem quer um rf especifico.
+    """
+    from valuation import PremissasCustoCapital, PremissasMacro
+    from valuation.custo_capital import (
+        NTNB_REAL_REFERENCIA,
+        calcular_custo_capital,
+        rf_local,
+    )
+
+    macro = PremissasMacro(inflacao_brl=0.05)
+    derivado = calcular_custo_capital(
+        PremissasCustoCapital(beta_desalavancado=1.0), macro
+    )
+    assert derivado.rf_brl == pytest.approx(
+        rf_local(NTNB_REAL_REFERENCIA, macro.inflacao_brl)
+    )
+
+    # E o informado manda, sem olhar a macro.
+    fixo = calcular_custo_capital(
+        PremissasCustoCapital(beta_desalavancado=1.0, rf_brl=0.11), macro
+    )
+    assert fixo.rf_brl == pytest.approx(0.11)
+
+
+def test_o_caminho_local_e_o_padrao():
+    """Pedido do dono do projeto: a NTN-B e o ponto de partida, o dolar e a
+    alternativa."""
     from valuation import PremissasCustoCapital
 
-    with pytest.raises(ValueError, match="rf_brl"):
-        PremissasCustoCapital(metodo="local", beta_alavancado_setor=1.0)
+    assert PremissasCustoCapital(beta_desalavancado=1.0).metodo == "local"
+    assert PremissasCustoCapital(beta_desalavancado=1.0).erp_local == pytest.approx(0.03)
 
 
 def test_metodo_desconhecido_e_rejeitado():

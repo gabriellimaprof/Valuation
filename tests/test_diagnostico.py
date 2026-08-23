@@ -78,9 +78,21 @@ def test_beta_fora_da_faixa(empresa_exemplo):
     assert "beta_fora_da_faixa" in _codigos(diagnostico)
 
 
-def test_wacc_fora_da_faixa_pega_erro_de_unidade(empresa_exemplo):
-    """O caso real: alguem digita 4,5 em vez de 0,045 na taxa livre de risco."""
-    empresa = substituir_varios(empresa_exemplo, {"custo_capital.rf_usd": 0.45})
+@pytest.mark.parametrize(
+    ("metodo", "campo"),
+    [("usd", "custo_capital.rf_usd"), ("local", "custo_capital.rf_brl")],
+)
+def test_wacc_fora_da_faixa_pega_erro_de_unidade(empresa_exemplo, metodo, campo):
+    """O caso real: alguem digita 4,5 em vez de 0,045 na taxa livre de risco.
+
+    O campo em que o engano acontece **depende do caminho** que monta o Ke, e o
+    teste antes so cobria um deles -- entao quando o padrao mudou ele passou a
+    testar um numero que nao entra na conta. A verificacao em si nunca dependeu
+    do caminho: ela olha o WACC que saiu.
+    """
+    empresa = substituir_varios(
+        empresa_exemplo, {"custo_capital.metodo": metodo, campo: 0.45}
+    )
     diagnostico = diagnosticar(avaliar(empresa))
     assert "wacc_fora_da_faixa" in _codigos(diagnostico)
 

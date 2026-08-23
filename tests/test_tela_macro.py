@@ -126,7 +126,14 @@ def test_o_estresse_macro_mede_cada_choque_separado():
     por_nome = {c: float(tabela.loc["equity_value", c]) for c in tabela.columns}
     base = por_nome["Base"]
     ipca = next(v for c, v in por_nome.items() if c.startswith("IPCA"))
-    risco = next(v for c, v in por_nome.items() if c.startswith("Risco"))
+    # O nome do cenario acompanha o premio que move o Ke -- "Risco-pais" no
+    # caminho em dolar, "Premio local" no padrao. O teste procura **o cenario
+    # que nao e IPCA nem PIB**, que e o que ele quer medir.
+    risco = next(
+        v
+        for c, v in por_nome.items()
+        if c not in ("Base",) and not c.startswith(("IPCA", "PIB"))
+    )
     pib = next(v for c, v in por_nome.items() if c.startswith("PIB"))
 
     assert ipca < base and risco < base
@@ -384,11 +391,23 @@ def _rotulos_numericos(teste) -> set[str]:
 
 
 def test_o_caminho_em_dolar_pede_rf_americano_e_risco_pais():
+    """Ele deixou de ser o padrao, e virou a alternativa -- entao e escolhido."""
     teste = _rodar(TELA_CUSTO)
+    caminho = next(r for r in teste.radio if r.label == "Caminho")
+    caminho.set_value("Dólar + risco-país").run()
+    assert not teste.exception, teste.exception
     rotulos = _rotulos_numericos(teste)
     assert "Taxa livre de risco em USD (%)" in rotulos
     assert "Prêmio de risco-país (%)" in rotulos
     assert "NTN-B — taxa real (%)" not in rotulos
+
+
+def test_a_tela_abre_no_caminho_local():
+    """Pedido do dono do projeto: a NTN-B e o ponto de partida."""
+    teste = _rodar(TELA_CUSTO)
+    caminho = next(r for r in teste.radio if r.label == "Caminho")
+    assert caminho.value == "NTN-B + prêmio local"
+    assert "NTN-B — taxa real (%)" in _rotulos_numericos(teste)
 
 
 def test_o_caminho_local_troca_os_campos_e_tira_o_risco_pais():
@@ -398,10 +417,6 @@ def test_o_caminho_local_troca_os_campos_e_tira_o_risco_pais():
     de risco-pais ali convidaria a conta-lo duas vezes.
     """
     teste = _rodar(TELA_CUSTO)
-    caminho = next(r for r in teste.radio if r.label == "Caminho")
-    caminho.set_value("NTN-B + prêmio local").run()
-    assert not teste.exception, teste.exception
-
     rotulos = _rotulos_numericos(teste)
     assert "NTN-B — taxa real (%)" in rotulos
     assert "Prêmio de risco de ações local (%)" in rotulos
@@ -413,9 +428,6 @@ def test_o_caminho_local_troca_os_campos_e_tira_o_risco_pais():
 
 def test_o_caminho_escolhido_chega_ao_modelo():
     teste = _rodar(TELA_CUSTO)
-    next(r for r in teste.radio if r.label == "Caminho").set_value(
-        "NTN-B + prêmio local"
-    ).run()
     next(b for b in teste.button if "Aplicar" in b.label).click().run()
     assert not teste.exception, teste.exception
 

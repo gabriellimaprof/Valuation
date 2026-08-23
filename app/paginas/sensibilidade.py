@@ -22,6 +22,7 @@ EIXOS = {
     "IPCA de longo prazo": ("macro.inflacao_brl", True),
     "PIB real de longo prazo": ("macro.pib_real", True),
     "Prêmio de risco-país": ("custo_capital.risco_pais", True),
+    "Prêmio de risco local": ("custo_capital.erp_local", True),
 }
 
 METRICAS = {
@@ -279,6 +280,21 @@ def _cenarios(resultado) -> None:
     _cenarios_macro(empresa)
 
 
+
+def _premio_que_move_o_ke(empresa) -> tuple[str, str]:
+    """O prêmio de risco que a construção do Ke desta empresa de fato usa."""
+    if empresa.custo_capital.metodo == "local":
+        return "custo_capital.erp_local", "Prêmio local"
+    return "custo_capital.risco_pais", "Risco-país"
+
+
+def _valor_do_premio(empresa) -> float:
+    caminho, _ = _premio_que_move_o_ke(empresa)
+    return float(caminho.split(".")[-1] and getattr(
+        empresa.custo_capital, caminho.split(".")[-1]
+    ))
+
+
 def _cenarios_macro(empresa) -> None:
     st.markdown("#### Estresse macro")
     st.markdown(
@@ -299,19 +315,28 @@ def _cenarios_macro(empresa) -> None:
         step=0.25,
         key="macro_pib",
     )
+    # **Qual prêmio de risco move o Ke depende do caminho que o monta.** No
+    # caminho em dólar é o risco-país; no local ele está dentro da NTN-B e quem
+    # sobra é o prêmio de ações local. Chocar sempre o risco-país deixava o
+    # cenário inteiro **igual ao base** quando o caminho é o local — um estresse
+    # que não estressa nada, e que se lê como "o risco não importa".
+    caminho_do_premio, nome_do_premio = _premio_que_move_o_ke(empresa)
     choque_risco = colunas[2].number_input(
-        "Choque de risco-país (p.p.)", value=2.0, step=0.5, key="macro_risco"
+        f"Choque de {nome_do_premio.lower()} (p.p.)",
+        value=2.0,
+        step=0.5,
+        key="macro_risco",
     )
 
     nome_ipca = f"IPCA +{choque_ipca:.1f} p.p.".replace(".", ",", 1)
     nome_pib = f"PIB real {pib_fraco:.2f}%".replace(".", ",")
-    nome_risco = f"Risco-país +{choque_risco:.1f} p.p.".replace(".", ",", 1)
+    nome_risco = f"{nome_do_premio} +{choque_risco:.1f} p.p.".replace(".", ",", 1)
     definicoes = {
         "Base": {},
         nome_ipca: {"macro.inflacao_brl": macro.inflacao_brl + choque_ipca / 100},
         nome_pib: {"macro.pib_real": pib_fraco / 100},
         nome_risco: {
-            "custo_capital.risco_pais": empresa.custo_capital.risco_pais + choque_risco / 100
+            caminho_do_premio: _valor_do_premio(empresa) + choque_risco / 100
         },
     }
 

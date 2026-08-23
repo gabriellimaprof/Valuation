@@ -250,10 +250,28 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
 
     cc = empresa.custo_capital
     aba.secao("Custo de capital", largura=n + 3)
-    refs["rf_usd"] = aba.entrada("Taxa livre de risco (USD)", cc.rf_usd, PCT)
-    refs["erp_maduro"] = aba.entrada("Premio de risco de mercado maduro", cc.erp_maduro, PCT)
-    refs["risco_pais"] = aba.entrada("Premio de risco-pais (Brasil)", cc.risco_pais, PCT)
-    refs["lambda_pais"] = aba.entrada("Lambda (exposicao ao risco-pais)", cc.lambda_pais, NUMERO)
+    # Os dois caminhos gravam **so os proprios campos**. Escrever os dois
+    # deixaria na planilha numeros que nenhuma formula usa -- e quem recebe o
+    # arquivo nao tem como saber qual valeu.
+    if empresa.custo_capital.metodo == "local":
+        refs["rf_brl_entrada"] = aba.entrada(
+            "Taxa livre de risco em BRL (NTN-B nominalizada)",
+            resultado.custo_capital.rf_brl,
+            PCT,
+        )
+        refs["erp_local"] = aba.entrada(
+            "Premio de risco de acoes local", cc.erp_local, PCT
+        )
+    else:
+        refs["rf_usd"] = aba.entrada("Taxa livre de risco (USD)", cc.rf_usd, PCT)
+    if empresa.custo_capital.metodo != "local":
+        refs["erp_maduro"] = aba.entrada(
+            "Premio de risco de mercado maduro", cc.erp_maduro, PCT
+        )
+        refs["risco_pais"] = aba.entrada("Premio de risco-pais (Brasil)", cc.risco_pais, PCT)
+        refs["lambda_pais"] = aba.entrada(
+            "Lambda (exposicao ao risco-pais)", cc.lambda_pais, NUMERO
+        )
     refs["premio_tamanho"] = aba.entrada("Premio de tamanho", cc.premio_tamanho, PCT)
     if cc.beta_desalavancado is not None:
         refs["beta_desalavancado_entrada"] = aba.entrada(
@@ -358,11 +376,20 @@ def _aba_custo_capital(
     aba = _Aba(wb.create_sheet("Custo de Capital"))
     cc = resultado.empresa.custo_capital
 
-    aba.titulo("Custo de capital (CAPM + risco-pais)")
-    aba.nota(
-        "Ke montado em USD nominal e convertido para BRL por diferencial de inflacao, "
-        "evitando dupla contagem de risco soberano."
-    )
+    local = resultado.empresa.custo_capital.metodo == "local"
+    if local:
+        aba.titulo("Custo de capital (CAPM local)")
+        aba.nota(
+            "Ke = rf em BRL + beta x premio local. O rf sai da NTN-B nominalizada "
+            "pela inflacao e ja embute risco soberano, entao NAO ha termo de "
+            "risco-pais: soma-lo o contaria duas vezes."
+        )
+    else:
+        aba.titulo("Custo de capital (CAPM + risco-pais)")
+        aba.nota(
+            "Ke montado em USD nominal e convertido para BRL por diferencial de "
+            "inflacao, evitando dupla contagem de risco soberano."
+        )
     aba.pular()
 
     refs: dict[str, str] = {}
@@ -386,23 +413,42 @@ def _aba_custo_capital(
     aba.pular()
 
     aba.secao("Custo do capital proprio (Ke)")
-    refs["ke_usd"] = aba.formula(
-        "Ke em USD nominal",
-        f"={p['rf_usd']}+{refs['beta_l']}*{p['erp_maduro']}"
-        f"+{p['lambda_pais']}*{p['risco_pais']}+{p['premio_tamanho']}",
-        PCT,
-    )
-    refs["ke_brl"] = aba.formula(
-        "Ke em BRL nominal",
-        f"=(1+{refs['ke_usd']})*(1+{p['inflacao_brl']})/(1+{p['inflacao_usd']})-1",
-        PCT,
-    )
+    if local:
+        refs["ke_brl"] = aba.formula(
+            "Ke em BRL nominal",
+            f"={p['rf_brl_entrada']}+{refs['beta_l']}*{p['erp_local']}"
+            f"+{p['premio_tamanho']}",
+            PCT,
+        )
+        refs["ke_usd"] = aba.formula(
+            "Ke em USD nominal (equivalente)",
+            f"=(1+{refs['ke_brl']})*(1+{p['inflacao_usd']})/(1+{p['inflacao_brl']})-1",
+            PCT,
+        )
+    else:
+        refs["ke_usd"] = aba.formula(
+            "Ke em USD nominal",
+            f"={p['rf_usd']}+{refs['beta_l']}*{p['erp_maduro']}"
+            f"+{p['lambda_pais']}*{p['risco_pais']}+{p['premio_tamanho']}",
+            PCT,
+        )
+        refs["ke_brl"] = aba.formula(
+            "Ke em BRL nominal",
+            f"=(1+{refs['ke_usd']})*(1+{p['inflacao_brl']})/(1+{p['inflacao_usd']})-1",
+            PCT,
+        )
     aba.pular()
 
     aba.secao("Custo da divida (Kd)")
     if "custo_divida_brl" in p:
         refs["kd_bruto"] = aba.ligacao(
             "Kd bruto em BRL (informado)", f"={p['custo_divida_brl']}", PCT
+        )
+    elif local:
+        refs["kd_bruto"] = aba.formula(
+            "Kd bruto em BRL nominal",
+            f"={p['rf_brl_entrada']}+{p['spread_credito']}",
+            PCT,
         )
     else:
         refs["kd_usd"] = aba.formula(
