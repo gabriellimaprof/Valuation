@@ -1,8 +1,91 @@
-# Configuracao do app publicado. O tema fica a cargo do navegador do usuario:
-# a paleta dos graficos tem passos proprios para claro e escuro, entao forcar
-# um dos dois anularia metade do trabalho de acessibilidade.
+# Configuracao do app publicado.
+#
+# O tema NAO forca claro nem escuro: `base` fica de fora de proposito, entao o
+# navegador do usuario decide. A paleta dos graficos tem passos proprios para os
+# dois modos, e travar um deles anularia metade do trabalho de acessibilidade.
+# Por isso as cores aparecem duas vezes, em [theme.light] e [theme.dark].
+#
+# **As cores aqui sao as mesmas de `app/tema.py`, e ha teste travando isso.**
+# Duas fontes da verdade para a mesma cor divergem no dia em que uma muda; o
+# teste `test_tema.py` le este arquivo e compara com a `Paleta`.
+
 [server]
 maxUploadSize = 50
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+# Inter, com fallback declarado: e a tipografia de dado financeiro (Stripe,
+# Linear, a maioria dos terminais modernos) e traz **algarismos tabulares**, que
+# sao o que faz coluna de numero alinhar sem gambiarra. Sem rede, cai no
+# sans-serif do sistema e nada quebra.
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+codeFont = "monospace"
+
+# Escala de titulo contida. O padrao do Streamlit abre em 2,75rem, tamanho de
+# landing page: numa tela de analise ele empurra o dado para baixo da dobra e
+# faz o titulo competir com o numero, que e o que o usuario veio ver.
+headingFontSizes = ["2rem", "1.5rem", "1.25rem", "1.0625rem", "0.9375rem", "0.8125rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+
+baseRadius = "0.5rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+# O numero grande da metrica. 2,25rem (o padrao) brigava com o h1.
+metricValueFontSize = "1.75rem"
+metricValueFontWeight = 600
+
+[theme.light]
+backgroundColor = "#fcfcfb"
+secondaryBackgroundColor = "#f4f4f1"
+textColor = "#0b0b0b"
+# O azul da paleta, e nao o vermelho padrao do Streamlit. O vermelho aparecia na
+# aba ativa, no radio e no botao primario — tres lugares de destaque — enquanto
+# todo grafico do app usa azul: a tela dizia duas coisas diferentes sobre o que
+# e "a cor daqui".
+primaryColor = "#2a78d6"
+linkColor = "#2a78d6"
+borderColor = "#e8e7e3"
+dataframeBorderColor = "#e8e7e3"
+dataframeHeaderBackgroundColor = "#f4f4f1"
+chartCategoricalColors = [
+  "#2a78d6", "#eb6834", "#1baf7a", "#eda100",
+  "#e87ba4", "#008300", "#4a3aa7", "#e34948",
+]
+chartSequentialColors = [
+  "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
+  "#2a78d6", "#256abf", "#184f95", "#0d366b",
+]
+
+[theme.light.sidebar]
+backgroundColor = "#f7f7f5"
+secondaryBackgroundColor = "#eeeeea"
+borderColor = "#e3e2de"
+
+[theme.dark]
+backgroundColor = "#1a1a19"
+secondaryBackgroundColor = "#232322"
+textColor = "#ffffff"
+primaryColor = "#3987e5"
+linkColor = "#6da7ec"
+borderColor = "#383835"
+dataframeBorderColor = "#383835"
+dataframeHeaderBackgroundColor = "#232322"
+chartCategoricalColors = [
+  "#3987e5", "#d95926", "#199e70", "#c98500",
+  "#d55181", "#008300", "#9085e9", "#e66767",
+]
+chartSequentialColors = [
+  "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5",
+  "#2a78d6", "#256abf", "#184f95", "#0d366b",
+]
+
+[theme.dark.sidebar]
+backgroundColor = "#161615"
+secondaryBackgroundColor = "#232322"
+borderColor = "#33332f"

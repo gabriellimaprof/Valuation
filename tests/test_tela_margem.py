@@ -7,6 +7,7 @@ sai completo quando as pecas existem e confessa a ausencia quando nao existem.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,18 @@ def _rodar(script: str, **estado_inicial) -> AppTest:
     return teste
 
 
+
+# A unidade passou a viajar no **rotulo** da metrica, e nao dentro do numero:
+# "930,0 R$ milhoes" nao cabe na largura de um cartao e o Streamlit o corta em
+# "930,0 R$ mil…". Os testes travam **que a metrica existe**, e nao como a
+# unidade e escrita -- pinar a string inteira faz uma decisao de apresentacao
+# virar regressao, que e o defeito que os literais de calibracao ja custaram.
+_UNIDADE_NO_ROTULO = re.compile(r"\s*\((?:R\$|US\$)[^)]*\)$")
+
+
+def _sem_unidade(rotulo: str) -> str:
+    return _UNIDADE_NO_ROTULO.sub("", rotulo)
+
 # ---------------------------------------------------------------------------
 # A tela
 # ---------------------------------------------------------------------------
@@ -63,7 +76,7 @@ def _rodar(script: str, **estado_inicial) -> AppTest:
 
 def test_a_tela_abre_com_o_preco_igual_ao_valor(_=None):
     teste = _rodar(TELA_MARGEM)
-    rotulos = {m.label: m.value for m in teste.metric}
+    rotulos = {_sem_unidade(m.label): m.value for m in teste.metric}
     assert rotulos["Margem sobre o valor"] == "0,0%"
     assert rotulos["Valor calculado"] == rotulos["Preço pedido"]
 
@@ -71,7 +84,7 @@ def test_a_tela_abre_com_o_preco_igual_ao_valor(_=None):
 def test_preco_abaixo_do_valor_da_margem_positiva():
     empresa_valor = 930.0  # equity value da empresa inicial do app
     teste = _rodar(TELA_MARGEM, preco=(empresa_valor * 0.6, False))
-    rotulos = {m.label: m.value for m in teste.metric}
+    rotulos = {_sem_unidade(m.label): m.value for m in teste.metric}
     assert rotulos["Margem sobre o valor"] == "40,0%"
     # 40% de margem sobre o valor sao 66,7% de potencial sobre o preco.
     assert rotulos["Potencial sobre o preço"] == "66,7%"

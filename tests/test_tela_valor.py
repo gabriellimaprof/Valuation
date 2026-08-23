@@ -9,6 +9,8 @@ motor e muda o numero.
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 
 import pytest
@@ -81,7 +83,7 @@ def test_o_cronograma_nasce_com_divida_constante():
     from valuation import avaliar
 
     constante = avaliar(empresa, tipo_fluxo="fcfe", divida_por_ano=[inicial] * anos)
-    na_tela = next(m for m in teste.metric if m.label == "Equity Value")
+    na_tela = next(m for m in teste.metric if _sem_unidade(m.label) == "Equity Value")
     assert _numero(na_tela.value) == pytest.approx(constante.equity_value, rel=0.02)
 
 
@@ -169,6 +171,18 @@ def test_amortizar_muda_o_valor_do_acionista():
     assert amortizando.equity_value != pytest.approx(constante.equity_value)
 
 
+
+# A unidade passou a viajar no **rotulo** da metrica, e nao dentro do numero:
+# "930,0 R$ milhoes" nao cabe na largura de um cartao e o Streamlit o corta em
+# "930,0 R$ mil…". Os testes travam **que a metrica existe**, e nao como a
+# unidade e escrita -- pinar a string inteira faz uma decisao de apresentacao
+# virar regressao, que e o defeito que os literais de calibracao ja custaram.
+_UNIDADE_NO_ROTULO = re.compile(r"\s*\((?:R\$|US\$)[^)]*\)$")
+
+
+def _sem_unidade(rotulo: str) -> str:
+    return _UNIDADE_NO_ROTULO.sub("", rotulo)
+
 # ---------------------------------------------------------------------------
 # Banco e seguradora saem por outra porta
 # ---------------------------------------------------------------------------
@@ -225,7 +239,7 @@ def test_banco_nao_ganha_a_tela_de_dcf():
     avisos = [w.value for w in teste.warning]
     assert any("não se aplica" in a for a in avisos), avisos
 
-    rotulos = {m.label for m in teste.metric}
+    rotulos = {_sem_unidade(m.label) for m in teste.metric}
     assert "Enterprise Value" not in rotulos, "a tela de FCFF vazou para o banco"
     assert "Patrimônio contábil" in rotulos
     assert "P/VP implícito" in rotulos
@@ -234,7 +248,7 @@ def test_banco_nao_ganha_a_tela_de_dcf():
 def test_industria_segue_pelo_dcf():
     """O desvio não pode pegar quem não é banco."""
     teste = _rodar()
-    rotulos = {m.label for m in teste.metric}
+    rotulos = {_sem_unidade(m.label) for m in teste.metric}
     assert "Enterprise Value" in rotulos
     assert "P/VP implícito" not in rotulos
 
@@ -297,7 +311,7 @@ main._barra_lateral()
     teste.run()
     assert not teste.exception, [str(e.value) for e in teste.exception]
 
-    rotulos = {m.label for m in teste.sidebar.metric}
+    rotulos = {_sem_unidade(m.label) for m in teste.sidebar.metric}
     assert "Equity Value" not in rotulos, rotulos
     assert "WACC" not in rotulos, rotulos
     assert any("lucro residual" in i.value for i in teste.sidebar.info)
@@ -318,7 +332,7 @@ def test_o_beta_mostrado_e_o_que_entrou_no_ke():
     teste = _rodar_com_dfs(_banco_de_teste())
     empresa = teste.session_state["empresa"]
 
-    metricas = {m.label: m.value for m in teste.metric}
+    metricas = {_sem_unidade(m.label): m.value for m in teste.metric}
     assert "Beta em uso" in metricas
 
     esperado = calcular_custo_capital(
@@ -337,7 +351,7 @@ def test_o_veredito_do_beta_concorda_com_o_pvp():
     exatamente a condição de P/VP acima de 1x.
     """
     teste = _rodar_com_dfs(_banco_de_teste())
-    metricas = {m.label: m.value for m in teste.metric}
+    metricas = {_sem_unidade(m.label): m.value for m in teste.metric}
 
     def numero(texto: str) -> float:
         return float(

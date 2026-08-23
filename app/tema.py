@@ -166,26 +166,84 @@ def layout_base(altura: int = 320, titulo: str = "") -> dict:
     }
 
 
+# A maior parte da identidade visual vem dos **tokens nativos** em
+# `.streamlit/config.toml` -- tipografia, raio, borda, cor primaria, cores de
+# grafico. O Streamlit 1.61 expoe um sistema de design completo, e usa-lo e
+# melhor que empilhar CSS por cima: o token atravessa todo componente, inclusive
+# os que este arquivo nao alcanca.
+#
+# Sobra para o CSS o que token nenhum resolve: medida de linha, os blocos
+# proprios do app e o ajuste fino de densidade.
 CSS = """
 <style>
+  /* A linha longa demais e o defeito de legibilidade mais comum em app de
+     dado: numa tela de 2.150px o texto corria 150 caracteres por linha, mais
+     que o dobro do que se le sem perder o comeco da linha seguinte. A tabela e
+     o grafico continuam largos; o texto e que para. */
+  .stMainBlockContainer { max-width: 1440px; }
+  .stMainBlockContainer [data-testid="stMarkdownContainer"] p,
+  .stMainBlockContainer [data-testid="stCaptionContainer"] p { max-width: 88ch; }
+
   .bloco-conceito {
-    border-left: 3px solid var(--primary-color, #2a78d6);
-    padding: 0.6rem 0.9rem;
+    border-left: 3px solid var(--st-primary-color, #2a78d6);
+    padding: 0.7rem 1rem;
     margin: 0.4rem 0 1rem 0;
-    background: rgba(42, 120, 214, 0.06);
-    border-radius: 0 6px 6px 0;
+    background: var(--st-blue-background-color, rgba(42, 120, 214, 0.06));
+    border-radius: 0 8px 8px 0;
     font-size: 0.92rem;
-    line-height: 1.5;
+    line-height: 1.55;
   }
   .bloco-conceito strong { font-weight: 600; }
+  .bloco-conceito p:last-child { margin-bottom: 0; }
+
   .rotulo-etapa {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.72rem;
-    opacity: 0.65;
+    font-weight: 600;
+    opacity: 0.6;
     margin-bottom: 0.2rem;
   }
-  div[data-testid="stMetricValue"] { font-size: 1.6rem; }
+
+  /* Um titulo de secao tinha tres aparencias diferentes pelo app. Agora tem uma,
+     e ela nao e um heading do markdown: h3 traz margem e escala de documento,
+     e aqui o que se quer e uma marca de bloco dentro de uma tela. */
+  .titulo-secao {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0.4rem 0 0.15rem 0;
+  }
+
+  /* Numero em cartao e numero em tabela alinham por algarismo tabular. Sem isto
+     o "1" ocupa menos largura que o "8" e a coluna serrilha. */
+  [data-testid="stMetricValue"],
+  [data-testid="stMetric"] { font-variant-numeric: tabular-nums; }
+  [data-testid="stMetricLabel"] { opacity: 0.75; font-size: 0.82rem; }
+
+  /* Densidade: o padrao respira demais para uma tela com doze indicadores. */
+  [data-testid="stMetric"] { padding: 0.7rem 0.9rem; }
+  hr { margin: 1.1rem 0; }
+
+  /* O numero da etapa no Inicio. Recessivo de proposito: ele ordena a lista,
+     mas quem se le e o nome da etapa. */
+  .numero-do-passo {
+    font-size: 1.15rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.35;
+    text-align: right;
+  }
+
+  /* O link de pagina vira alvo de clique de linha inteira nas listas. */
+  [data-testid="stPageLink"] a { padding: 0.15rem 0; }
+
+  /* A barra lateral e um trilho de resumo, e nao a tela principal: o numero de
+     tamanho heroico nao cabe na largura dela e sai truncado ("11,…"). Truncado
+     e pior que pequeno, porque parece um numero inteiro. */
+  [data-testid="stSidebar"] [data-testid="stMetricValue"] { font-size: 1.15rem; }
+  [data-testid="stSidebar"] [data-testid="stMetric"] { padding: 0.5rem 0.65rem; }
+  [data-testid="stSidebar"] [data-testid="stMetricLabel"] { font-size: 0.78rem; }
 </style>
 """
 

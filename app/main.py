@@ -21,8 +21,8 @@ for caminho in (str(RAIZ), str(RAIZ / "src")):
     if caminho not in sys.path:
         sys.path.insert(0, caminho)
 
-from app import estado  # noqa: E402
-from app.componentes import formatar  # noqa: E402
+from app import estado, navegacao  # noqa: E402
+from app.componentes import formatar, proximo_passo  # noqa: E402
 from app.paginas import (  # noqa: E402
     custo_capital,
     dados,
@@ -80,19 +80,26 @@ def _barra_lateral() -> None:
                 st.caption(erro)
             return
 
+        # Sem a unidade dentro do numero: a barra lateral e estreita, e
+        # "930,0 R$ milhoes" sai truncado em "930,0 R$ mil…". A legenda acima ja
+        # diz em que unidade tudo aqui esta.
         st.metric(
-            "Equity Value",
-            formatar(resultado.equity_value, "moeda", empresa.unidade),
+            "Equity Value", formatar(resultado.equity_value, "moeda"), border=True
         )
         colunas = st.columns(2)
-        colunas[0].metric("WACC", formatar(resultado.custo_capital.wacc_brl, "pct2"))
+        colunas[0].metric(
+            "WACC", formatar(resultado.custo_capital.wacc_brl, "pct"), border=True
+        )
         colunas[1].metric(
             "g perpétuo",
-            formatar(empresa.perpetuidade.crescimento_perpetuo, "pct2"),
+            formatar(empresa.perpetuidade.crescimento_perpetuo, "pct"),
+            border=True,
         )
         if resultado.valor_por_acao is not None:
             st.metric(
-                "Valor por ação", formatar(resultado.valor_por_acao, "numero")
+                "Valor por ação",
+                formatar(resultado.valor_por_acao, "numero"),
+                border=True,
             )
         st.caption(
             f"{formatar(resultado.dcf.peso_perpetuidade, 'pct')} do valor vem da "
@@ -115,40 +122,51 @@ def main() -> None:
     aplicar_css()
 
     # Toda tela expoe uma funcao `render`, entao o caminho de URL precisa ser
-    # declarado: sem isso o Streamlit o infere do nome da funcao e as dez
+    # declarado: sem isso o Streamlit o infere do nome da funcao e as doze
     # paginas colidem no mesmo endereco.
-    paginas = [
-        st.Page(inicio.render, title="Início", icon="🏠", url_path="inicio", default=True),
-        st.Page(dados.render, title="Dados", icon="📥", url_path="dados"),
-        st.Page(historico.render, title="Histórico", icon="📈", url_path="historico"),
-        st.Page(premissas.render, title="Premissas", icon="✏️", url_path="premissas"),
-        st.Page(
-            custo_capital.render,
-            title="Custo de capital",
-            icon="⚖️",
-            url_path="custo-de-capital",
-        ),
-        st.Page(valor.render, title="Valor", icon="💰", url_path="valor"),
-        st.Page(retorno.render, title="Retorno esperado", icon="📊", url_path="retorno"),
-        st.Page(
-            margem.render, title="Margem de segurança", icon="🛡️", url_path="margem"
-        ),
-        st.Page(
-            sensibilidade.render,
-            title="Sensibilidade",
-            icon="🎲",
-            url_path="sensibilidade",
-        ),
-        st.Page(multiplos.render, title="Múltiplos", icon="🔍", url_path="multiplos"),
-        st.Page(
-            diagnostico.render, title="Diagnóstico", icon="🩺", url_path="diagnostico"
-        ),
-        st.Page(exportar.render, title="Exportar", icon="📤", url_path="exportar"),
-    ]
+    #
+    # A ordem, os titulos e os icones vivem em `navegacao.PASSOS`, e nao aqui:
+    # o Inicio desenha o mesmo caminho e o rodape de cada tela linka para o
+    # proximo, e tres copias da mesma lista divergem na primeira mudanca.
+    telas = {
+        "inicio": inicio.render,
+        "dados": dados.render,
+        "historico": historico.render,
+        "premissas": premissas.render,
+        "custo_capital": custo_capital.render,
+        "valor": valor.render,
+        "retorno": retorno.render,
+        "margem": margem.render,
+        "sensibilidade": sensibilidade.render,
+        "multiplos": multiplos.render,
+        "diagnostico": diagnostico.render,
+        "exportar": exportar.render,
+    }
+    paginas = {
+        passo.chave: st.Page(
+            telas[passo.chave],
+            title=passo.titulo,
+            icon=passo.icone_material,
+            url_path=passo.url,
+            default=passo.chave == "inicio",
+        )
+        for passo in navegacao.PASSOS
+    }
+    navegacao.registrar(paginas)
 
-    navegacao = st.navigation(paginas, position="sidebar")
+    menu = st.navigation(list(paginas.values()), position="sidebar")
     _barra_lateral()
-    navegacao.run()
+    menu.run()
+
+    # O rodape do caminho fica aqui, e nao no fim de cada `render`: e a mesma
+    # peca em doze telas, e doze copias divergem. Depois do `run`, ele cai no
+    # fim da tela que acabou de ser desenhada.
+    # O casamento e pelo titulo, e nao pela URL: a pagina marcada como `default`
+    # e servida na raiz e devolve `url_path` vazio, entao comparar por URL
+    # deixaria justamente o Inicio sem rodape.
+    atual = next((p.chave for p in navegacao.PASSOS if p.titulo == menu.title), None)
+    if atual:
+        proximo_passo(atual)
 
 
 # O Streamlit executa o arquivo de entrada como ``__main__``, entao a guarda nao

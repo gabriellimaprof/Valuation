@@ -53,6 +53,86 @@ def etapa(rotulo: str, titulo: str, subtitulo: str = "") -> None:
         st.caption(subtitulo)
 
 
+def secao(titulo: str, descricao: str = "") -> None:
+    """Cabecalho de bloco dentro de uma tela, sempre no mesmo formato.
+
+    As telas usavam ``st.subheader``, ``st.markdown("**...**")`` e texto solto
+    para a mesma coisa, e o resultado era que "e um titulo de secao" nao tinha
+    uma aparencia -- tinha tres. Uma so torna a tela escaneavel: o olho aprende
+    o padrao uma vez e passa a achar o comeco de cada bloco sem ler.
+    """
+    st.markdown(
+        f'<div class="titulo-secao">{titulo}</div>', unsafe_allow_html=True
+    )
+    if descricao:
+        st.caption(descricao)
+
+
+def cartoes(
+    itens: list[tuple[str, str]] | list[tuple[str, str, str]],
+    colunas: int | None = None,
+) -> None:
+    """Uma fila de cartoes de indicador: rotulo, numero e ajuda opcional.
+
+    O numero que decide a tela estava saindo como texto solto numa linha de
+    colunas -- mesmo peso visual de uma legenda, sem moldura, sem separacao. E o
+    padrao que todo terminal financeiro resolve do mesmo jeito, porque funciona:
+    **cartao com borda**, rotulo pequeno em cima, numero grande embaixo. O olho
+    acha o numero sem ler o rotulo.
+
+    Cada item e ``(rotulo, valor)`` ou ``(rotulo, valor, ajuda)``. O valor ja vem
+    formatado -- quem chama sabe se aquilo e moeda, percentual ou multiplo.
+    """
+    if not itens:
+        return
+    faixas = st.columns(colunas or len(itens))
+    for faixa, item in zip(faixas, itens):
+        rotulo, valor = item[0], item[1]
+        ajuda = item[2] if len(item) > 2 else None
+        faixa.metric(rotulo, valor, help=ajuda, border=True)
+
+
+def proximo_passo(chave: str, pronto: bool = True, motivo: str = "") -> None:
+    """Rodape com o caminho: de onde se veio e para onde se vai.
+
+    Sem isto, terminar uma tela obrigava a voltar ao menu e lembrar qual era a
+    proxima -- o app e um encadeamento e nao mostrava o encadeamento. O link do
+    proximo passo carrega o resumo do que ele faz, entao a decisao de seguir nao
+    depende de ja se conhecer o fluxo.
+    """
+    from .navegacao import anterior, pagina, proximo
+
+    depois, antes = proximo(chave), anterior(chave)
+    if depois is None and antes is None:
+        return
+
+    st.divider()
+    esquerda, direita = st.columns([1, 2])
+    alvo_antes = pagina(antes.chave) if antes else None
+    if alvo_antes is not None:
+        esquerda.page_link(
+            alvo_antes,
+            label=f"Voltar a {antes.titulo}",
+            icon=":material/arrow_back:",
+        )
+
+    alvo_depois = pagina(depois.chave) if depois else None
+    if alvo_depois is None:
+        return
+
+    with direita:
+        if pronto:
+            st.page_link(
+                alvo_depois,
+                label=f"**Próximo — {depois.titulo}**",
+                icon=depois.icone_material,
+                width="stretch",
+            )
+            st.caption(depois.resumo)
+        else:
+            st.caption(motivo or f"Próximo: {depois.titulo}")
+
+
 def grafico(figura: go.Figure, dados: pd.DataFrame | pd.Series | None = None,
             rotulo_dados: str = "Ver os dados do gráfico") -> None:
     """Exibe um grafico com a tabela de dados disponivel ao lado.
@@ -75,9 +155,42 @@ def metrica(
     unidade: str = "",
     ajuda: str = "",
     delta: str | None = None,
+    cartao: bool = True,
 ) -> None:
-    """Metrica formatada no padrao brasileiro, com ajuda opcional."""
-    st.metric(rotulo, formatar(valor, formato, unidade), delta=delta, help=ajuda or None)
+    """Metrica formatada no padrao brasileiro, com ajuda opcional.
+
+    **A unidade vai no rotulo, e nao dentro do numero.** "930,0 R$ milhoes" nao
+    cabe na largura de um cartao e o Streamlit o corta em "930,0 R$ mil…" -- um
+    numero truncado, que e pior que um numero sem unidade porque parece um
+    numero inteiro. No rotulo ela cabe, porque rotulo quebra linha e numero nao;
+    e e a convencao da propria demonstracao financeira, que escreve a unidade uma
+    vez no cabecalho em vez de repeti-la em cada celula.
+    """
+    if unidade and formato == "moeda":
+        rotulo = f"{rotulo} ({unidade_curta(unidade)})"
+        texto = formatar(valor, formato)
+    else:
+        texto = formatar(valor, formato, unidade)
+    st.metric(rotulo, texto, delta=delta, help=ajuda or None, border=cartao)
+
+
+# "R$ milhoes" por extenso dentro do rotulo de um cartao estoura a largura e o
+# Streamlit corta o **rotulo** -- "Receita do ultimo ano (R$ mil…", que ainda por
+# cima se le como milhares. A abreviacao e a que o mercado brasileiro escreve.
+ABREVIACOES = {
+    "R$ milhões": "R$ mi",
+    "R$ milhoes": "R$ mi",
+    "R$ bilhões": "R$ bi",
+    "R$ bilhoes": "R$ bi",
+    "R$ mil": "R$ mil",
+    "unidades monetárias": "un. mon.",
+    "unidades monetarias": "un. mon.",
+}
+
+
+def unidade_curta(unidade: str) -> str:
+    """A unidade no tamanho que cabe num rotulo de cartao."""
+    return ABREVIACOES.get(unidade.strip(), unidade)
 
 
 def formatar(valor: float | None, formato: str = "moeda", unidade: str = "") -> str:

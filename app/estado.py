@@ -59,6 +59,11 @@ def pasta_temporaria() -> Path:
     return pasta
 
 
+# O nome que a empresa tem antes de alguem dizer qual empresa e. Fica nomeado
+# porque o import precisa reconhece-lo para saber que pode substitui-lo.
+NOME_PADRAO = "Nova empresa"
+
+
 def _empresa_inicial() -> Empresa:
     """Empresa de partida: plausivel o suficiente para o app abrir funcionando.
 
@@ -67,7 +72,7 @@ def _empresa_inicial() -> Empresa:
     inteiro rodando antes de trocar os numeros pelos dele.
     """
     return Empresa(
-        nome="Nova empresa",
+        nome=NOME_PADRAO,
         macro=PremissasMacro(),
         custo_capital=PremissasCustoCapital(
             beta_alavancado_setor=1.0, divida_pl_setor=0.4, divida_pl_alvo=0.4
@@ -198,7 +203,22 @@ def demonstracoes() -> Demonstracoes | None:
 
 
 def definir_demonstracoes(dfs: Demonstracoes | None) -> None:
+    """Guarda as demonstracoes e adota o nome da companhia importada.
+
+    A barra lateral, o titulo da planilha e o cabecalho do relatorio saem de
+    ``empresa.nome``, e ele continuava "Nova empresa" depois de importar a WEG --
+    entao o app mostrava, e **exportava**, um valuation da WEG assinado como
+    "Nova empresa".
+
+    So substitui o nome padrao: quem renomeou a empresa a mao escolheu aquele
+    nome, e reimportar nao pode desfazer a escolha pelas costas dele.
+    """
     st.session_state[CHAVE_DFS] = dfs
+    if dfs is None or not dfs.empresa:
+        return
+    atual = empresa()
+    if atual.nome == NOME_PADRAO:
+        definir_empresa(replace(atual, nome=dfs.empresa))
 
 
 def tem_historico() -> bool:
