@@ -110,6 +110,12 @@ def iniciar() -> None:
             # o usa, e sem ele o FCFE nao existe: e a variacao da divida que
             # separa o fluxo do acionista do fluxo da firma.
             "divida_por_ano": None,
+            # O papel da companhia na B3. Mora aqui, e nao numa chave solta da
+            # sessao, porque **o `config` viaja no projeto salvo**: escolhido
+            # uma vez, ele volta com o valuation em vez de ter de ser digitado
+            # de novo. O cadastro da CVM nao o traz, e a busca por nome acha
+            # so 40% -- perder essa escolha custa caro.
+            "ticker": None,
         },
     )
 
@@ -152,6 +158,11 @@ def substituir_bloco(campo: str, valor: Any) -> Empresa:
 
 def config() -> dict[str, Any]:
     return st.session_state[CHAVE_CONFIG]
+
+
+def definir_config(chave: str, valor: Any) -> None:
+    """Guarda uma convencao na sessao -- e, por tabela, no projeto salvo."""
+    st.session_state[CHAVE_CONFIG][chave] = valor
 
 
 def convencoes() -> dict[str, Any]:
@@ -348,6 +359,7 @@ def aplicar_projeto(projeto: Projeto) -> None:
             "tipo_fluxo": "fcff",
             "setor": None,
             "pais": "Brasil",
+            "ticker": None,
             # Saldo de divida bruta ao fim de cada ano projetado. So o FCFE
             # o usa, e sem ele o FCFE nao existe: e a variacao da divida que
             # separa o fluxo do acionista do fluxo da firma.

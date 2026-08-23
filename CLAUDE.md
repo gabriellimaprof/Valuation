@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1035 testes
+pytest                        # 1038 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1161,7 +1161,7 @@ não é verificação.
 
 ## Estado atual
 
-1.035 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.038 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1312,6 +1312,20 @@ o app abre funcionando offline.
 E o botão da curva **passou a poder aplicar**. Antes ele só mostrava o número e
 mandava digitar dois centímetros acima: ler e transcrever à mão é trabalho braçal
 e é onde entra erro de digitação, justamente no campo que decide o WACC inteiro.
+
+### O prêmio de risco local não tem percentil, e inventar um seria pior
+
+É o campo mais decisivo do caminho padrão e o único do balizador sem
+distribuição medida — de propósito. A série brasileira é curta e volátil demais
+para estimar um prêmio de ações, e é **exatamente por isso** que ele é premissa
+e não medida; publicar um percentil ali daria aparência de observação a um
+chute.
+
+As duas âncoras que existem são indiretas e honestas: **o Ke que sai** — o número
+que de fato desconta o fluxo, para a escolha não ser abstrata — e **o que o outro
+caminho daria com o mesmo beta**. Na empresa inicial: *"Com este prêmio o Ke sai
+15,1%. Pelo caminho em dólar, com o mesmo beta, sairia 13,4%."* A distância entre
+os dois é a informação.
 
 ### O ticker não existe no cadastro da CVM
 

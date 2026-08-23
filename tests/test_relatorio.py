@@ -317,3 +317,29 @@ def test_sem_dfc_indireta_a_ponte_fica_de_fora(empresa_exemplo):
     # E o relatorio inteiro continua saindo sem ela.
     texto = montar(avaliar(empresa_exemplo))
     assert "De EBITDA a caixa" not in texto
+
+
+# ---------------------------------------------------------------------------
+# O relatorio descreve a construcao que foi usada
+# ---------------------------------------------------------------------------
+
+
+def test_o_relatorio_descreve_o_caminho_local(empresa_exemplo):
+    """Ele escrevia sempre a soma em dolar.
+
+    Com o caminho local escolhido, o leitor via uma conta com risco-pais que o
+    modelo nao fez -- e cujos numeros nao somavam o Ke mostrado logo abaixo.
+    """
+    texto = montar(avaliar(empresa_exemplo))
+    assert "NTN-B nominalizada" in texto
+    assert "prêmio de risco local" in texto
+    assert "Não há termo de risco-país" in texto
+    assert "Ke em USD" not in texto
+
+
+def test_o_relatorio_descreve_o_caminho_em_dolar_quando_e_ele(empresa_exemplo):
+    em_dolar = substituir(empresa_exemplo, "custo_capital.metodo", "usd")
+    texto = montar(avaliar(em_dolar))
+    assert "Ke em USD" in texto
+    assert "risco-país)" in texto
+    assert "NTN-B" not in texto

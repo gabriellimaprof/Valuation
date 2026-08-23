@@ -32,7 +32,14 @@ from .multiplos import Alvo, Comparavel
 from .premissas import Empresa
 
 VERSAO = 1
-CHAVES_CONFIG = ("meio_de_ano", "tipo_fluxo", "setor", "pais")
+# Lista branca de proposito: o `config` da sessao acumula estado de interface, e
+# serializar tudo gravaria lixo no arquivo do usuario. Cada chave aqui e uma
+# decisao que o valuation carrega.
+#
+# `ticker` entrou porque o cadastro da CVM **nao traz o papel** e a busca por
+# nome acha so 40% das companhias: perder a escolha ao salvar custaria a
+# digitacao inteira de novo, justamente nas 60% em que a busca nao ajuda.
+CHAVES_CONFIG = ("meio_de_ano", "tipo_fluxo", "setor", "pais", "ticker")
 
 
 @dataclass(frozen=True)

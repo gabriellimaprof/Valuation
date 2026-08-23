@@ -406,20 +406,39 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
 
     cc = resultado.custo_capital
     p = empresa.custo_capital
-    linhas += [
-        "",
-        "### Custo de capital",
-        "",
-        f"- Ke em USD: {_pct(p.rf_usd, 2)} (livre de risco) + "
-        f"{_num(cc.beta_realavancado, 2)} × {_pct(p.erp_maduro, 2)} (prêmio de "
-        f"mercado) + {_pct(p.lambda_pais * p.risco_pais, 2)} (risco-país) = "
-        f"{_pct(cc.ke_usd, 2)}.",
-        f"- Convertido para moeda local pelo diferencial de inflação "
-        f"({_pct(macro.inflacao_brl)} contra {_pct(macro.inflacao_usd)}): "
-        f"Ke de {_pct(cc.ke_brl, 2)}.",
+    linhas += ["", "### Custo de capital", ""]
+
+    # **O relatório descreve a construção que foi usada**, e não uma delas. Ele
+    # escrevia sempre a soma em dólar; com o caminho local escolhido, o leitor
+    # via uma conta com risco-país que o modelo não fez — e cujos números não
+    # somavam o Ke mostrado logo abaixo.
+    if p.metodo == "local":
+        linhas += [
+            f"- Ke em reais, direto: {_pct(cc.rf_brl, 2)} (NTN-B nominalizada "
+            f"pelo IPCA de {_pct(macro.inflacao_brl)}) + "
+            f"{_num(cc.beta_realavancado, 2)} × {_pct(p.erp_local, 2)} (prêmio "
+            f"de risco local) = {_pct(cc.ke_brl, 2)}.",
+            "- **Não há termo de risco-país**: ele já está dentro da NTN-B, e "
+            "somá-lo o contaria duas vezes.",
+            "- O prêmio de risco local é **premissa, não medida** — a série "
+            "brasileira é curta e volátil demais para estimá-lo, e ele é o "
+            "número que mais move este Ke.",
+        ]
+    else:
+        linhas += [
+            f"- Ke em USD: {_pct(p.rf_usd, 2)} (livre de risco) + "
+            f"{_num(cc.beta_realavancado, 2)} × {_pct(p.erp_maduro, 2)} (prêmio "
+            f"de mercado) + {_pct(p.lambda_pais * p.risco_pais, 2)} "
+            f"(risco-país) = {_pct(cc.ke_usd, 2)}.",
+            f"- Convertido para moeda local pelo diferencial de inflação "
+            f"({_pct(macro.inflacao_brl)} contra {_pct(macro.inflacao_usd)}): "
+            f"Ke de {_pct(cc.ke_brl, 2)}.",
+        ]
+
+    linhas.append(
         f"- Kd após imposto: {_pct(cc.kd_liquido_brl, 2)}. WACC: "
-        f"{_pct(cc.wacc_brl, 2)}, com {_pct(cc.peso_equity)} de capital próprio.",
-    ]
+        f"{_pct(cc.wacc_brl, 2)}, com {_pct(cc.peso_equity)} de capital próprio."
+    )
     return linhas
 
 

@@ -309,3 +309,20 @@ def test_projeto_salvo_roda_a_analise_historica(projeto):
     pd.testing.assert_frame_equal(
         restaurada.indicadores, original.indicadores, check_names=False
     )
+
+
+def test_o_ticker_escolhido_volta_com_o_projeto(empresa_exemplo, tmp_path):
+    """Escolher o papel uma vez tem de bastar.
+
+    O cadastro da CVM nao traz ticker e a busca por nome acha so 40% das
+    companhias -- perder a escolha ao salvar e reabrir custaria a digitacao
+    inteira de novo, justamente nas 60% em que a busca nao ajuda.
+    """
+    projeto = Projeto(
+        empresa=empresa_exemplo,
+        config={"tipo_fluxo": "fcff", "ticker": "WEGE3.SA"},
+    )
+    caminho = tmp_path / "com_ticker.yaml"
+    salvar(projeto, caminho)
+
+    assert carregar(caminho).config["ticker"] == "WEGE3.SA"

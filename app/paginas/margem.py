@@ -168,7 +168,7 @@ def _buscar_cotacao(por_acao: bool, resultado) -> None:
             return
         # O ticker confirmado fica na sessao: da segunda vez em diante nao ha
         # busca por nome nenhuma, e nem digitacao.
-        st.session_state["ticker_confirmado"] = ticker.strip().upper()
+        estado.definir_config("ticker", ticker.strip().upper())
 
         try:
             achada = cotacao(ticker)
@@ -216,7 +216,7 @@ def _papel_sugerido() -> str:
     achei" é a resposta certa, e listadas que ela perde mesmo assim — o Banco do
     Brasil é uma delas.
     """
-    confirmado = st.session_state.get("ticker_confirmado")
+    confirmado = estado.config().get("ticker")
     if confirmado:
         return confirmado
 

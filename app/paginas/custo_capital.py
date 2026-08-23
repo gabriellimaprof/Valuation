@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -287,12 +289,47 @@ def _campos_locais(premissas, empresa, paises):
             "demais para estimá-lo, e por isso ele é premissa e não medida."
         ),
     )
+    with colunas[2]:
+        _baliza_do_premio_local(premissas, empresa, rf_brl, erp_local / 100)
     colunas[3].info(
         "**Não há risco-país neste caminho.** Ele já está dentro da NTN-B — "
         "somá-lo de novo o contaria duas vezes."
     )
     _buscar_ntnb(ipca)
     return pais, premissas.rf_usd * 100, premissas.erp_maduro * 100, 0.0, rf_brl, erp_local / 100
+
+
+
+def _baliza_do_premio_local(premissas, empresa, rf_brl: float, erp: float) -> None:
+    """O prêmio local não é observável — mas o Ke que ele produz é comparável.
+
+    Não há percentil aqui, e inventar um seria pior que não ter: a série
+    brasileira é curta e volátil demais para estimar um prêmio de ações, e é
+    exatamente por isso que este campo é premissa. As duas âncoras que existem
+    são indiretas e honestas:
+
+    * **o Ke que sai** — o número que de fato desconta o fluxo, mostrado junto
+      do prêmio para a escolha não ser abstrata;
+    * **o que o outro caminho daria** com o mesmo beta. Os dois discordam por
+      construção, e a distância entre eles é a informação: ela mede o quanto o
+      prêmio escolhido se afasta do que o mercado americano mais risco-país
+      implicaria.
+    """
+    from valuation.custo_capital import calcular_custo_capital
+
+    ke = rf_brl + premissas.premio_tamanho
+    try:
+        em_dolar = calcular_custo_capital(
+            replace(premissas, metodo="usd"), empresa.macro
+        )
+        ke_local = rf_brl + em_dolar.beta_realavancado * erp + premissas.premio_tamanho
+        st.caption(
+            f"Com este prêmio o Ke sai **{formatar(ke_local, 'pct')}**. "
+            f"Pelo caminho em dólar, com o mesmo beta, sairia "
+            f"{formatar(em_dolar.ke_brl, 'pct')}."
+        )
+    except (ValueError, ZeroDivisionError):
+        st.caption(f"Sobre um soberano de {formatar(ke, 'pct')}.")
 
 
 def _buscar_ntnb(ipca: float) -> None:
