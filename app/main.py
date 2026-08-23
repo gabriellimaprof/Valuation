@@ -80,6 +80,33 @@ def _barra_lateral() -> None:
                 st.caption(erro)
             return
 
+        # **O nome já é o da companhia; os números ainda podem não ser.**
+        # Importar adota o nome e as demonstrações, mas derivar as premissas é
+        # um clique separado — e deve continuar sendo. O que não pode é o
+        # intervalo entre as duas coisas ficar calado: com a WEG importada, esta
+        # barra anunciava "Equity Value 698,8" e "R$ 6,99 por ação", que são os
+        # números da empresa de partida com o nome da WEG em cima.
+        motivo = estado.modelo_fora_do_historico()
+        if motivo is not None:
+            # A barra e estreita: aqui vai a frase curta, e o motivo com os
+            # numeros fica no Inicio. O paragrafo inteiro espremido em 240px
+            # vira um bloco que ninguem le.
+            st.warning(
+                "**Estes números ainda não são desta empresa.** As premissas "
+                "continuam as de partida."
+            )
+            # O objeto da pagina, e nao um caminho: ver ``navegacao.registrar``.
+            alvo = navegacao.pagina("dados")
+            if alvo is not None:
+                st.page_link(
+                    alvo,
+                    # Curto porque a barra e estreita: o rotulo inteiro sai
+                    # cortado em "...do histórico" e o corte parece defeito.
+                    label="Derivar do histórico",
+                    icon=":material/database:",
+                )
+            return
+
         # Sem a unidade dentro do numero: a barra lateral e estreita, e
         # "930,0 R$ milhoes" sai truncado em "930,0 R$ mil…". A legenda acima ja
         # diz em que unidade tudo aqui esta.
@@ -105,6 +132,26 @@ def _barra_lateral() -> None:
             f"{formatar(resultado.dcf.peso_perpetuidade, 'pct')} do valor vem da "
             "perpetuidade"
         )
+
+        # O valor **do mercado** ao lado do valor **do modelo**. São as duas
+        # pontas da única pergunta que o app existe para responder, e uma delas
+        # vivia três telas adiante — quem estava em Premissas via só a sua.
+        de_mercado = estado.valor_de_mercado()
+        if de_mercado is not None:
+            mercado, quando = de_mercado
+            st.metric(
+                "Valor de mercado",
+                formatar(mercado, "moeda"),
+                delta=formatar(resultado.equity_value / mercado - 1, "pct")
+                if mercado
+                else None,
+                delta_color="normal",
+                help="Do preço informado em Margem de segurança. O delta é o "
+                "quanto o modelo vê acima (ou abaixo) do mercado.",
+                border=True,
+            )
+            if quando:
+                st.caption(f"Preço de {quando}")
 
         diag = estado.diagnostico()
         if diag is not None and len(diag):

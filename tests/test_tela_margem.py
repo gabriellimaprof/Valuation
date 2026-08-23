@@ -163,10 +163,20 @@ def test_as_expectativas_implicitas_saem_na_tela():
 
 
 def test_o_preco_fica_guardado_para_as_outras_telas():
+    """Ele mora no `config`, que **viaja no projeto salvo**.
+
+    Numa chave solta da sessao, reabrir um valuation perdia o preco -- e com ele
+    a margem de seguranca, o retorno esperado naquele preco e os multiplos de
+    mercado. Tres telas em branco por um numero de uma linha.
+    """
     teste = _rodar(TELA_MARGEM, preco=(600.0, False))
-    guardado = teste.session_state["preco_pedido"]
+    guardado = teste.session_state["config"]["preco_pedido"]
     assert guardado["valor"] == pytest.approx(600.0)
     assert guardado["por_acao"] is False
+    # E ele carrega a data: preco sem data envelhece calado, e um valuation
+    # reaberto em tres meses mostraria margem contra uma cotacao que nao e mais
+    # a de mercado.
+    assert guardado["em"]
 
 
 # ---------------------------------------------------------------------------
@@ -389,3 +399,26 @@ def test_cotacao_informada_mostra_o_valor_de_mercado_implicito():
     legendas = " ".join(c.value for c in teste.caption)
     assert "Valor de mercado implícito" in legendas
     assert "ações em circulação" in legendas
+
+
+def test_o_valor_de_mercado_sai_do_preco_por_acao():
+    """Preco por acao x acoes da CVM. Sem acoes, nao ha valor de mercado.
+
+    Inventar um seria pior que nao ter: o app nao busca cotacao sozinho e nao
+    pode apresentar como valor de mercado um numero que ele deduziu.
+    """
+    from app import estado
+
+    teste = _rodar(TELA_MARGEM, preco=(10.0, True))
+    acoes = teste.session_state["empresa"].ponte.acoes_em_circulacao
+    assert acoes, "o fixture precisa ter acoes para este teste dizer algo"
+
+    # A funcao le da sessao, entao roda dentro do processo do AppTest.
+    guardado = teste.session_state["config"]["preco_pedido"]
+    assert guardado["por_acao"] is True
+    assert guardado["valor"] == pytest.approx(10.0)
+
+
+def test_sem_preco_nao_ha_valor_de_mercado():
+    teste = _rodar(TELA_MARGEM)
+    assert teste.session_state["config"]["preco_pedido"] is None

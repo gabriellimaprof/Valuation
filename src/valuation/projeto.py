@@ -39,7 +39,17 @@ VERSAO = 1
 # `ticker` entrou porque o cadastro da CVM **nao traz o papel** e a busca por
 # nome acha so 40% das companhias: perder a escolha ao salvar custaria a
 # digitacao inteira de novo, justamente nas 60% em que a busca nao ajuda.
-CHAVES_CONFIG = ("meio_de_ano", "tipo_fluxo", "setor", "pais", "ticker")
+CHAVES_CONFIG = (
+    "meio_de_ano",
+    "tipo_fluxo",
+    "setor",
+    "pais",
+    "ticker",
+    # O preco pedido, com data e origem. Sem ele, reabrir um valuation perdia a
+    # margem de seguranca, o retorno esperado e os multiplos de mercado -- tres
+    # telas em branco por um numero de uma linha.
+    "preco_pedido",
+)
 
 
 @dataclass(frozen=True)

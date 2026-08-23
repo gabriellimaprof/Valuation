@@ -116,6 +116,8 @@ def iniciar() -> None:
             # de novo. O cadastro da CVM nao o traz, e a busca por nome acha
             # so 40% -- perder essa escolha custa caro.
             "ticker": None,
+            # O preco pedido, com a data e a origem. Ver `definir_preco`.
+            "preco_pedido": None,
         },
     )
 
@@ -232,6 +234,19 @@ def definir_demonstracoes(dfs: Demonstracoes | None) -> None:
         definir_empresa(replace(atual, nome=dfs.empresa))
 
 
+def modelo_fora_do_historico() -> str | None:
+    """Por que o modelo nao descreve o historico importado, ou ``None``.
+
+    Mora aqui, e nao em cada tela, porque a barra lateral e o Inicio fazem a
+    mesma pergunta e duas copias divergem na primeira mudanca. A regra em si e
+    do motor (``diagnostico.premissas_descrevem_o_historico``); esta funcao so
+    entrega a ela o que esta na sessao.
+    """
+    from valuation.diagnostico import premissas_descrevem_o_historico
+
+    return premissas_descrevem_o_historico(empresa(), demonstracoes())
+
+
 def tem_historico() -> bool:
     dfs = demonstracoes()
     return dfs is not None and bool(dfs.anos)
@@ -261,11 +276,54 @@ def preco() -> dict[str, float | bool] | None:
     si sem que nada acusasse, que e o pior tipo de divergencia num material que
     vai para o cliente.
     """
-    return st.session_state.get(CHAVE_PRECO)
+    return config().get(CHAVE_PRECO)
 
 
-def definir_preco(valor: float, por_acao: bool) -> None:
-    st.session_state[CHAVE_PRECO] = {"valor": float(valor), "por_acao": bool(por_acao)}
+
+def valor_de_mercado() -> tuple[float, str] | None:
+    """O valor de mercado da companhia, e a data do preco que o produziu.
+
+    Sai do preco informado em **Margem de seguranca**: por acao, multiplicado
+    pelas acoes em circulacao que a CVM publica; total, direto. Devolve ``None``
+    quando nao ha preco -- e ausencia aqui e resposta, nao falha. O app nao busca
+    cotacao sozinho e nao deve inventar um valor de mercado.
+    """
+    guardado = preco()
+    if not guardado:
+        return None
+    valor = float(guardado["valor"])
+    if guardado.get("por_acao"):
+        acoes = empresa().ponte.acoes_em_circulacao
+        if not acoes:
+            return None
+        valor *= acoes
+    return valor, str(guardado.get("em") or "")
+
+def definir_preco(
+    valor: float, por_acao: bool, ticker: str | None = None, em: str | None = None
+) -> None:
+    """Guarda o preco e **de onde ele veio**.
+
+    Mora no `config`, e nao numa chave solta, porque o `config` viaja no projeto
+    salvo: sem isso, reabrir um valuation perdia o preco -- e com ele a margem de
+    seguranca, o retorno esperado naquele preco e os multiplos de mercado. Tres
+    telas ficavam em branco por um numero de uma linha.
+
+    `ticker` e `em` existem porque preco sem data envelhece calado. Um valuation
+    reaberto em tres meses mostraria "margem de 32%" contra uma cotacao que nao
+    e mais a de mercado, e nada na tela diria isso.
+    """
+    from datetime import date
+
+    definir_config(
+        CHAVE_PRECO,
+        {
+            "valor": float(valor),
+            "por_acao": bool(por_acao),
+            "ticker": ticker,
+            "em": em or date.today().isoformat(),
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +418,7 @@ def aplicar_projeto(projeto: Projeto) -> None:
             "setor": None,
             "pais": "Brasil",
             "ticker": None,
+            "preco_pedido": None,
             # Saldo de divida bruta ao fim de cada ano projetado. So o FCFE
             # o usa, e sem ele o FCFE nao existe: e a variacao da divida que
             # separa o fluxo do acionista do fluxo da firma.

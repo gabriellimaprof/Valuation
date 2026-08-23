@@ -326,3 +326,29 @@ def test_o_ticker_escolhido_volta_com_o_projeto(empresa_exemplo, tmp_path):
     salvar(projeto, caminho)
 
     assert carregar(caminho).config["ticker"] == "WEGE3.SA"
+
+
+def test_o_preco_pedido_volta_com_o_projeto(empresa_exemplo, tmp_path):
+    """Sem ele, reabrir um valuation deixava tres telas em branco.
+
+    Margem de seguranca, retorno esperado naquele preco e multiplos de mercado
+    fazem a mesma pergunta a partir do mesmo numero -- e ele nao era salvo.
+    """
+    projeto = Projeto(
+        empresa=empresa_exemplo,
+        config={
+            "preco_pedido": {
+                "valor": 49.27,
+                "por_acao": True,
+                "ticker": "WEGE3.SA",
+                "em": "2026-08-21",
+            }
+        },
+    )
+    caminho = tmp_path / "com_preco.yaml"
+    salvar(projeto, caminho)
+
+    volta = carregar(caminho).config["preco_pedido"]
+    assert volta["valor"] == pytest.approx(49.27)
+    assert volta["ticker"] == "WEGE3.SA"
+    assert volta["em"] == "2026-08-21"

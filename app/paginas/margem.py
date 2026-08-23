@@ -191,6 +191,8 @@ def _buscar_cotacao(por_acao: bool, resultado) -> None:
         estado.definir_preco(
             achada.preco if por_acao else achada.valor_de_mercado(acoes or 0.0),
             por_acao=por_acao,
+            ticker=achada.ticker,
+            em=achada.negociado_em.date().isoformat(),
         )
         st.rerun()
 

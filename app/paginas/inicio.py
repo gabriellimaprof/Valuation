@@ -5,7 +5,15 @@ from __future__ import annotations
 import streamlit as st
 
 from .. import estado
-from ..componentes import cartoes, etapa, formatar, secao, unidade_curta
+from ..componentes import (
+    cartoes,
+    em_texto,
+    escapar_cifrao,
+    etapa,
+    formatar,
+    secao,
+    unidade_curta,
+)
 from ..navegacao import PASSOS, pagina
 from ..textos import AVISO_FINAL, BOAS_VINDAS
 
@@ -20,6 +28,7 @@ def render() -> None:
     st.divider()
     secao("Onde você está")
 
+    fora_do_historico = estado.modelo_fora_do_historico()
     cartoes(
         [
             ("Empresa", empresa.nome),
@@ -37,12 +46,30 @@ def render() -> None:
             ),
             (
                 f"Equity Value ({unidade_curta(empresa.unidade)})",
-                formatar(resultado.equity_value, "moeda")
-                if resultado is not None
-                else "—",
+                "—"
+                if resultado is None or fora_do_historico is not None
+                else formatar(resultado.equity_value, "moeda"),
             ),
         ]
     )
+    # Um Equity Value da empresa de partida sob o nome da companhia importada e
+    # pior que um traco: ele e plausivel. Ver `estado.modelo_fora_do_historico`.
+    if fora_do_historico is not None:
+        st.warning(
+            "**O Equity Value ainda não é desta empresa.** O histórico foi "
+            f"importado, mas as premissas continuam as de partida — "
+            f"{escapar_cifrao(fora_do_historico)}."
+        )
+        # O objeto da pagina, e nao um caminho: ver ``navegacao.registrar``.
+        alvo = pagina("dados")
+        if alvo is not None:
+            st.page_link(
+                alvo,
+                label="Derivar as premissas do histórico",
+                icon=":material/database:",
+            )
+    else:
+        _confronto_com_o_mercado(resultado, empresa)
 
     st.divider()
     secao(
@@ -55,6 +82,33 @@ def render() -> None:
     st.divider()
     st.caption(AVISO_FINAL)
 
+
+
+def _confronto_com_o_mercado(resultado, empresa) -> None:
+    """O valor do modelo contra o do mercado, logo na abertura.
+
+    É a pergunta que o app existe para responder, e ela não aparecia em lugar
+    nenhum até a oitava tela. Sem preço a linha diz onde informá-lo — omitir o
+    bloco esconderia que a comparação é possível.
+    """
+    de_mercado = estado.valor_de_mercado()
+    if de_mercado is None or resultado is None:
+        st.caption(
+            "Informe a cotação em **Margem de segurança** para ver aqui o valor "
+            "de mercado ao lado do que o modelo calcula."
+        )
+        return
+
+    mercado, quando = de_mercado
+    if not mercado:
+        return
+    distancia = resultado.equity_value / mercado - 1
+    leitura = "acima" if distancia > 0 else "abaixo"
+    st.caption(
+        f"O mercado paga **{em_texto(mercado, empresa.unidade)}**"
+        + (f" (preço de {quando})" if quando else "")
+        + f" — o modelo vê **{formatar(abs(distancia), 'pct')} {leitura}** disso."
+    )
 
 def _caminho() -> None:
     """As etapas como uma lista navegavel, e nao como uma lista de leitura.

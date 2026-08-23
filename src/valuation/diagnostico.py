@@ -109,6 +109,74 @@ JUROS_CAPITALIZADOS = 0.100
 LEASING_RELEVANTE = 0.20
 
 
+
+# A distancia a partir da qual as premissas deixam de poder descrever a
+# companhia importada. E folgada de proposito: quem normaliza uma receita
+# ciclica, ou projeta a partir de um ano-base que nao e o ultimo, continua
+# descrevendo a mesma empresa. O que este corte pega e a **troca de companhia**
+# -- o modelo de partida tem receita de 1.000 e 100 milhoes de acoes, e a WEG
+# importada tem 41 bilhoes e 4,2 bilhoes de acoes: fatores de 41x e 42x.
+FATOR_DE_OUTRA_COMPANHIA = 3.0
+
+
+def premissas_descrevem_o_historico(empresa, demonstracoes) -> str | None:
+    """Por que o modelo **nao** descreve o historico importado, ou ``None``.
+
+    Existe porque importar as demonstracoes adota o nome da companhia mas nao as
+    premissas -- deriva-las e um clique separado, e deve continuar sendo: aplicar
+    sozinho sobrescreveria o que o analista ja tivesse montado.
+
+    O que nao pode e o intervalo entre as duas coisas ficar **calado**. Depois de
+    importar a WEG, a barra lateral e o Inicio anunciavam "WEG SA -- Equity Value
+    698,8" e "R$ 6,99 por acao": os numeros da empresa de partida, com o nome da
+    companhia em cima. Um valuation de outra empresa assinado com o nome da
+    certa e o mesmo defeito que o nome padrao ja tinha causado, pelo lado
+    oposto -- e este e pior, porque o numero e plausivel.
+
+    Compara **escala**, e nao igualdade: receita-base e numero de acoes. Sao as
+    duas grandezas que nao sobrevivem a troca de companhia.
+    """
+    if demonstracoes is None or not getattr(demonstracoes, "anos", None):
+        return None
+
+    def _fora_de_escala(do_modelo: float, do_historico: float) -> bool:
+        if not np.isfinite(do_modelo) or not np.isfinite(do_historico):
+            return False
+        if do_modelo <= 0 or do_historico <= 0:
+            return False
+        maior, menor = max(do_modelo, do_historico), min(do_modelo, do_historico)
+        return maior / menor > FATOR_DE_OUTRA_COMPANHIA
+
+    # **Este texto vai para a tela**, e por isso vem acentuado. O resto do
+    # modulo escreve em ASCII por ser codigo; o que o usuario le, nao.
+    unidade = f" {empresa.unidade}" if getattr(empresa, "unidade", "") else ""
+
+    razoes = []
+    try:
+        receita = float(demonstracoes.valor("receita_liquida"))
+    except Exception:  # noqa: BLE001 -- historico sem a conta nao acusa nada
+        receita = float("nan")
+    if _fora_de_escala(empresa.operacionais.receita_base, receita):
+        razoes.append(
+            f"a receita-base do modelo é {_num(empresa.operacionais.receita_base)}"
+            f"{unidade} e o último exercício importado tem {_num(receita)}"
+        )
+
+    try:
+        acoes = float(demonstracoes.valor("acoes_em_circulacao"))
+    except Exception:  # noqa: BLE001
+        acoes = float("nan")
+    if _fora_de_escala(empresa.ponte.acoes_em_circulacao, acoes):
+        razoes.append(
+            f"o modelo tem {_num(empresa.ponte.acoes_em_circulacao)} ações e a "
+            f"companhia importada tem {_num(acoes)}"
+        )
+
+    if not razoes:
+        return None
+    return "; ".join(razoes)
+
+
 @dataclass(frozen=True)
 class Achado:
     """Um ponto do modelo que merece atencao, com o porque e o que fazer."""

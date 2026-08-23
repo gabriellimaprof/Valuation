@@ -305,6 +305,17 @@ def em_texto(valor: float | None, unidade: str = "") -> str:
     return formatar(valor, "moeda", unidade).replace("$", r"\$")
 
 
+def escapar_cifrao(texto: str) -> str:
+    """Escapa o ``$`` de um texto **ja montado**, pela mesma razao de ``em_texto``.
+
+    ``em_texto`` recebe um numero e o formata; esta recebe uma frase que veio
+    pronta -- tipicamente do motor, que nao conhece o Streamlit e nao deveria
+    conhecer. A regra e a mesma e continua sendo por destino: o que vai para
+    markdown passa por aqui, o que vai para celula nao.
+    """
+    return texto.replace("$", r"\$")
+
+
 def tabela_formatada(
     dados: pd.DataFrame, formato: str = "moeda", unidade: str = ""
 ) -> pd.DataFrame:
