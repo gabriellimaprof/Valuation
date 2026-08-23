@@ -16,7 +16,7 @@ from valuation.margem import (
 )
 
 from .. import estado
-from ..componentes import aviso_sem_modelo, etapa, formatar, metrica
+from ..componentes import aviso_sem_modelo, em_texto, etapa, formatar, metrica
 
 
 def render() -> None:
@@ -92,32 +92,62 @@ def _entrada_do_preco(resultado, empresa):
         )
         return None, por_acao
 
-    referencia = (
-        float(resultado.valor_por_acao) if por_acao else float(resultado.equity_value)
-    )
+    # **O campo nasce vazio, e não igual ao valor calculado.** Preenchido com o
+    # número do próprio DCF ele produzia margem de 0,0% e um "Preço pedido" no
+    # placar que se lê como dado de mercado — um usuário leu ali o valor de
+    # mercado da WEG e viu R$ 59,8 bi, que é o DCF do app e não a bolsa. O app
+    # **não busca cotação em lugar nenhum**; este número vem de fora, e enquanto
+    # não vier a tela não deve mostrar comparação nenhuma.
     padrao = (
         float(guardado["valor"])
         if guardado and guardado["por_acao"] == por_acao
-        else referencia
+        else None
     )
 
     preco = colunas[1].number_input(
-        "Preço pedido pelo mercado" + ("" if por_acao else f" ({empresa.unidade})"),
+        ("Cotação (R$/ação)" if por_acao else f"Valor de mercado ({empresa.unidade})"),
         value=padrao,
         step=1.0 if por_acao else 10.0,
         min_value=0.0,
+        placeholder="quanto o mercado pede",
         help=(
-            "A cotação, ou o valor de mercado total. Começa igual ao valor "
-            "calculado — o que dá margem zero, de propósito: o número tem que vir "
-            "de fora."
+            "**O app não busca cotação.** Este número vem de fora — do home "
+            "broker, do site da companhia, de onde você preferir. Sem ele não há "
+            "margem de segurança para calcular, porque margem é a distância "
+            "entre o que a empresa vale e o que ela custa."
         ),
     )
-    if preco <= 0:
-        st.info("Informe um preço positivo para comparar.")
+    if preco is None or preco <= 0:
+        colunas[1].caption("Informe o preço para ver a margem.")
         return None, por_acao
+
+    _mostrar_a_outra_leitura(colunas[1], preco, por_acao, resultado, empresa)
 
     estado.definir_preco(preco, por_acao=por_acao)
     return preco, por_acao
+
+
+def _mostrar_a_outra_leitura(coluna, preco, por_acao, resultado, empresa) -> None:
+    """Cotação e valor de mercado, um ao lado do outro.
+
+    Quem digita a cotação quer conferir o valor de mercado que ela implica, e
+    quem digita o total quer o preço por ação. Sem isto o usuário sai da tela
+    para multiplicar — e o número de ações já está aqui, lido da composição de
+    capital que a CVM publica junto da DFP.
+    """
+    acoes = resultado.empresa.ponte.acoes_em_circulacao
+    if not acoes:
+        return
+    if por_acao:
+        coluna.caption(
+            f"Valor de mercado implícito: **{em_texto(preco * acoes, empresa.unidade)}** "
+            f"({formatar(acoes, 'numero')} ações em circulação)"
+        )
+    else:
+        coluna.caption(
+            rf"Cotação implícita: **R\$ {formatar(preco / acoes, 'numero')}** "
+            f"({formatar(acoes, 'numero')} ações em circulação)"
+        )
 
 
 def _placar(m, unidade: str, formato: str) -> None:

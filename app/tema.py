@@ -336,6 +336,8 @@ TABELA_CSS = """
   .df-publicada tr:hover {{ background: {realce}; }}
   .df-publicada td.negativo {{ color: {negativo}; }}
   .df-publicada td.nulo {{ color: {texto_suave}; }}
+  /* Celula de texto numa tabela de numeros: a direita ela nao se le. */
+  .df-publicada td.texto {{ text-align: left; white-space: normal; }}
   .df-publicada .unidade {{
     margin-left: 0.45rem;
     padding: 0.05rem 0.35rem;

@@ -133,6 +133,83 @@ def proximo_passo(chave: str, pronto: bool = True, motivo: str = "") -> None:
             st.caption(motivo or f"Próximo: {depois.titulo}")
 
 
+
+def balizador(
+    valor: float,
+    indicador: str = "",
+    analise=None,
+    formato: str = "pct",
+    contexto: str = "",
+) -> None:
+    """Onde o número que você acabou de digitar cai — na empresa e na base.
+
+    A tela de Premissas pedia doze decisões e não respondia a pergunta que cada
+    uma levanta: **25% de ROIC perpétuo é muito ou pouco?** A resposta estava a
+    duas telas de distância, no Histórico, e depois na base de referência — e ir
+    e voltar para conferir cada campo é o tipo de trabalho braçal que este
+    projeto existe para tirar da mão.
+
+    Duas âncoras, porque elas respondem coisas diferentes e nenhuma basta:
+
+    * **o que a companhia entregou** — a mediana do período importado. É o
+      balizador mais forte: projetar 25% para quem nunca passou de 12% é uma
+      afirmação sobre mudança, e ela precisa de motivo;
+    * **onde isso cai na base brasileira** — o percentil entre as companhias
+      medidas. Serve para o caso oposto, o da empresa sem histórico longo, e
+      para saber se o número é incomum no mercado e não só nela.
+
+    Sai em silêncio quando não há âncora: uma linha dizendo "sem referência"
+    ocupa o mesmo espaço e não ajuda ninguém.
+    """
+    from valuation import referencias
+
+    partes = []
+
+    if analise is not None and indicador:
+        try:
+            historico = float(analise.mediana(indicador))
+        except Exception:  # noqa: BLE001 - indicador que a analise nao produziu
+            historico = float("nan")
+        if np.isfinite(historico):
+            anos = analise.anos
+            partes.append(
+                f"**{formatar(historico, formato)}** na empresa "
+                f"({anos[0]}–{anos[-1]})"
+            )
+            partes.append(_comparacao_com_o_historico(valor, historico, formato))
+
+    onde = referencias.descrever(indicador, valor) if indicador else ""
+    if onde:
+        partes.append(onde.replace("companhias brasileiras", "da base"))
+
+    if contexto:
+        partes.append(contexto)
+
+    partes = [p for p in partes if p]
+    if partes:
+        st.caption(" · ".join(partes))
+
+
+# Quanto o número projetado precisa se afastar do histórico para merecer ser
+# comentado. Abaixo disso a diferença é ruído de arredondamento da própria
+# mediana, e apontá-la treinaria o usuário a ignorar o balizador.
+DISTANCIA_QUE_MERECE_NOTA = 0.25
+
+
+def _comparacao_com_o_historico(valor: float, historico: float, formato: str) -> str:
+    """"Acima" e "abaixo" com o tamanho, e só quando o tamanho importa."""
+    if not np.isfinite(valor) or not np.isfinite(historico) or historico == 0:
+        return ""
+    razao = valor / historico
+    if abs(razao - 1) < DISTANCIA_QUE_MERECE_NOTA:
+        return "em linha com o histórico"
+    if formato in ("pct", "pct2"):
+        diferenca = formatar(abs(valor - historico), formato)
+        sentido = "acima" if valor > historico else "abaixo"
+        return f"**{diferenca} {sentido}** do histórico"
+    return f"**{razao:.1f}x** o histórico".replace(".", ",")
+
+
 def grafico(figura: go.Figure, dados: pd.DataFrame | pd.Series | None = None,
             rotulo_dados: str = "Ver os dados do gráfico") -> None:
     """Exibe um grafico com a tabela de dados disponivel ao lado.
@@ -316,6 +393,19 @@ def tabela_de_demonstracao(
     )
 
 
+def _celula(valor, formato: str) -> str:
+    """Uma celula qualquer: numero formatado, ou texto que ja veio pronto.
+
+    A passagem de texto existe para as tabelas que misturam as duas coisas -- o
+    balizador da projecao poe "no percentil 69 de 397" ao lado de "12,5%" --, e
+    sem ela essas tabelas voltariam a ser `st.dataframe`, que desenha em canvas
+    e alinha tudo a esquerda.
+    """
+    if isinstance(valor, str):
+        return f'<td class="texto">{_texto_seguro(valor)}</td>'
+    return _celula_de_numero(valor, formato)
+
+
 def _celula_de_numero(valor, formato: str) -> str:
     """Uma celula de numero: alinhada a direita, negativo marcado, zero recessivo.
 
@@ -363,7 +453,7 @@ def tabela_financeira(
     for rotulo, linha in tabela.iterrows():
         nivel = "n2" if rotulo in subtotais else "n3"
         celulas = [f'<td class="conta">{_texto_seguro(rotulo)}</td>']
-        celulas += [_celula_de_numero(linha[c], formato) for c in colunas]
+        celulas += [_celula(linha[c], formato) for c in colunas]
         corpo.append(f'<tr class="{nivel}">{"".join(celulas)}</tr>')
 
     rotulo_coluna = f"Linha ({unidade_curta(unidade)})" if unidade else "Linha"
@@ -396,7 +486,7 @@ def tabela_de_indicadores(
     for rotulo, linha in tabela.iterrows():
         nivel = "n2" if rotulo in destaques else "n3"
         celulas = [f'<td class="conta">{_texto_seguro(rotulo)}</td>']
-        celulas += [_celula_de_numero(linha[c], formato) for c in colunas]
+        celulas += [_celula(linha[c], formato) for c in colunas]
         corpo.append(f'<tr class="{nivel}">{"".join(celulas)}</tr>')
 
     return (

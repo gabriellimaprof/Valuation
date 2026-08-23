@@ -13,7 +13,16 @@ from valuation.historico import sugerir_premissas
 from valuation.premissas import BASES_DO_MULTIPLO
 
 from .. import estado
-from ..componentes import conceito, etapa, formatar, grafico, tabela_formatada
+from ..componentes import (
+    balizador,
+    conceito,
+    etapa,
+    formatar,
+    grafico,
+    secao,
+    tabela_de_indicadores,
+    tabela_formatada,
+)
 from ..graficos import barras_temporais, linhas_percentuais
 
 
@@ -47,7 +56,7 @@ def render() -> None:
     _editor(operacionais, anos, analise)
 
     st.divider()
-    _perpetuidade(empresa)
+    _perpetuidade(empresa, analise)
 
     st.divider()
     _visualizar()
@@ -159,18 +168,7 @@ def _editor(operacionais, anos: list[int], analise) -> None:
         key="editor_premissas",
     )
 
-    referencias = [
-        _referencia(analise, "Crescimento da receita"),
-        _referencia(analise, "Margem EBITDA"),
-        _referencia(analise, "Depreciacao / Receita"),
-        _referencia(analise, "Capex / Receita"),
-        _referencia(analise, "Capital de giro / Receita"),
-    ]
-    if tem_arrendamento:
-        referencias.append(_referencia(analise, "Arrendamento / Divida bruta"))
-    visiveis = [f"**{c}** — {r}" for c, r in zip(tabela.columns, referencias) if r]
-    if visiveis:
-        st.caption("Referências do histórico: " + " · ".join(visiveis))
+    _balizadores_da_projecao(editada, analise, tem_arrendamento)
 
     if tem_arrendamento:
         st.caption(
@@ -231,7 +229,71 @@ ANCORAS = {
 }
 
 
-def _perpetuidade(empresa) -> None:
+
+# O indicador do histórico que baliza cada coluna do editor, na mesma ordem.
+BALIZAS = (
+    ("Crescimento da receita (%)", "Crescimento da receita"),
+    ("Margem EBITDA (%)", "Margem EBITDA"),
+    ("Depreciação / receita (%)", "Depreciacao / Receita"),
+    ("Capex / receita (%)", "Capex / Receita"),
+    ("Capital de giro / receita (%)", "Capital de giro / Receita"),
+    ("Arrendamento / receita (%)", "Arrendamento / Divida bruta"),
+)
+
+
+def _balizadores_da_projecao(editada, analise, tem_arrendamento: bool) -> None:
+    """O que você projetou, contra o que a empresa entregou e o que a base diz.
+
+    A queixa que originou esta tabela: *"é muita opção, pouca explicação, e muita
+    info que eu tenho que ficar indo e voltando pras outras janelas para
+    verificar"*. Projetar margem de 25% sem ver que a empresa nunca passou de 19%
+    é fácil, e o erro só aparece três telas depois — quando aparece.
+
+    As três colunas respondem coisas diferentes e nenhuma sozinha basta: a média
+    projetada é a decisão, a mediana histórica é a âncora mais forte, e o
+    percentil da base cobre o caso da empresa sem histórico longo ou em
+    transformação.
+    """
+    if analise is None:
+        return
+
+    from valuation import referencias
+
+    linhas = []
+    balizas = BALIZAS if tem_arrendamento else BALIZAS[:-1]
+    for coluna, indicador in balizas:
+        if coluna not in editada.columns:
+            continue
+        projetado = float(np.mean(editada[coluna])) / 100
+        try:
+            historico = float(analise.mediana(indicador))
+        except Exception:  # noqa: BLE001 - indicador ausente na analise
+            historico = float("nan")
+        onde = referencias.descrever(indicador, projetado)
+        linhas.append(
+            {
+                "Direcionador": coluna.replace(" (%)", ""),
+                "Você projetou (média)": formatar(projetado, "pct"),
+                "A empresa entregou (mediana)": formatar(historico, "pct"),
+                "Onde isso cai na base": onde.replace("companhias brasileiras", "companhias")
+                if onde
+                else "—",
+            }
+        )
+
+    if not linhas:
+        return
+
+    secao(
+        "O que isso significa",
+        "Sua projeção ao lado do que a empresa entregou e do que a base "
+        "brasileira mostra — para não precisar sair da tela para conferir.",
+    )
+    st.html(
+        tabela_de_indicadores(pd.DataFrame(linhas).set_index("Direcionador"))
+    )
+
+def _perpetuidade(empresa, analise=None) -> None:
     st.subheader("Perpetuidade")
     conceito("perpetuidade", "A parte do modelo que mais pesa no valor")
 
@@ -320,6 +382,21 @@ def _perpetuidade(empresa) -> None:
             f"Nominal a {formatar(ipca, 'pct')} de IPCA: "
             f"**{formatar((1 + roic / 100) * (1 + ipca) - 1, 'pct')}**"
         )
+    with colunas[2]:
+        # A pergunta que este campo levanta e nao respondia: 25% e muito ou
+        # pouco? A resposta estava duas telas atras, no Historico.
+        balizador(
+            roic / 100,
+            "ROE" if para_o_acionista else "ROIC",
+            analise,
+            "pct",
+            contexto=(
+                "Acima do histórico exige motivo: é dizer que a empresa vai "
+                "empregar capital novo melhor do que empregou o antigo."
+            )
+            if normalizar
+            else "",
+        )
 
     # A base do múltiplo depende do caso: uma indústria sai por EV/EBITDA, uma
     # empresa cujo par negocia por lucro sai por P/L. **A escolha muda a moeda
@@ -383,6 +460,19 @@ def _perpetuidade(empresa) -> None:
     )
     if previsto is not None:
         colunas[3].caption("Derivado da âncora — para digitá-lo, escolha *Livre*.")
+    with colunas[3]:
+        balizador(
+            crescimento / 100,
+            "Crescimento da receita",
+            analise,
+            "pct",
+            contexto=(
+                f"Teto: {formatar(pib_nominal, 'pct')} — o PIB nominal."
+                if crescimento / 100 <= pib_nominal
+                else f"**Acima do PIB nominal ({formatar(pib_nominal, 'pct')})**: "
+                "a empresa acabaria maior que o país."
+            ),
+        )
 
     if st.button("Aplicar perpetuidade"):
         alteracoes: dict = {"macro.pib_real": pib_real / 100}

@@ -74,11 +74,31 @@ def _sem_unidade(rotulo: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_a_tela_abre_com_o_preco_igual_ao_valor(_=None):
+def test_a_tela_abre_sem_preco_e_sem_placar():
+    """O campo nasce **vazio**, e nao igual ao valor calculado.
+
+    Preenchido com o numero do proprio DCF ele produzia margem de 0,0% e um
+    "Preco pedido" no placar que se le como dado de mercado -- um usuario leu ali
+    o valor de mercado da WEG e viu R$ 59,8 bi, que e o DCF do app e nao a bolsa.
+    O app nao busca cotacao em lugar nenhum, e enquanto o numero nao vier de fora
+    a tela nao deve mostrar comparacao nenhuma.
+    """
     teste = _rodar(TELA_MARGEM)
-    rotulos = {_sem_unidade(m.label): m.value for m in teste.metric}
-    assert rotulos["Margem sobre o valor"] == "0,0%"
-    assert rotulos["Valor calculado"] == rotulos["Preço pedido"]
+    rotulos = {_sem_unidade(m.label) for m in teste.metric}
+    assert "Margem sobre o valor" not in rotulos, "o placar apareceu sem preco"
+
+    campos = [n.label for n in teste.number_input]
+    assert any("Cotação" in r or "Valor de mercado" in r for r in campos), campos
+
+
+def test_a_tela_diz_que_nao_busca_cotacao():
+    """Numero que o app nao tem nao pode parecer numero que o app tem."""
+    teste = _rodar(TELA_MARGEM)
+    campo = next(
+        n for n in teste.number_input
+        if "Cotação" in n.label or "Valor de mercado" in n.label
+    )
+    assert "não busca cotação" in (campo.help or "")
 
 
 def test_preco_abaixo_do_valor_da_margem_positiva():
@@ -325,3 +345,17 @@ def test_a_industria_continua_com_as_duas_secoes():
     texto = teste.session_state["relatorio"]
     assert "## O que não foi avaliado aqui" not in texto
     assert "## As perguntas que os números não respondem" in texto
+
+
+def test_cotacao_informada_mostra_o_valor_de_mercado_implicito():
+    """As acoes ja estao aqui, lidas da composicao de capital que a CVM publica.
+
+    Quem digita a cotacao quer conferir o valor de mercado que ela implica --
+    sem isto o usuario sai da tela para multiplicar, e foi assim que o numero de
+    acoes nunca chegou a ser conferido contra o mercado. Na WEG: 4,196 bilhoes
+    de acoes a R$ 49,29 dao os R$ 206,8 bi que a bolsa marca.
+    """
+    teste = _rodar(TELA_MARGEM, preco=(12.0, True))
+    legendas = " ".join(c.value for c in teste.caption)
+    assert "Valor de mercado implícito" in legendas
+    assert "ações em circulação" in legendas

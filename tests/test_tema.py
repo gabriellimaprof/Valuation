@@ -238,3 +238,24 @@ def test_o_nivel_mais_fraco_da_tabela_ainda_se_le(modo):
     """`texto_suave` dava 3,70:1 no claro. A hierarquia sobrevive no tamanho."""
     palheta = tema.CLARO if modo == "claro" else tema.ESCURO
     assert contraste(palheta.texto_secundario, palheta.superficie) >= MINIMO
+
+
+def test_a_tabela_aceita_celula_de_texto():
+    """Balizador poe "no percentil 69 de 397" ao lado de "12,5%" na mesma tabela.
+
+    Sem a passagem de texto, essas tabelas voltariam a ser `st.dataframe` -- que
+    desenha em canvas e alinha tudo a esquerda, que e o defeito que o revamp
+    corrigiu no resto do app.
+    """
+    import pandas as pd
+
+    from app.componentes import tabela_de_indicadores
+
+    tabela = pd.DataFrame(
+        {"Projetado": [0.125], "Onde cai": ["no percentil 69 de 397"]},
+        index=["Margem EBITDA"],
+    )
+    html = tabela_de_indicadores(tabela, "pct")
+    assert "12,5%" in html
+    assert 'class="texto"' in html
+    assert "no percentil 69 de 397" in html

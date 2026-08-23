@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -131,6 +132,33 @@ def _risco_pais_de_mercado(empresa) -> None:
         st.rerun()
 
 
+
+def _baliza_do_divida_pl(alvo: float) -> None:
+    """A estrutura de hoje e o corte da base, ao lado do alvo digitado."""
+    from valuation.diagnostico import DIVIDA_PL_ALTA
+
+    partes = []
+    analise = estado.analise()
+    if analise is not None:
+        try:
+            hoje = float(analise.mediana("Divida bruta / Patrimonio liquido"))
+        except Exception:  # noqa: BLE001 - indicador ausente
+            hoje = float("nan")
+        if np.isfinite(hoje):
+            anos = analise.anos
+            partes.append(
+                f"**{formatar(hoje, 'numero')}** na empresa ({anos[0]}–{anos[-1]})"
+            )
+
+    if alvo >= DIVIDA_PL_ALTA:
+        partes.append(
+            f"**acima do quartil alto da base** ({formatar(DIVIDA_PL_ALTA, 'numero')})"
+        )
+    else:
+        partes.append(f"quartil alto da base: {formatar(DIVIDA_PL_ALTA, 'numero')}")
+
+    st.caption(" · ".join(partes))
+
 def _montagem(empresa, premissas) -> None:
     st.subheader("Risco do negócio")
     conceito("beta", "Beta: risco do setor, alavancagem da empresa")
@@ -240,6 +268,12 @@ def _montagem(empresa, premissas) -> None:
             "se financiar ao longo da projeção."
         ),
     )
+    with colunas[0]:
+        # "Alvo" nao quer dizer "inventado": a estrutura de hoje e o ponto de
+        # partida obvio, e ela estava a duas telas de distancia. O corte de
+        # `DIVIDA_PL_ALTA` entra junto porque e o quartil superior medido -- diz
+        # se o alvo escolhido e alavancado para o padrao brasileiro.
+        _baliza_do_divida_pl(divida_pl)
     informar_kd = colunas[1].checkbox(
         "Informar Kd diretamente", value=premissas.custo_divida_brl is not None
     )
