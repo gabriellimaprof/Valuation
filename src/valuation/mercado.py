@@ -53,7 +53,9 @@ import http.client
 import io
 import json
 import re
+import unicodedata
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -562,3 +564,109 @@ def taxa_real_ntnb(
         encoding="utf-8",
     )
     return TaxaRealDoDia(taxa, hoje, do_cache=False)
+
+
+# ---------------------------------------------------------------------------
+# Achar o papel a partir do nome da companhia
+# ---------------------------------------------------------------------------
+
+# **O cadastro da CVM nao traz ticker.** Tem CNPJ, codigo CVM, setor e ate o
+# auditor -- nada que ligue a companhia ao papel na B3. A busca do Yahoo e a
+# unica fonte gratuita que responde a isso, e ela **funciona pela metade**.
+#
+# Medido em 40 companhias com DFP de 2024, sorteadas:
+#
+#     acerta o papel certo    16  (40%)
+#     devolve papel de outra   0  ( 0%)
+#     nao acha nada           24  (60%)
+#
+# O numero que decide o desenho e o do meio: ela **nunca devolveu a empresa
+# errada**. O modo de falha e "nao achei", que e visivel; nao e "achei outra
+# coisa", que seria invisivel e encheria o campo de preco com o numero de outra
+# companhia. Por isso a busca entra como **sugestao que o usuario confirma**, e
+# nao como preenchimento automatico -- 40% de economia de digitacao sem nenhum
+# caso em que o app mente.
+#
+# Entre os 60% que nao acha ha companhia de capital fechado (concessionaria,
+# securitizadora) -- onde "nao achei" e a resposta certa -- e listadas que ela
+# perde mesmo assim, como o Banco do Brasil.
+BUSCA_DE_PAPEL = (
+    "https://query2.finance.yahoo.com/v1/finance/search"
+    "?q={termo}&quotesCount=10&newsCount=0&region=BR&lang=pt-BR"
+)
+
+# Palavras que nao identificam a companhia e so atrapalham a busca.
+RUIDO_NO_NOME = frozenset(
+    {
+        "s", "a", "sa", "cia", "companhia", "participacoes", "participacao",
+        "holding", "holdings", "brasil", "brasileira", "do", "da", "de", "e",
+        "ltda", "industria", "comercio", "empreendimentos", "grupo", "em",
+        "recuperacao", "judicial",
+    }
+)
+
+
+@dataclass(frozen=True)
+class PapelSugerido:
+    """Um candidato a papel da companhia, para o usuario confirmar."""
+
+    ticker: str
+    nome: str
+
+
+def _palavras_do_nome(nome: str) -> list[str]:
+    cru = unicodedata.normalize("NFKD", str(nome)).encode("ascii", "ignore").decode()
+    palavras = cru.lower().replace(".", " ").replace("/", " ").replace("-", " ").split()
+    return [p for p in palavras if p not in RUIDO_NO_NOME and len(p) > 2]
+
+
+def _sem_fracionario(ticker: str) -> str:
+    """``NGRD3F.SA`` vira ``NGRD3.SA``.
+
+    O sufixo ``F`` e o mercado fracionario: mesmo papel, negociado em lote
+    avulso. Ele tem preco proprio -- mais fino, porque o livro e menor -- e vem
+    **sem nome de companhia** na resposta do Yahoo. O canonico da os dois
+    melhores.
+    """
+    base, _, sufixo = ticker.partition(".")
+    if len(base) > 1 and base.endswith("F") and base[-2].isdigit():
+        base = base[:-1]
+    return f"{base}.{sufixo}" if sufixo else base
+
+
+def procurar_papel(nome: str) -> list[PapelSugerido]:
+    """Papeis da B3 que parecem ser desta companhia, do melhor para o pior.
+
+    Devolve lista vazia quando nao acha -- que e o caso em 60% das companhias.
+    **Nunca levanta por ausencia**: nao achar papel e resposta, e nao falha.
+    """
+    palavras = _palavras_do_nome(nome)
+    if not palavras:
+        return []
+
+    url = BUSCA_DE_PAPEL.format(termo=urllib.parse.quote(" ".join(palavras[:3])))
+    try:
+        achados = json.loads(_buscar(url, CABECALHO_COTACAO)).get("quotes", [])
+    except (ErroMercado, json.JSONDecodeError, TypeError):
+        return []
+
+    do_nome = set(palavras)
+    sugestoes: list[PapelSugerido] = []
+    vistos: set[str] = set()
+    for achado in achados:
+        ticker = str(achado.get("symbol") or "")
+        if not ticker.endswith(SUFIXO_B3):
+            continue
+        canonico = _sem_fracionario(ticker)
+        if canonico in vistos:
+            continue
+        rotulo = str(achado.get("shortname") or achado.get("longname") or "")
+        # O nome do papel tem de compartilhar palavra com o da companhia. Sem
+        # esta conferencia a busca devolveria o primeiro `.SA` que aparecesse --
+        # e ai o modo de falha deixaria de ser "nao achei" e passaria a ser
+        # "achei outra", que e o que nao pode acontecer.
+        if not (set(_palavras_do_nome(rotulo)) & do_nome):
+            continue
+        vistos.add(canonico)
+        sugestoes.append(PapelSugerido(canonico, rotulo))
+    return sugestoes

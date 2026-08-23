@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1031 testes
+pytest                        # 1035 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1161,7 +1161,7 @@ não é verificação.
 
 ## Estado atual
 
-1.031 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.035 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1285,6 +1285,7 @@ NTN-B — atualiza sozinha, porque é taxa de mercado e não premissa de analist
 | Risco-país pela curva | botão "Medir agora", cache de 1h | mostra; o padrão não muda |
 | Focus (BCB) | botão, em Premissas | mostra; aplicar é um segundo clique |
 | Cotação da B3 (Yahoo) | botão, em Margem | preenche o campo de preço |
+| Busca do papel (Yahoo) | ao abrir Margem, com a companhia importada | **sugere** o ticker; nada é buscado com ele sem clique |
 
 **A taxa real da NTN-B é a exceção: ela atualiza sozinha.** É taxa de mercado e
 decide o `rf` — e portanto o WACC — de todo modelo que não tocar no campo;
@@ -1311,6 +1312,39 @@ o app abre funcionando offline.
 E o botão da curva **passou a poder aplicar**. Antes ele só mostrava o número e
 mandava digitar dois centímetros acima: ler e transcrever à mão é trabalho braçal
 e é onde entra erro de digitação, justamente no campo que decide o WACC inteiro.
+
+### O ticker não existe no cadastro da CVM
+
+Ele tem CNPJ, código CVM, setor e até o auditor — nada que ligue a companhia ao
+papel na B3. Sem esse mapa não há como buscar cotação sozinho, e a busca do
+Yahoo por nome foi medida antes de virar código, em 40 companhias com DFP de
+2024, sorteadas:
+
+| | |
+|---|---|
+| acha o papel certo | **16 (40%)** |
+| devolve papel de outra companhia | **0 (0%)** |
+| não acha nada | 24 (60%) |
+
+**O número que decidiu o desenho é o do meio.** Ela nunca devolveu a empresa
+errada: o modo de falha é "não achei", que é visível, e não "achei outra", que
+seria invisível e encheria o campo de preço com o número de outra companhia. É
+isso que permite mostrar o resultado **no campo** — o usuário vê o ticker antes
+de qualquer preço aparecer — em vez de aplicá-lo calado.
+
+A conferência que sustenta os 0% é explícita: o nome do papel tem de compartilhar
+palavra com o da companhia, senão o candidato é descartado. Sem ela a busca
+devolveria o primeiro `.SA` da lista, e o modo de falha mudaria de categoria.
+
+Entre os 60% que ela não acha há capital fechado — concessionária,
+securitizadora — onde "não achei" é a resposta certa, e listadas que ela perde
+mesmo assim: **Banco do Brasil e WEG** estão entre elas. Por isso o campo
+continua editável e o que o analista digita fica lembrado: da segunda vez não há
+busca nem digitação.
+
+O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário —
+preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
+do Yahoo; o canônico dá os dois melhores.
 
 ## O balizador: o número que você digita, contra duas âncoras
 

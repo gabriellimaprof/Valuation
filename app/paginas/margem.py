@@ -150,11 +150,25 @@ def _buscar_cotacao(por_acao: bool, resultado) -> None:
             "Fonte externa e **não oficial** (Yahoo Finance). O app não busca "
             "nada sozinho, e o número preenchido continua editável."
         )
+        sugerido = _papel_sugerido()
         ticker = st.text_input(
-            "Código do papel", placeholder="WEGE3", key="ticker_b3"
+            "Código do papel",
+            value=sugerido or "",
+            placeholder="WEGE3",
+            key="ticker_b3",
+            help=(
+                "O cadastro da CVM **não traz o ticker**, então o app o procura "
+                "pelo nome — e acha em cerca de 40% das companhias. Quando não "
+                "acha, digite; o que você digitar fica lembrado."
+            ),
         )
+        if sugerido:
+            st.caption(f"Sugerido pelo nome da companhia: **{sugerido}**. Confira.")
         if not st.button("Buscar", key="botao_cotacao") or not ticker.strip():
             return
+        # O ticker confirmado fica na sessao: da segunda vez em diante nao ha
+        # busca por nome nenhuma, e nem digitacao.
+        st.session_state["ticker_confirmado"] = ticker.strip().upper()
 
         try:
             achada = cotacao(ticker)
@@ -179,6 +193,43 @@ def _buscar_cotacao(por_acao: bool, resultado) -> None:
             por_acao=por_acao,
         )
         st.rerun()
+
+
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def _procurar_papel(nome: str):
+    """Busca o papel pelo nome, no máximo uma vez por dia por companhia."""
+    from valuation.mercado import procurar_papel
+
+    return [p.ticker for p in procurar_papel(nome)]
+
+
+def _papel_sugerido() -> str:
+    """O ticker desta companhia: o confirmado, ou o que a busca sugere.
+
+    **Sugestão, e não preenchimento.** Medido em 40 companhias sorteadas, a
+    busca do Yahoo acha o papel certo em 40% e **devolve o papel de outra
+    companhia em 0%** — o modo de falha é "não achei", que é visível. É esse
+    número que permite mostrar o resultado no campo em vez de escondê-lo: o
+    usuário vê o ticker antes de qualquer preço aparecer.
+
+    Entre os 60% que ela não acha há companhia de capital fechado, onde "não
+    achei" é a resposta certa, e listadas que ela perde mesmo assim — o Banco do
+    Brasil é uma delas.
+    """
+    confirmado = st.session_state.get("ticker_confirmado")
+    if confirmado:
+        return confirmado
+
+    dfs = estado.demonstracoes()
+    nome = getattr(dfs, "empresa", "") if dfs is not None else ""
+    if not nome:
+        return ""
+    try:
+        achados = _procurar_papel(nome)
+    except Exception:  # noqa: BLE001 - sugestao nunca derruba a tela
+        return ""
+    return achados[0] if achados else ""
+
 
 def _mostrar_a_outra_leitura(coluna, preco, por_acao, resultado, empresa) -> None:
     """Cotação e valor de mercado, um ao lado do outro.

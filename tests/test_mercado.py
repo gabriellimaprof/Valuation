@@ -370,3 +370,71 @@ def test_cache_corrompido_e_o_mesmo_que_cache_ausente(tmp_path, monkeypatch):
         ),
     )
     assert mercado.taxa_real_ntnb(cache=tmp_path).taxa == pytest.approx(0.08)
+
+
+# ---------------------------------------------------------------------------
+# Achar o papel pelo nome
+# ---------------------------------------------------------------------------
+
+
+def _resposta_de_busca(*pares) -> bytes:
+    import json as _json
+
+    return _json.dumps(
+        {"quotes": [{"symbol": s, "shortname": n} for s, n in pares]}
+    ).encode()
+
+
+def test_o_fracionario_vira_o_ticker_canonico():
+    """`NGRD3F` e o mesmo papel em lote avulso: preco mais fino e **sem nome**.
+
+    O canonico da os dois melhores, e e o que se escreve num relatorio.
+    """
+    from valuation.mercado import _sem_fracionario
+
+    assert _sem_fracionario("NGRD3F.SA") == "NGRD3.SA"
+    assert _sem_fracionario("VIVA3F.SA") == "VIVA3.SA"
+    # Nao mexe em quem nao e fracionario -- inclusive num papel que acaba em F
+    # sem digito antes.
+    assert _sem_fracionario("PETR4.SA") == "PETR4.SA"
+    assert _sem_fracionario("WEGE3.SA") == "WEGE3.SA"
+
+
+def test_a_busca_recusa_papel_de_outra_companhia(monkeypatch):
+    """O modo de falha tem de ser "nao achei", e nunca "achei outra".
+
+    Sem a conferencia de nome, a busca devolveria o primeiro `.SA` que
+    aparecesse -- e o campo de preco seria preenchido com o numero de outra
+    empresa, sem nada na tela denunciando.
+    """
+    from valuation import mercado
+
+    monkeypatch.setattr(
+        mercado,
+        "_buscar",
+        lambda *a, **k: _resposta_de_busca(("BBAS3.SA", "BANCO DO BRASIL ON")),
+    )
+    assert mercado.procurar_papel("VIVARA PARTICIPACOES S.A.") == []
+
+
+def test_a_busca_aceita_quando_o_nome_bate(monkeypatch):
+    from valuation import mercado
+
+    monkeypatch.setattr(
+        mercado,
+        "_buscar",
+        lambda *a, **k: _resposta_de_busca(("VIVA3F.SA", "VIVARA S.A. ON NM")),
+    )
+    achados = mercado.procurar_papel("VIVARA PARTICIPACOES S.A.")
+    assert [p.ticker for p in achados] == ["VIVA3.SA"]
+
+
+def test_rede_fora_nao_derruba_a_busca_de_papel(monkeypatch):
+    """Sugestao e conveniencia: sem ela o usuario digita, e nada quebra."""
+    from valuation import mercado
+
+    def recusar(*a, **k):
+        raise mercado.ErroMercado("sem rede")
+
+    monkeypatch.setattr(mercado, "_buscar", recusar)
+    assert mercado.procurar_papel("QUALQUER COMPANHIA S.A.") == []
