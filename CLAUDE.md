@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1040 testes
+pytest                        # 1054 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -298,6 +298,43 @@ menos o acumulado de nove meses. Cada coluna reusa `importar_ltm` com o
 implementações da mesma conta divergem no dia em que uma delas muda.
 
 Contas de **balanço** não somam em nenhuma das três — são um saldo numa data.
+
+**A série trimestral traz o exercício anterior junto, e só onde ele existe.** O
+par que se compara é 3T contra 3T, e a série tinha um exercício só — o par não
+existia dentro dela. O `PENÚLTIMO` do ITR é o mesmo trimestre do ano passado
+publicado ao lado do corrente, e era lido apenas no caminho do ano móvel: quatro
+trimestres de 2025 trazem quatro de 2024 sem baixar outro zip.
+
+**A primeira versão disto mentia**, e a medição pegou antes de ir para a tela.
+Medido no ITR de 2025, seção `PENÚLTIMO`:
+
+| Demonstração | Publicam o trimestre isolado do ano anterior |
+|---|---|
+| DRE e DRA | **454 de 460 (99%)** |
+| DFC, DVA, DMPL | 10 de 460 (2%) |
+| Balanço | **nenhuma** — ali o `PENÚLTIMO` é o fim do exercício anterior |
+
+Sem guarda, o acumulado de nove meses de 2024 entraria rotulado como "3T24" —
+três vezes maior — e o saldo de 31/12/2024 apareceria **idêntico** nas colunas de
+1T24, 2T24 e 3T24. A guarda é por **duração da linha**, e não por lista de
+demonstração: o que não for um trimestre de verdade fica de fora, e uma
+companhia que publique a DFC do trimestre anterior entra sozinha. Faltar é
+honesto; estar errado, não. O 1T24 traz DFC porque no primeiro trimestre
+acumulado e isolado coincidem — não é exceção, é a mesma regra acertando.
+
+Conferido contra o ITR do próprio ano em 22 companhias e 111 contas: **102 batem
+exatamente e 9 diferem por reapresentação da companhia** (a Auren refez o
+resultado bruto dos três trimestres de 2024). O `PENÚLTIMO` é o número melhor
+para comparar — é o ano anterior na base do ano corrente — e o aviso diz isso,
+porque ele pode divergir de um relatório antigo.
+
+**E o crescimento passou a usar o par certo.** `receita.shift(1)` divide 1T25 por
+3T24: sazonalidade somada a um buraco, já que o 4T24 nem está na série. Na WEG a
+leitura sequencial dizia **+0,6%** no 3T25 e a certa diz **+4,2%**, com
+desaceleração de 25,5% para 4,2% ao longo do ano — que a sequencial escondia por
+completo. `series.anterior_comparavel` decide pelo **rótulo da coluna**: série
+anual continua comparando com a coluna anterior, sem sinalizador atravessando a
+pilha.
 
 Conferido na WEG: os três trimestres isolados de 2025 somam 30.558 contra os
 30.557 do acumulado de nove meses, e o ano móvel sobe de 40.032 para 41.380 ao
@@ -1161,7 +1198,7 @@ não é verificação.
 
 ## Estado atual
 
-1.040 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.054 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1372,6 +1409,40 @@ busca nem digitação.
 O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário —
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
+
+## O nome já é o da companhia; os números ainda podem não ser
+
+Com a WEG importada, a barra lateral e o Início anunciavam *"WEG SA — Equity
+Value 698,8"* e *"R$ 6,99 por ação"*. São os números da **empresa de partida** —
+receita de 1.000, cem milhões de ações — com o nome da companhia em cima.
+
+Importar adota o nome e o histórico, mas **derivar as premissas é um clique
+separado**, e deve continuar sendo: aplicar sozinho sobrescreveria o que o
+analista já tivesse montado. O que não pode é o intervalo entre as duas coisas
+ficar calado. É o mesmo defeito do nome padrão ("Nova empresa" com a WEG
+carregada), pelo lado oposto — e **este é pior, porque o número é plausível**.
+
+`diagnostico.premissas_descrevem_o_historico` compara **escala** de receita-base
+e de número de ações, que são as duas grandezas que não sobrevivem à troca de
+companhia. O corte de 3x é folgado de propósito: quem normaliza uma receita
+cíclica, ou projeta de um ano-base que não é o último, continua descrevendo a
+mesma empresa, e um aviso que dispara aí obriga a conviver com ele ligado — o
+que é o mesmo que desligá-lo. Na WEG os fatores são **41x e 42x**. Enquanto o
+aviso está ligado o Equity Value sai como "—", e não como um número.
+
+**Dois defeitos do próprio conserto saíram no navegador, e nenhum dos 1.054
+testes os pegaria** — a mesma família do markdown cru e da unidade repetida:
+
+- `st.page_link` com **caminho de arquivo** estoura em app com `st.navigation`,
+  e quebrou sete telas. `navegacao.registrar` já documenta que ele precisa do
+  **objeto** da página; o erro foi não ler antes de escrever.
+- O aviso foi à tela **sem acento** — "a receita-base do modelo e ... do ultimo
+  exercicio" —, com a convenção do código vazando para texto de usuário.
+  Corrigido na origem, com teste que reprova acento faltando.
+
+`componentes.escapar_cifrao` faz pelo texto já montado o que `em_texto` faz pelo
+número: o `R$` no meio de um markdown fecha par de LaTeX. A regra continua sendo
+**por destino** — o que vai para markdown escapa, o que vai para célula não.
 
 ## O balizador: o número que você digita, contra duas âncoras
 
