@@ -55,6 +55,7 @@ def render() -> None:
     )
 
     _cartoes(analise, dfs)
+    _comparacao_ano_a_ano(dfs)
     st.divider()
 
     from valuation.casos_especiais import ver_ex_ifrs16
@@ -519,11 +520,65 @@ def _liquidez(analise, dfs) -> None:
             )
 
 
+def _comparacao_ano_a_ano(dfs) -> None:
+    """O último período contra o mesmo período do exercício anterior.
+
+    Numa série trimestral é a leitura que tira sazonalidade sem esperar o ano
+    móvel — 3T25 contra 3T24 —, e ela existe porque o ITR publica o trimestre do
+    ano passado ao lado do corrente. Some quando o par não existe: um cabeçalho
+    com a tabela vazia sugeriria que a comparação foi feita e não achou nada.
+    """
+    from valuation.historico import comparacao_ano_a_ano
+
+    tabela = comparacao_ano_a_ano(dfs)
+    if tabela is None:
+        return
+
+    atual = tabela.attrs["periodo_atual"]
+    anterior = tabela.attrs["periodo_anterior"]
+    trimestral = tabela.attrs["trimestral"]
+
+    with st.expander(
+        f"{atual} contra {anterior}"
+        + (" — o par que tira sazonalidade" if trimestral else ""),
+        expanded=trimestral,
+    ):
+        if trimestral:
+            st.caption(
+                f"Comparar {atual} com o trimestre anterior compara épocas "
+                "diferentes do ano. O par certo é o mesmo trimestre do exercício "
+                "passado, e ele vem do próprio ITR."
+            )
+        colunas = st.columns(len(tabela.index))
+        for coluna, (rotulo, linha) in zip(colunas, tabela.iterrows()):
+            variacao = linha["Variacao"]
+            with coluna:
+                metrica(
+                    str(rotulo),
+                    float(linha[atual]),
+                    "moeda",
+                    dfs.unidade,
+                    delta=formatar(float(variacao), "pct")
+                    if pd.notna(variacao)
+                    else None,
+                )
+
+
 def _cartoes(analise, dfs) -> None:
+    from valuation.importacao.series import periodo_do_rotulo
+
+    # "Receita do último ano" numa série trimestral descreve outra coisa: o
+    # número é de três meses. O rótulo passa a sair da própria coluna.
+    ultima = list(dfs.valores.columns)[-1] if len(dfs.valores.columns) else None
+    e_trimestre = ultima is not None and periodo_do_rotulo(ultima) is not None
+    rotulo_receita = (
+        f"Receita do {ultima}" if e_trimestre else "Receita do último ano"
+    )
+
     colunas = st.columns(4)
     with colunas[0]:
         metrica(
-            "Receita do último ano",
+            rotulo_receita,
             dfs.valor("receita_liquida"),
             "moeda",
             dfs.unidade,

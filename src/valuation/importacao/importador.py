@@ -286,9 +286,18 @@ class Demonstracoes:
         if ebit.isna().all():
             ebit = bruto.sub(sga).add(equivalencia).add(outros)
 
-        depreciacao = s("depreciacao_amortizacao").fillna(0)
-        ebitda = ebit.add(depreciacao, fill_value=0)
+        # O `fillna(0)` aqui e a mesma armadilha de `ebitda()`, um andar abaixo:
+        # ele transforma "nao publicou D&A" em "D&A e zero" e a linha "= EBITDA"
+        # sai igual a "= EBIT", sem que nada na tabela diga que falta um dado.
+        # A **linha da D&A tambem fica vazia**, e nao em zero: "0,0" numa DRE se
+        # le como "esta empresa nao deprecia", que e uma afirmacao, e nao a
+        # ausencia de dado que ela e.
+        depreciacao = s("depreciacao_amortizacao")
+        sem_da = depreciacao.isna()
+        ebitda = ebit + depreciacao.fillna(0)
+        ebitda[sem_da] = np.nan
         ebitda_ajustado = ebitda.sub(outros, fill_value=0)
+        ebitda_ajustado[sem_da] = np.nan
 
         receitas_fin = s("receitas_financeiras").fillna(0)
         despesas_fin = s("despesas_financeiras").fillna(0)
@@ -514,8 +523,26 @@ class Demonstracoes:
         return self.anos[-1] if self.anos else None
 
     def ebitda(self) -> pd.Series:
-        """EBITDA = EBIT + depreciacao e amortizacao."""
-        return self.serie("ebit").add(self.serie("depreciacao_amortizacao"), fill_value=0)
+        """EBITDA = EBIT + depreciacao e amortizacao.
+
+        **Sem D&A nao ha EBITDA**, e a soma nao preenche o buraco com zero. Com
+        ``fill_value=0`` o resultado era o proprio EBIT -- que e exatamente o
+        defeito que este projeto ja documentou como o maior da base: "as outras
+        142 tinham EBITDA igual ao EBIT". Um EBITDA que e o EBIT nao se anuncia
+        como faltando; ele se parece com um numero.
+
+        Onde isso aparece: a serie trimestral traz o mesmo trimestre do
+        exercicio anterior, e ali a DFC nao existe (so 2% das companhias a
+        publicam no `PENULTIMO`), entao a D&A da coluna vem vazia. A margem
+        EBITDA do 2T25 saia igual a margem EBIT, calada.
+
+        Medido na base anual, em 90 companhias de 2024: 91% publicam D&A
+        diferente de zero, 2% a publicam **como zero** -- e essas continuam com
+        EBITDA igual ao EBIT, porque ai zero e o dado -- e 7% nao a publicam de
+        forma nenhuma. Sao essas 7% que passam a ter EBITDA vazio em vez de
+        errado.
+        """
+        return self.serie("ebit") + self.serie("depreciacao_amortizacao")
 
     def divida_bruta(self) -> pd.Series:
         """Divida bruta = emprestimos de curto prazo + de longo prazo."""

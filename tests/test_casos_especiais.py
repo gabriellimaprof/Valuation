@@ -136,6 +136,12 @@ def _analise_ciclica(margens: list[float]):
             ano: {
                 "receita_liquida": receita[i],
                 "ebit": receita[i] * margens[i],
+                # D&A **declarada como zero**, e nao omitida: aqui zero e o
+                # dado, e a margem EBITDA e igual a margem EBIT de proposito --
+                # `margens` sao as duas. Omiti-la deixaria o EBITDA vazio, que e
+                # o comportamento certo de `ebitda()` e nao o que este teste
+                # mede: ele mede ciclicidade.
+                "depreciacao_amortizacao": 0.0,
                 "lucro_liquido": receita[i] * margens[i] * 0.6,
                 "ativo_total": 2000.0,
                 "patrimonio_liquido": 1000.0,

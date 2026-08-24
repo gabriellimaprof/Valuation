@@ -119,3 +119,43 @@ def test_normalizar_a_receita_nao_dispara_o_aviso(weg, de_partida):
         custo_capital=sugestao.custo_capital,
     )
     assert premissas_descrevem_o_historico(normalizada, weg) is None
+
+
+def test_o_aviso_sobrevive_ao_projeto_salvo(weg, de_partida, tmp_path):
+    """Retomar um valuation não pode ligar nem desligar o aviso sozinho.
+
+    O risco tem dois lados. Se as demonstrações não viajassem no projeto, o
+    aviso sumiria por **falta de histórico** e não por coerência — apagando
+    justamente o caso em que ele importa. E se a escala se perdesse no
+    round-trip, ele passaria a disparar num modelo que descreve a companhia,
+    que é o falso positivo que o torna ruído.
+    """
+    from dataclasses import replace
+
+    from valuation.projeto import Projeto, carregar, salvar
+
+    sugestao = sugerir_premissas(analisar(weg), horizonte=5)
+    derivada = replace(
+        de_partida,
+        nome="WEG SA",
+        operacionais=sugestao.operacionais,
+        ponte=sugestao.ponte,
+        custo_capital=sugestao.custo_capital,
+    )
+
+    for empresa, deve_acusar in ((derivada, False), (replace(de_partida, nome="WEG SA"), True)):
+        caminho = salvar(
+            Projeto(empresa=empresa, demonstracoes=weg),
+            tmp_path / f"{'derivada' if not deve_acusar else 'exemplo'}.json",
+        )
+        de_volta = carregar(caminho)
+        assert de_volta.demonstracoes is not None, "o histórico não viajou no projeto"
+        motivo = premissas_descrevem_o_historico(
+            de_volta.empresa, de_volta.demonstracoes
+        )
+        assert (motivo is not None) == deve_acusar, motivo
+        # A escala tem de atravessar intacta: e dela que o corte depende.
+        assert (
+            de_volta.empresa.operacionais.receita_base
+            == empresa.operacionais.receita_base
+        )

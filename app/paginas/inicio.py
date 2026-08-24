@@ -60,12 +60,26 @@ def render() -> None:
             f"importado, mas as premissas continuam as de partida — "
             f"{escapar_cifrao(fora_do_historico)}."
         )
-        # O objeto da pagina, e nao um caminho: ver ``navegacao.registrar``.
+        # **Resolver aqui, e nao mandar procurar.** O link levava a Dados e o
+        # botao mora no fim daquela tela: quem le o aviso tinha de atravessar e
+        # rolar para fazer a unica coisa que o aviso pede. O caminho longo
+        # continua existindo para quem quer ver as justificativas de cada
+        # premissa, que so cabem la.
+        colunas = st.columns([1, 1, 2])
+        if colunas[0].button(
+            "Derivar do histórico", type="primary", key="derivar_do_inicio"
+        ):
+            try:
+                estado.derivar_premissas_do_historico()
+            except ValueError as erro:
+                st.error(f"Não consegui derivar premissas: {erro}")
+            else:
+                st.rerun()
         alvo = pagina("dados")
         if alvo is not None:
-            st.page_link(
+            colunas[1].page_link(
                 alvo,
-                label="Derivar as premissas do histórico",
+                label="Ver de onde vem cada uma",
                 icon=":material/database:",
             )
     else:

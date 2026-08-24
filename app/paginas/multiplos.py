@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation.importacao.series import ano_do_rotulo
+
 from valuation import Alvo, Comparavel, avaliar_por_multiplos, estatisticas, tabela_comparaveis
 from valuation.importacao.cvm import (
     FONTE_CVM,
@@ -171,7 +173,14 @@ def _pares_por_perfil() -> None:
         )
 
         dfs = estado.demonstracoes()
-        anos = sorted(int(a) for a in dfs.anos) if dfs is not None else []
+        # O universo de pares e por **exercicio**: numa serie trimestral os
+        # quatro trimestres de 2025 procuram a safra de 2025, e nao quatro
+        # safras. `int(a)` estourava em "1T25" e derrubava a tela inteira.
+        anos = (
+            sorted({a for a in (ano_do_rotulo(x) for x in dfs.anos) if a})
+            if dfs is not None
+            else []
+        )
         if not anos:
             return
 
@@ -305,7 +314,7 @@ def _peers_da_cvm() -> None:
         indice = setores.index(padrao) if padrao in setores else 0
         setor = st.selectbox("Setor", setores, index=indice)
 
-        ano = int(dfs.anos[-1])
+        ano = ano_do_rotulo(dfs.anos[-1]) or 0
         candidatos = [
             c
             for c in catalogo

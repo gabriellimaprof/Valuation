@@ -7,6 +7,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 import streamlit as st
+
+from valuation.importacao.series import ano_do_rotulo
 import yaml
 
 from valuation import biblioteca, exportar_excel
@@ -309,7 +311,7 @@ def _valuation_do_banco():
             empresa.macro,
         ).ke_brl
         valuation = avaliar_lucro_residual(
-            sugestao.premissas, ke=ke, ano_base=int(dfs.anos[-1])
+            sugestao.premissas, ke=ke, ano_base=ano_do_rotulo(dfs.anos[-1]) or 0
         )
     except ValueError:
         return None

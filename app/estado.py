@@ -234,6 +234,33 @@ def definir_demonstracoes(dfs: Demonstracoes | None) -> None:
         definir_empresa(replace(atual, nome=dfs.empresa))
 
 
+def derivar_premissas_do_historico(horizonte: int = 5):
+    """Preenche operacionais, ponte e custo de capital a partir do historico.
+
+    Existe aqui, e nao dentro da tela de Dados, porque **o aviso de modelo fora
+    do historico aparece no Inicio e na barra lateral** -- e mandar o usuario
+    atravessar para outra tela e rolar ate o fim dela para achar o botao e
+    trabalho que a mensagem ja tinha identificado como desnecessario.
+
+    Devolve a sugestao para quem chamou poder mostrar as justificativas; quem so
+    quer aplicar ignora o retorno. Levanta ``ValueError`` quando o historico nao
+    sustenta uma projecao -- a mensagem e do motor e vai para a tela como esta.
+    """
+    from valuation.historico import sugerir_premissas
+
+    dados = demonstracoes()
+    resumo = analise()
+    if dados is None or resumo is None:
+        raise ValueError("Nao ha historico importado para derivar as premissas.")
+
+    sugestao = sugerir_premissas(resumo, horizonte=horizonte)
+    substituir_bloco("operacionais", sugestao.operacionais)
+    substituir_bloco("ponte", sugestao.ponte)
+    substituir_bloco("custo_capital", sugestao.custo_capital)
+    atualizar({"nome": dados.empresa, "unidade": dados.unidade})
+    return sugestao
+
+
 def modelo_fora_do_historico() -> str | None:
     """Por que o modelo nao descreve o historico importado, ou ``None``.
 

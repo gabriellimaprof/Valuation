@@ -84,16 +84,30 @@ def _limpar(valor: Any) -> Any:
     return valor
 
 
+def _periodo(rotulo: Any) -> int | str:
+    """O rotulo da coluna como ele e: ``2024`` inteiro, ``3T25`` texto.
+
+    O serializador forcava ``int(ano)`` em toda coluna, e uma serie trimestral
+    **nao podia ser salva** -- ``int("1T24")`` estoura. Converter para o ano do
+    exercicio nao serve aqui: 1T24, 2T24 e 3T24 virariam a mesma chave 2024 e
+    tres trimestres colapsariam em um.
+    """
+    try:
+        return int(str(rotulo).strip())
+    except (TypeError, ValueError):
+        return str(rotulo)
+
+
 def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
     dados: dict[str, Any] = {
         "empresa": dfs.empresa,
         "unidade": dfs.unidade,
         "moeda": dfs.moeda,
         "origem": dfs.origem,
-        "anos": [int(ano) for ano in dfs.anos],
+        "anos": [_periodo(ano) for ano in dfs.anos],
         "valores": {
             str(conta): {
-                int(ano): (None if pd.isna(valor) else float(valor))
+                _periodo(ano): (None if pd.isna(valor) else float(valor))
                 for ano, valor in linha.items()
             }
             for conta, linha in dfs.valores.iterrows()
@@ -113,9 +127,13 @@ def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
                 "rotulo": str(linha["rotulo"]),
                 "demonstracao": str(linha["demonstracao"]),
                 "valores": {
-                    int(ano): (None if pd.isna(linha[ano]) else float(linha[ano]))
+                    # As colunas de periodo sao as que `anos` lista; o resto
+                    # da arvore e metadado (codigo, rotulo, nivel, ordem). O
+                    # filtro era `isinstance(ano, int)`, que numa serie
+                    # trimestral descarta **todas** e salva a arvore vazia.
+                    _periodo(ano): (None if pd.isna(linha[ano]) else float(linha[ano]))
                     for ano in dfs.detalhe.columns
-                    if isinstance(ano, int)
+                    if ano in set(dfs.anos)
                 },
             }
             for _, linha in dfs.detalhe.iterrows()
@@ -140,7 +158,7 @@ def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
 
 
 def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
-    anos = [int(ano) for ano in dados.get("anos", [])]
+    anos = [_periodo(ano) for ano in dados.get("anos", [])]
     valores = dados.get("valores") or {}
     if not anos or not valores:
         raise ValueError(
@@ -203,7 +221,7 @@ def _dados_para_detalhe(linhas: Any) -> pd.DataFrame | None:
             "ordem": _ordem_do_codigo(codigo),
         }
         for ano, valor in (linha.get("valores") or {}).items():
-            registro[int(ano)] = np.nan if valor is None else float(valor)
+            registro[_periodo(ano)] = np.nan if valor is None else float(valor)
         registros.append(registro)
     return pd.DataFrame(registros)
 

@@ -23,6 +23,8 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 SAIDA = Path(__file__).parent / "telas"
+# Prefixo das imagens, para uma passada nao sobrescrever a outra.
+PREFIXO = ""
 problemas: list[str] = []
 
 # Marcas de markdown que, aparecendo no texto renderizado, significam que alguém
@@ -64,11 +66,13 @@ def conferir(pg, nome: str) -> str:
 
     seguro = "".join(c if c.isalnum() else "_" for c in nome).strip("_")
     SAIDA.mkdir(exist_ok=True)
-    pg.screenshot(path=str(SAIDA / f"{seguro}.png"))
+    pg.screenshot(path=str(SAIDA / f"{PREFIXO}{seguro}.png"))
     return corpo
 
 
-def percorrer(porta: str) -> int:
+def percorrer(porta: str, trimestral: bool = False) -> int:
+    global PREFIXO
+    PREFIXO = "trimestral_" if trimestral else ""
     url = f"http://localhost:{porta}"
     with sync_playwright() as p:
         navegador = p.chromium.launch()
@@ -94,8 +98,16 @@ def percorrer(porta: str) -> int:
         pg.wait_for_timeout(2500)
         pg.keyboard.press("Enter")
         esperar(pg, 4000)
+        if trimestral:
+            # A serie trimestral tem colunas **propositalmente vazias** -- caixa
+            # e balanco do exercicio anterior nao existem no ITR --, e e
+            # exatamente esse tipo de coisa que se le errado na tela sem
+            # ninguem olhar. Ate aqui ela so fora conferida por medicao.
+            pg.get_by_text("Trimestral (isolado)", exact=True).first.click()
+            pg.wait_for_timeout(1500)
+
         pg.locator("button", has_text="Importar da CVM").first.click()
-        esperar(pg, 18000)
+        esperar(pg, 25000)
 
         conferir(pg, "Dados")
 
@@ -142,4 +154,14 @@ def percorrer(porta: str) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(percorrer(sys.argv[1] if len(sys.argv) > 1 else "8501"))
+    # `--trimestral` percorre a serie do ITR em vez da DFP anual. Sao duas
+    # passadas e nao uma opcao dentro do mesmo laco: importar troca o estado da
+    # sessao inteira, e conferir as duas na mesma sessao esconderia qual delas
+    # produziu a tela.
+    argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    raise SystemExit(
+        percorrer(
+            argumentos[0] if argumentos else "8501",
+            trimestral="--trimestral" in sys.argv,
+        )
+    )

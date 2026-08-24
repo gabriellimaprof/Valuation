@@ -95,16 +95,20 @@ def _barra_lateral() -> None:
                 "**Estes números ainda não são desta empresa.** As premissas "
                 "continuam as de partida."
             )
-            # O objeto da pagina, e nao um caminho: ver ``navegacao.registrar``.
-            alvo = navegacao.pagina("dados")
-            if alvo is not None:
-                st.page_link(
-                    alvo,
-                    # Curto porque a barra e estreita: o rotulo inteiro sai
-                    # cortado em "...do histórico" e o corte parece defeito.
-                    label="Derivar do histórico",
-                    icon=":material/database:",
-                )
+            # Resolve aqui: a barra lateral esta visivel de qualquer tela, e
+            # e onde o numero errado aparecia o tempo todo.
+            if st.button(
+                "Derivar do histórico",
+                type="primary",
+                width="stretch",
+                key="derivar_da_barra",
+            ):
+                try:
+                    estado.derivar_premissas_do_historico()
+                except ValueError as erro:
+                    st.error(f"Não consegui: {erro}")
+                else:
+                    st.rerun()
             return
 
         # Sem a unidade dentro do numero: a barra lateral e estreita, e

@@ -412,6 +412,62 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     return AnaliseHistorica(demonstracoes=demonstracoes, indicadores=tabela)
 
 
+# As contas que respondem "como foi o trimestre". Sao poucas de proposito: a
+# comparacao a/a existe para dar a leitura em um olhar, e uma tabela de quarenta
+# linhas nao faz isso -- para essa ja existe a aba "Tudo".
+CONTAS_DA_COMPARACAO = (
+    ("receita_liquida", "Receita liquida"),
+    ("lucro_bruto", "Lucro bruto"),
+    ("ebit", "EBIT"),
+    ("lucro_liquido", "Lucro liquido"),
+)
+
+
+def comparacao_ano_a_ano(demonstracoes) -> pd.DataFrame | None:
+    """O ultimo periodo contra o **mesmo periodo do exercicio anterior**.
+
+    Devolve ``None`` quando o par nao existe -- serie anual de um ano so, ou
+    trimestral sem o exercicio anterior. Ausencia e resposta: uma tabela vazia
+    com cabecalho sugere que a comparacao foi feita e nao achou nada.
+
+    Numa serie trimestral o par e 3T25 contra 3T24, que e a leitura sem
+    sazonalidade; numa anual e simplesmente o ano anterior. Quem decide e
+    ``anterior_comparavel``, pelo rotulo da coluna.
+    """
+    from .importacao.series import anterior_comparavel, periodo_do_rotulo
+
+    colunas = list(demonstracoes.valores.columns)
+    if not colunas:
+        return None
+    atual = colunas[-1]
+    anterior = anterior_comparavel(colunas).get(atual)
+    if anterior is None:
+        return None
+
+    linhas = {}
+    for chave, rotulo in CONTAS_DA_COMPARACAO:
+        if chave not in demonstracoes.valores.index:
+            continue
+        agora = float(demonstracoes.valores.loc[chave, atual])
+        antes = float(demonstracoes.valores.loc[chave, anterior])
+        if not np.isfinite(agora) or not np.isfinite(antes):
+            continue
+        # Variacao percentual so tem sentido com base positiva: de -10 para -5 a
+        # razao diz -50%, que se le como piora e e melhora. Nesses casos a
+        # coluna fica vazia e os dois valores continuam la, que e o que permite
+        # ler o caso sem que o app afirme um sinal errado.
+        variacao = agora / antes - 1 if antes > 0 else float("nan")
+        linhas[rotulo] = {atual: agora, anterior: antes, "Variacao": variacao}
+
+    if not linhas:
+        return None
+    tabela = pd.DataFrame(linhas).T
+    tabela.attrs["periodo_atual"] = atual
+    tabela.attrs["periodo_anterior"] = anterior
+    tabela.attrs["trimestral"] = periodo_do_rotulo(atual) is not None
+    return tabela
+
+
 def crescimento_composto(serie: pd.Series) -> float:
     """CAGR entre o primeiro e o ultimo ano com dado positivo."""
     valores = serie.dropna()

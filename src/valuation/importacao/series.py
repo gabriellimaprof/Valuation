@@ -62,6 +62,24 @@ def periodo_do_rotulo(rotulo) -> tuple[int, int] | None:
     return (valor if valor > 1900 else 2000 + valor, numero)
 
 
+def ano_do_rotulo(rotulo) -> int | None:
+    """O **exercicio** a que a coluna pertence: ``3T25`` e 2025, ``2024`` e 2024.
+
+    Existe porque varias telas precisam do ano para escolher a safra do universo
+    de pares ou o ano-base da planilha, e faziam ``int(dfs.anos[-1])`` -- que
+    estoura numa serie trimestral. O ano do exercicio e a resposta certa para
+    essas perguntas; o rotulo inteiro e a resposta certa para identificar a
+    coluna, e as duas coisas nao sao a mesma.
+    """
+    periodo = periodo_do_rotulo(rotulo)
+    if periodo is not None:
+        return periodo[0]
+    try:
+        return int(str(rotulo).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def anterior_comparavel(colunas) -> dict:
     """Com qual coluna cada coluna se compara para medir crescimento.
 

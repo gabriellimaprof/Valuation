@@ -1084,21 +1084,14 @@ def _conferencia(dfs) -> None:
 
 
 def _aplicar_sugestao(dfs) -> None:
-    analise = estado.analise()
-    if analise is None:
-        st.error("Não foi possível analisar o histórico importado.")
-        return
-
+    # O "fazer" mora em `estado`, porque o Inicio e a barra lateral aplicam a
+    # mesma coisa; aqui fica o "relatar", que so esta tela tem espaco para
+    # mostrar por inteiro.
     try:
-        sugestao = sugerir_premissas(analise, horizonte=5)
+        sugestao = estado.derivar_premissas_do_historico(horizonte=5)
     except ValueError as erro:
         st.error(f"Não consegui derivar premissas: {erro}")
         return
-
-    estado.substituir_bloco("operacionais", sugestao.operacionais)
-    estado.substituir_bloco("ponte", sugestao.ponte)
-    estado.substituir_bloco("custo_capital", sugestao.custo_capital)
-    estado.atualizar({"nome": dfs.empresa, "unidade": dfs.unidade})
 
     st.success("Premissas preenchidas a partir do histórico.")
     st.markdown("**De onde veio cada uma**")

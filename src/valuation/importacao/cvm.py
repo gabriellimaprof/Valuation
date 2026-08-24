@@ -2534,28 +2534,30 @@ def importar_trimestral(
         partes,
         empresa=nome,
         unidade="reais",
-        origem=f"CVM ITR — trimestres isolados de {ano} e do exercicio anterior",
+        origem=f"CVM ITR — trimestres isolados de {ano} e do exercício anterior",
+        # **Estes textos vao para a tela**, e por isso vem acentuados. O codigo
+        # em volta escreve em ASCII; o que o usuario le, nao.
         avisos=[
-            "**Trimestres isolados, e nao acumulados.** Cada coluna sao tres "
-            "meses sozinhos, o que mostra inflexao mas **carrega sazonalidade**: "
-            "comparar 3T com 2T compara epocas do ano diferentes, e o par certo "
-            "e 3T contra 3T. Contas de balanco sao o saldo no fim de cada "
-            "trimestre, e nao uma soma.",
-            "**As colunas do exercicio anterior tem so a DRE.** Elas vem do "
-            "`PENULTIMO` do proprio ITR, que publica o mesmo trimestre do ano "
-            "passado ao lado do corrente -- e o publica **so na DRE e na DRA**: "
+            "**Trimestres isolados, e não acumulados.** Cada coluna são três "
+            "meses sozinhos, o que mostra inflexão mas **carrega sazonalidade**: "
+            "comparar 3T com 2T compara épocas do ano diferentes, e o par certo "
+            "é 3T contra 3T. Contas de balanço são o saldo no fim de cada "
+            "trimestre, e não uma soma.",
+            "**As colunas do exercício anterior têm só a DRE.** Elas vêm do "
+            "`PENÚLTIMO` do próprio ITR, que publica o mesmo trimestre do ano "
+            "passado ao lado do corrente — e o publica **só na DRE e na DRA**: "
             "medido no ITR de 2025, 99% das companhias trazem o trimestre "
-            "anterior ali, contra 2% na DFC, na DVA e na DMPL. No balanco ele "
-            "nao existe de forma nenhuma: o `PENULTIMO` do balanco e o saldo de "
-            "31/12, e nao o fim do trimestre. Por isso caixa e balanco aparecem "
+            "anterior ali, contra 2% na DFC, na DVA e na DMPL. No balanço ele "
+            "não existe de forma nenhuma: o `PENÚLTIMO` do balanço é o saldo de "
+            "31/12, e não o fim do trimestre. Por isso caixa e balanço aparecem "
             "**vazios** nessas colunas, em vez de aparecerem errados.",
-            "**Sao os numeros reapresentados.** O ano anterior vem como a "
-            "companhia o publica hoje, e nao como publicou na epoca -- que e a "
-            "base certa para comparar, e a razao de poder divergir de um "
-            "relatorio antigo. Conferidas 111 contas em 22 companhias contra o "
-            "ITR do proprio ano, 102 batem exatamente e 9 diferem por "
-            "reapresentacao da companhia (a Auren refez o resultado bruto dos "
-            "tres trimestres de 2024).",
+            "**São os números reapresentados.** O ano anterior vem como a "
+            "companhia o publica hoje, e não como publicou na época — que é a "
+            "base certa para comparar, e a razão de poder divergir de um "
+            "relatório antigo. Conferidas 111 contas em 22 companhias contra o "
+            "ITR do próprio ano, 102 batem exatamente e 9 diferem por "
+            "reapresentação da companhia (a Auren refez o resultado bruto dos "
+            "três trimestres de 2024).",
             *partes[-1][1].avisos,
         ],
     )

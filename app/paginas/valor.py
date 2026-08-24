@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation.importacao.series import ano_do_rotulo
+
 from valuation import substituir_varios
 
 from .. import estado
@@ -183,7 +185,7 @@ def _banco_em_vez_de_dcf() -> bool:
         # O ano-base e o ultimo do historico: sem ele a tabela numera as linhas
         # 1, 2, 3... e o analista conta nos dedos qual exercicio esta olhando.
         valuation = avaliar_lucro_residual(
-            premissas, ke=ke, ano_base=int(dfs.anos[-1])
+            premissas, ke=ke, ano_base=ano_do_rotulo(dfs.anos[-1]) or 0
         )
     except ValueError as erro:
         st.error(str(erro))

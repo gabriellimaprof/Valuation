@@ -649,3 +649,119 @@ def test_o_rotulo_de_trimestre_diz_o_periodo():
 
     anual = anterior_comparavel([2022, 2023, 2024])
     assert anual == {2023: 2022, 2024: 2023}
+
+
+# ---------------------------------------------------------------------------
+# A serie trimestral atravessa o app inteiro
+# ---------------------------------------------------------------------------
+
+
+def test_um_valuation_trimestral_pode_ser_salvo():
+    """Salvar forçava `int(ano)` em toda coluna, e `int("1T24")` estoura.
+
+    O defeito é anterior à série do ano anterior — os rótulos já eram `1T25` —,
+    e ninguém o tinha visto porque a série trimestral nunca fora percorrida no
+    navegador. Um valuation montado sobre ela **não podia ser salvo**.
+
+    Converter para o ano do exercício não serve: 1T24, 2T24 e 3T24 virariam a
+    mesma chave 2024 e três trimestres colapsariam em um. O rótulo é guardado
+    como ele é.
+    """
+    import tempfile
+
+    from valuation.importacao.cvm import importar_trimestral
+    from valuation.projeto import Projeto, carregar, salvar
+    from valuation.premissas import (
+        PonteValor,
+        PremissasCustoCapital,
+        PremissasMacro,
+        PremissasOperacionais,
+        PremissasPerpetuidade,
+    )
+    from valuation.modelo import Empresa
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    empresa = Empresa(
+        nome="WEG SA",
+        macro=PremissasMacro(),
+        custo_capital=PremissasCustoCapital(
+            beta_alavancado_setor=1.0, divida_pl_setor=0.4, divida_pl_alvo=0.4
+        ),
+        operacionais=PremissasOperacionais(
+            receita_base=1000.0,
+            crescimento_receita=[0.05] * 5,
+            margem_ebitda=[0.20] * 5,
+            depreciacao_pct_receita=[0.045] * 5,
+            capex_pct_receita=[0.05] * 5,
+            capital_giro_pct_receita=[0.12] * 5,
+        ),
+        perpetuidade=PremissasPerpetuidade(crescimento_perpetuo=0.03),
+        ponte=PonteValor(divida_bruta=400.0, caixa=120.0, acoes_em_circulacao=100.0),
+    )
+
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = salvar(
+            Projeto(empresa=empresa, demonstracoes=tri), Path(pasta) / "t.json"
+        )
+        de_volta = carregar(caminho)
+
+    assert de_volta.demonstracoes is not None
+    # Os seis trimestres continuam seis, e na ordem.
+    assert list(de_volta.demonstracoes.valores.columns) == list(
+        tri.valores.columns
+    )
+    assert float(de_volta.demonstracoes.valores.loc["receita_liquida", "3T25"]) == (
+        pytest.approx(float(tri.valores.loc["receita_liquida", "3T25"]))
+    )
+    # E a arvore publicada tambem: o filtro `isinstance(ano, int)` a salvava
+    # vazia numa serie trimestral, sem que nada dissesse.
+    assert de_volta.demonstracoes.detalhe is not None
+    assert not de_volta.demonstracoes.detalhe.empty
+
+
+def test_o_ano_do_exercicio_sai_de_qualquer_rotulo():
+    """As telas precisam do exercício; a coluna precisa do rótulo inteiro.
+
+    São duas perguntas diferentes, e confundi-las é o que quebrava Múltiplos,
+    Valor e Exportar: a safra do universo de pares é por exercício, mas
+    `int("1T25")` estoura.
+    """
+    from valuation.importacao.series import ano_do_rotulo
+
+    assert ano_do_rotulo("3T25") == 2025
+    assert ano_do_rotulo(2024) == 2024
+    assert ano_do_rotulo("2024") == 2024
+    assert ano_do_rotulo("nada") is None
+
+
+def test_sem_dados_nao_ha_ebitda_e_ele_nao_vira_o_ebit():
+    """Zero publicado é dado; ausência não é — e a soma não confunde os dois.
+
+    `ebitda()` somava com `fill_value=0`, então uma coluna sem D&A devolvia o
+    próprio EBIT. É o defeito que o projeto já documentou como o maior da base
+    ("as outras 142 tinham EBITDA igual ao EBIT"), e a série trimestral o
+    tornava alcançável de novo: no mesmo trimestre do exercício anterior a DFC
+    não existe, então a D&A da coluna vem vazia e a margem EBITDA saía igual à
+    margem EBIT, calada.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {"receita_liquida": 1000.0, "ebit": 100.0,
+                   "depreciacao_amortizacao": 0.0},
+            2024: {"receita_liquida": 1000.0, "ebit": 100.0,
+                   "depreciacao_amortizacao": 40.0},
+            2025: {"receita_liquida": 1000.0, "ebit": 100.0},
+        }
+    )
+    ebitda = Demonstracoes(empresa="Teste", valores=valores).ebitda()
+
+    # Zero publicado: o EBITDA e o EBIT, e isso e a leitura correta.
+    assert float(ebitda[2023]) == pytest.approx(100.0)
+    assert float(ebitda[2024]) == pytest.approx(140.0)
+    # Ausente: vazio, e nao 100.
+    assert not np.isfinite(float(ebitda[2025]))
