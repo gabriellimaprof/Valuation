@@ -2218,3 +2218,63 @@ def test_linha_publicada_duas_vezes_nao_conta_duas_vezes():
     # A DMPL fica de fora: nela a mesma conta aparece uma vez por componente do
     # patrimônio, e é a soma por COLUNA_DF que resolve.
     assert len(_sem_linhas_repetidas(repetido, "dmpl")) == 3
+
+
+def test_o_arquivo_decide_o_metodo_da_dfc_e_o_rotulo_nao_o_sobrepoe():
+    """Uma linha de giro não transforma uma DFC indireta em direta.
+
+    `detectar_metodo_da_dfc` tinha uma rede por rótulo que a própria docstring
+    dizia existir "só para origens que não são o zip da CVM" — mas ela rodava
+    também na CVM, **por cima** da declaração da companhia. Medido em 2024, três
+    companhias publicam só no `DFC_MI` e tinham uma linha de capital de giro que
+    o padrão lia como recebimento de clientes:
+
+        Americanas       "Adiantamentos recebidos de clientes"
+        Vamos Locação    "Juros recebidos de clientes"
+        Bioma Educação   "Perdas nos recebimentos de clientes"
+
+    Nas três o app anunciava método direto — falso — e descartava as quatro
+    contas que só existem no indireto, entre elas a D&A: R$ 1.010,0 mi na
+    Americanas, que estava no arquivo e não era lida. Sem D&A o EBITDA era o
+    próprio EBIT.
+    """
+    from valuation.importacao.cvm import LinhaCVM, detectar_metodo_da_dfc
+
+    def linha(codigo, descricao, grupo):
+        return LinhaCVM(
+            codigo=codigo,
+            descricao=descricao,
+            valor=1.0,
+            ano=2024,
+            demonstracao="dfc",
+            escala="MIL",
+            escopo="con",
+            grupo=grupo,
+        )
+
+    # So no arquivo do indireto, com o rotulo tentador: e indireto.
+    do_indireto = [
+        linha("6.01.01.03", "Depreciação e Amortização", "DFC_MI"),
+        linha("6.01.02.04", "Adiantamentos recebidos de clientes", "DFC_MI"),
+    ]
+    assert detectar_metodo_da_dfc(do_indireto) == "indireto"
+
+    # No arquivo do direto: e direto, mesmo sem rotulo caracteristico -- das 16
+    # companhias de 2024, so 9 abrem com "Recebimento de Consumidores".
+    do_direto = [linha("6.01.01", "Caixa recebido de terceiros", "DFC_MD")]
+    assert detectar_metodo_da_dfc(do_direto) == "direto"
+
+    # Sem arquivo (planilha importada), a rede por rotulo continua valendo: e a
+    # unica pista que existe ali.
+    sem_arquivo = [
+        LinhaCVM(
+            codigo="6.01.01",
+            descricao="Recebimento de Consumidores",
+            valor=1.0,
+            ano=2024,
+            demonstracao="dfc",
+            escala="MIL",
+            escopo="con",
+        )
+    ]
+    assert detectar_metodo_da_dfc(sem_arquivo) == "direto"

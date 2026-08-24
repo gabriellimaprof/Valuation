@@ -1153,13 +1153,40 @@ def detectar_metodo_da_dfc(linhas: list[LinhaCVM]) -> str:
     companhia, e nao admite duvida.
 
     O rotulo entra so como rede para origens que nao sao o zip da CVM -- uma
-    planilha importada nao tem arquivo de origem para consultar.
+    planilha importada nao tem arquivo de origem para consultar. **Onde ha
+    arquivo, ele decide sozinho**, e a rede nao roda: ela estava sobrepondo a
+    declaracao da companhia e errando.
+
+    Medido em 2024, tres companhias publicam so no ``DFC_MI`` -- ou seja,
+    declararam metodo indireto -- e tinham uma linha de giro que o padrao lia
+    como recebimento de clientes:
+
+    ======================  ==========================================
+    Americanas              "Adiantamentos recebidos de clientes"
+    Vamos Locacao           "Juros recebidos de clientes"
+    Bioma Educacao          "Perdas nos recebimentos de clientes"
+    ======================  ==========================================
+
+    Nas tres o app anunciava "publica pela DFC direta" -- falso -- e descartava
+    as quatro contas de ``_SO_NO_METODO_INDIRETO``, entre elas a D&A: R$ 1.010,0
+    mi na Americanas e R$ 750,6 mi na Vamos, que estavam no arquivo e nao eram
+    lidas. Sem D&A o EBITDA delas era o proprio EBIT.
     """
+    do_arquivo = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "dfc" and linha.grupo in ("DFC_MI", "DFC_MD")
+    ]
+    if do_arquivo:
+        return (
+            "direto"
+            if any(linha.grupo == "DFC_MD" for linha in do_arquivo)
+            else "indireto"
+        )
+
     for linha in linhas:
         if linha.demonstracao != "dfc":
             continue
-        if linha.grupo == "DFC_MD":
-            return "direto"
         if linha.codigo.startswith("6.01.") and _MARCA_METODO_DIRETO.search(
             linha.descricao
         ):
