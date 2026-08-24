@@ -2278,3 +2278,55 @@ def test_o_arquivo_decide_o_metodo_da_dfc_e_o_rotulo_nao_o_sobrepoe():
         )
     ]
     assert detectar_metodo_da_dfc(sem_arquivo) == "direto"
+
+
+def test_consolidado_zerado_nao_e_escopo_valido(tmp_path):
+    """Linha existir não é o mesmo que ter dado.
+
+    `escopo_da_companhia` decidia por "existe alguma linha da companhia neste
+    escopo", e há companhia que entrega o consolidado com o plano de contas
+    inteiro **zerado**. O app lia zeros e montava uma companhia vazia, sem cair
+    no individual — a queda só acontecia quando o consolidado faltava.
+
+    A TIM S.A. é o caso: a DFP consolidada dela é zero desde o exercício de 2024
+    (era R$ 23.833,9 mi em 2023) e a individual traz R$ 25.447,9 mi. A
+    demonstração publicada pela companhia **tem** o consolidado; o que vem vazio
+    é o extrato estruturado desse escopo, e o ITR consolidado segue cheio.
+    """
+    import zipfile
+
+    from valuation.importacao.cvm import escopo_da_companhia
+
+    # O layout e o do arquivo real: o recorte em bytes acha CD_CVM pela
+    # **posicao** da coluna, entao um CSV inventado com outra ordem nao e lido.
+    cabecalho = (
+        "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;GRUPO_DFP;MOEDA;ESCALA_MOEDA;"
+        "ORDEM_EXERC;DT_INI_EXERC;DT_FIM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ST_CONTA_FIXA"
+    )
+
+    def csv(valor):
+        linha = (
+            "02.421.421/0001-11;2024-12-31;1;TIM S.A.;024929;DF Consolidado;REAL;"
+            "MIL;ÚLTIMO;2024-01-01;2024-12-31;3.01;Receita;" + valor + ";S"
+        )
+        return (cabecalho + "\n" + linha + "\n").encode("latin-1")
+
+    caminho = tmp_path / "dfp.zip"
+
+    def montar(con, ind):
+        with zipfile.ZipFile(caminho, "w") as z:
+            z.writestr("dfp_cia_aberta_DRE_con_2024.csv", csv(con))
+            z.writestr("dfp_cia_aberta_DRE_ind_2024.csv", csv(ind))
+
+    # O consolidado existe, mas nao tem numero: vale o individual.
+    montar(con="0", ind="25447900")
+    assert escopo_da_companhia(caminho, 2024, 24929) == "ind"
+
+    # Com numero nos dois, o consolidado continua ganhando.
+    montar(con="23833900", ind="23843000")
+    assert escopo_da_companhia(caminho, 2024, 24929) == "con"
+
+    # Zerado nos dois: continua devolvendo um escopo, e nao `None` -- "sem DFP"
+    # seria outra afirmacao, e falsa.
+    montar(con="0", ind="0")
+    assert escopo_da_companhia(caminho, 2024, 24929) == "con"

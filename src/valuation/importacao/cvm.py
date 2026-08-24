@@ -664,16 +664,76 @@ def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None
     nada indicando qual foi qual. Conferido nos arquivos de 2024: das 467
     companhias com consolidado, nenhuma deixa de publicar alguma demonstracao
     nesse escopo, entao travar aqui nao custa dado.
+
+    **O escopo precisa ter numero, e nao so ter linha.** A regra era "existe
+    alguma linha da companhia neste escopo", e ha companhia que entrega o
+    consolidado com o plano de contas inteiro **zerado** -- linha existe, dado
+    nao. O app lia zeros e montava uma companhia vazia, sem cair no individual,
+    porque a queda so acontecia quando o consolidado faltava.
+
+    A TIM S.A. e o caso que mostrou: a DFP consolidada dela e zero desde o
+    exercicio de 2024 (era R$ 23.833,9 mi em 2023), enquanto a individual traz
+    R$ 25.447,9 mi em 2024 e R$ 26.624,7 mi em 2025 -- e o ITR consolidado
+    continua cheio. A demonstracao publicada pela companhia tem o consolidado;
+    o que vem zerado e o extrato estruturado desse escopo.
+
+    Medido nos arquivos: **2 companhias em 2024** (TIM S.A. e Rio Paranapanema)
+    e **3 em 2025** (as duas mais CLI Sul) entregam consolidado todo zero tendo
+    individual com dado.
     """
     for escopo in ESCOPOS:
-        for grupos in GRUPOS.values():
-            for grupo in grupos:
-                dados = _ler_csv_do_zip(
-                    zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
-                )
-                if dados is not None and not _filtrar_empresa(dados, codigo_cvm).empty:
-                    return escopo
+        if _escopo_tem_numero(zip_path, ano, codigo_cvm, escopo):
+            return escopo
+
+    # Nenhum escopo tem numero: cai na regra antiga, "existe alguma linha".
+    # Companhia que so publicou zeros em todo lugar continua sendo lida como
+    # antes -- devolver ``None`` aqui a transformaria em "sem DFP", que e outra
+    # afirmacao e nao a verdadeira.
+    for escopo in ESCOPOS:
+        if _escopo_existe(zip_path, ano, codigo_cvm, escopo):
+            return escopo
     return None
+
+
+def _escopo_existe(
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str
+) -> bool:
+    """A companhia publicou **alguma linha** neste escopo, com valor ou sem?
+
+    E a pergunta antiga de ``escopo_da_companhia``, que agora sozinha nao basta
+    para escolher -- mas continua sendo a que separa "o consolidado veio zerado"
+    de "a companhia nao publica consolidado".
+    """
+    for grupos in GRUPOS.values():
+        for grupo in grupos:
+            dados = _ler_csv_do_zip(
+                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+            )
+            if dados is not None and not _filtrar_empresa(dados, codigo_cvm).empty:
+                return True
+    return False
+
+
+def _escopo_tem_numero(
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str
+) -> bool:
+    """Ha ao menos um valor diferente de zero da companhia neste escopo?
+
+    Sai no primeiro numero que encontra, entao no caso comum le um arquivo so --
+    a DRE consolidada de quem tem receita responde na primeira linha.
+    """
+    for grupos in GRUPOS.values():
+        for grupo in grupos:
+            dados = _ler_csv_do_zip(
+                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+            )
+            recorte = _filtrar_empresa(dados, codigo_cvm)
+            if recorte.empty:
+                continue
+            valores = pd.to_numeric(recorte["VL_CONTA"], errors="coerce")
+            if bool((valores.fillna(0) != 0).any()):
+                return True
+    return False
 
 
 def _linhas_da_demonstracao(
@@ -1611,6 +1671,9 @@ def importar_cvm(
     anos_sem_dados: list[int] = []
     escalas: set[str] = set()
     escopos: set[str] = set()
+    # O individual foi usado porque o consolidado veio **zerado**, e nao porque
+    # ele faltava? Sao dois casos com explicacoes diferentes, e o aviso muda.
+    consolidado_zerado = False
 
     for ano in anos:
         zip_path = baixar_dfp(ano, cache=cache)
@@ -1620,6 +1683,8 @@ def importar_cvm(
         if escopo is None:
             anos_sem_dados.append(ano)
             continue
+        if escopo == "ind" and _escopo_existe(zip_path, ano, codigo_cvm, "con"):
+            consolidado_zerado = True
         do_ano: list[LinhaCVM] = []
         for demonstracao in GRUPOS:
             do_ano.extend(
@@ -1668,7 +1733,18 @@ def importar_cvm(
         avisos.append(
             "Sem DFP publicada em " + ", ".join(str(a) for a in anos_sem_dados) + "."
         )
-    if "ind" in escopos:
+    if "ind" in escopos and consolidado_zerado:
+        avisos.append(
+            "**O consolidado desta companhia vem zerado no arquivo da CVM**, com "
+            "o plano de contas inteiro em zero, entao usei a **individual**. A "
+            "demonstracao publicada pela companhia tem o consolidado -- o que "
+            "vem vazio e o extrato estruturado desse escopo. Medido nos "
+            "arquivos: 2 companhias em 2024 e 3 em 2025, entre elas a TIM S.A., "
+            "cuja consolidada e zero desde o exercicio de 2024 e cuja individual "
+            "traz R$ 25,4 bi de receita. Confira contra a DFP no portal antes de "
+            "usar."
+        )
+    elif "ind" in escopos:
         avisos.append(
             "Esta companhia nao publica demonstracao consolidada em ao menos um "
             "dos anos; usei a **individual**, e ela costuma ser outra entidade. "
