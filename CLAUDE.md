@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1054 testes
+pytest                        # 1058 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1198,7 +1198,7 @@ não é verificação.
 
 ## Estado atual
 
-1.054 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.058 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1410,6 +1410,50 @@ O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário �
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
 
+## A série trimestral atravessa o app, e três coisas quebravam nela
+
+Ela nunca tinha sido **percorrida no navegador** — só medida. A varredura ganhou
+`--trimestral`, e achou três defeitos; **dois são anteriores** à série do ano
+anterior, porque os rótulos já eram `1T25` e ninguém tinha aberto o app com eles.
+
+| O que quebrava | Por quê |
+|---|---|
+| **Múltiplos**, a tela inteira | `int("1T25")` estoura |
+| **Salvar o valuation** | o serializador forçava `int(ano)` em toda coluna |
+| **A árvore publicada, ao salvar** | o filtro `isinstance(ano, int)` a gravava vazia, calado |
+
+São duas perguntas diferentes, e confundi-las é o defeito: a safra do universo
+de pares é por **exercício** (`ano_do_rotulo`, e quatro trimestres de 2025
+procuram uma safra e não quatro), enquanto identificar a coluna precisa do
+**rótulo inteiro**. No projeto salvo o rótulo é guardado como é — converter para
+o exercício faria 1T24, 2T24 e 3T24 colapsarem na mesma chave.
+
+**E o EBITDA voltou a virar o EBIT.** `ebitda()` somava a D&A com
+`fill_value=0`, o que transforma "não publicou" em "é zero" — o defeito que este
+arquivo já registra como o maior da base ("as outras 142 tinham EBITDA igual ao
+EBIT"). A série do ano anterior o tornou alcançável de novo: no mesmo trimestre
+do exercício passado a DFC não existe, então a D&A da coluna vem vazia e a
+margem EBITDA saía igual à margem EBIT, sem que nada dissesse.
+
+Medido em 90 companhias de 2024, antes de mudar:
+
+| | Companhias | O que acontece agora |
+|---|---|---|
+| D&A publicada, diferente de zero | 91% | nada muda |
+| D&A publicada **como zero** | 2% | EBITDA segue igual ao EBIT — ali zero **é** o dado |
+| D&A **ausente** | 7% | EBITDA fica **vazio**, e não igual ao EBIT |
+
+**Este efeito passa da série trimestral e alcança a base anual**, e o número
+está aqui para a decisão poder ser revertida. A DRE gerencial ganhou a mesma
+regra, e ali a **linha da D&A também fica vazia**: "0,0" numa DRE se lê como
+"esta empresa não deprecia", que é uma afirmação, e não a ausência de dado que é.
+
+**A comparação a/a chegou ao topo do Histórico**: o último período contra o mesmo
+período do exercício anterior — 3T25 contra 3T24 numa série trimestral, o ano
+anterior numa anual. Some quando o par não existe, em vez de mostrar cabeçalho
+com tabela vazia. E o cartão "Receita do último ano" passou a dizer o período da
+coluna, porque numa série trimestral o número é de três meses.
+
 ## O nome já é o da companhia; os números ainda podem não ser
 
 Com a WEG importada, a barra lateral e o Início anunciavam *"WEG SA — Equity
@@ -1428,7 +1472,11 @@ companhia. O corte de 3x é folgado de propósito: quem normaliza uma receita
 cíclica, ou projeta de um ano-base que não é o último, continua descrevendo a
 mesma empresa, e um aviso que dispara aí obriga a conviver com ele ligado — o
 que é o mesmo que desligá-lo. Na WEG os fatores são **41x e 42x**. Enquanto o
-aviso está ligado o Equity Value sai como "—", e não como um número.
+aviso está ligado o Equity Value sai como "—", e não como um número. **E o
+botão que resolve fica ali**: o link levava a Dados e o botão mora no fim
+daquela tela, então quem lia o aviso tinha de atravessar e rolar para fazer a
+única coisa que ele pede. O caminho longo continua existindo para quem quer
+ver a justificativa de cada premissa, que só cabe lá.
 
 **Dois defeitos do próprio conserto saíram no navegador, e nenhum dos 1.054
 testes os pegaria** — a mesma família do markdown cru e da unidade repetida:
