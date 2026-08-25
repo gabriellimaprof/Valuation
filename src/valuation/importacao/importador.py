@@ -713,6 +713,19 @@ def _derivar(
         # denuncia -- que e justamente o que a auditoria de origem existe para pegar.
         if mapeamento is not None and "depreciacao_dfc" in mapeamento:
             mapeamento["depreciacao_amortizacao"] = mapeamento["depreciacao_dfc"]
+    if da_da_dva:
+        derivadas["depreciacao_amortizacao"] = (
+            f"D&A da DVA (7.04.01) em {da_da_dva}, porque nem a DFC nem a DRE "
+            "trazem a conta. **Ela nao e equivalente**: inclui exaustao e mede em "
+            "base propria -- nas 422 companhias de 2024 que publicam as duas, "
+            "concorda com a fonte usada em 328 e discorda em 94. Por isso so entra "
+            "onde nao ha nenhuma outra"
+        )
+        # Mesma disciplina da troca acima: o de-para aponta para a linha que
+        # virou o numero. Sem isto a auditoria de origem ve uma conta preenchida
+        # sem origem registrada, que e o caso que ela existe para pegar.
+        if mapeamento is not None and "depreciacao_dva" in mapeamento:
+            mapeamento["depreciacao_amortizacao"] = mapeamento["depreciacao_dva"]
     abertos = _corrigir_sinal_do_ir_aberto(tabela, anos)
     if abertos:
         derivadas["imposto_corrente"] = derivadas["imposto_diferido"] = (

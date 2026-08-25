@@ -52,13 +52,25 @@ GRAVE = "grave"
 ATENCAO = "atencao"
 
 
+def _periodo_do_achado(rotulo) -> int | str:
+    """O rotulo como ele e: ``2024`` inteiro, ``2T25`` texto."""
+    try:
+        return int(str(rotulo).strip())
+    except (TypeError, ValueError):
+        return str(rotulo)
+
+
 @dataclass(frozen=True)
 class Achado:
     """Uma divergencia encontrada numa companhia."""
 
     codigo_cvm: int
     empresa: str
-    ano: int
+    # O rotulo do periodo, e nao o ano: numa serie trimestral a coluna e "2T25",
+    # e forcar `int` aqui derrubava a auditoria inteira. Converter para o
+    # exercicio tambem nao serve -- tres trimestres do mesmo ano viram a mesma
+    # linha de achado e o analista nao sabe qual quebrou.
+    ano: int | str
     verificacao: str
     severidade: str
     detalhe: str
@@ -304,7 +316,7 @@ def auditar(dfs, codigo_cvm: int = 0) -> list[Achado]:
                 Achado(
                     codigo_cvm=codigo_cvm,
                     empresa=dfs.empresa,
-                    ano=int(ano),
+                    ano=_periodo_do_achado(ano),
                     verificacao=nome,
                     severidade=severidade,
                     detalhe=detalhe,
@@ -331,9 +343,21 @@ def auditar_base(
     cache=None,
     catalogo=None,
     progresso=None,
+    importar=None,
 ) -> Auditoria:
-    """Varre a base inteira e devolve achados, cobertura e o de-para de origens."""
-    from .importacao.cvm import importar_cvm
+    """Varre a base inteira e devolve achados, cobertura e o de-para de origens.
+
+    ``importar`` troca a fonte sem duplicar esta funcao: por padrao e a DFP
+    anual, mas a **serie trimestral** e montada por outro caminho e nunca tinha
+    passado por aqui. Recebe ``(codigo, anos, cache, catalogo)`` e devolve
+    ``Demonstracoes``.
+    """
+    if importar is None:
+        from .importacao.cvm import importar_cvm
+
+        importar = lambda codigo, anos, cache, catalogo: importar_cvm(  # noqa: E731
+            codigo, anos, cache=cache, catalogo=catalogo
+        )
 
     achados: list[Achado] = []
     origens: dict[str, dict[str, int]] = {}
@@ -344,7 +368,7 @@ def auditar_base(
         if progresso is not None:
             progresso(i, len(codigos))
         try:
-            dfs = importar_cvm(codigo, anos, cache=cache, catalogo=catalogo)
+            dfs = importar(codigo, anos, cache, catalogo)
         except Exception:
             continue
         medidas += 1

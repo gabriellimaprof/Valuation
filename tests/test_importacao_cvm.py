@@ -2427,3 +2427,52 @@ def test_a_da_da_dva_e_ultimo_recurso_e_nao_substitui_a_da_dfc():
     # Sem DVA nenhuma, nada acontece.
     tabela = {"depreciacao_amortizacao": {2024: 10.0}}
     assert _da_da_dva_como_ultimo_recurso(tabela, [2024]) == ""
+
+
+def test_a_auditoria_aceita_rotulo_de_trimestre():
+    """A série trimestral nunca tinha passado pela auditoria, e ela quebrava nela.
+
+    `Achado.ano` forçava `int(ano)`, e numa série trimestral a coluna é "2T25" —
+    o quinto sítio da mesma família de defeito. Converter para o exercício também
+    não serve: três trimestres do mesmo ano viram a mesma linha de achado e o
+    analista não sabe qual quebrou.
+    """
+    from valuation.auditoria import _periodo_do_achado
+
+    assert _periodo_do_achado(2024) == 2024
+    assert _periodo_do_achado("2024") == 2024
+    assert _periodo_do_achado("2T25") == "2T25"
+
+
+def test_o_aviso_de_da_nao_recorrente_traz_o_efeito_na_margem():
+    """O valor bruto engana; o que decide é a razão sobre a receita.
+
+    Medido em 2024: os R$ 1.045,0 mi da CBD valem **5,6 pontos** de margem e os
+    R$ 75,4 mi da Inbrands valem **16,8** — a ordem se inverte. O efeito isolado
+    tem mediana de 0,1 ponto na base, mas passa de 5 pontos em 7 companhias.
+    """
+    from valuation.importacao.cvm import (
+        LinhaCVM,
+        _avisar_da_dentro_do_nao_recorrente,
+    )
+
+    linha = LinhaCVM(
+        codigo="3.04.05.01",
+        descricao="Amortização de intangíveis",
+        valor=-164_300_000.0,
+        ano=2024,
+        demonstracao="dre",
+        escala="MIL",
+        escopo="con",
+    )
+
+    avisos: list[str] = []
+    _avisar_da_dentro_do_nao_recorrente([linha], avisos, 1_584_800_000.0)
+    assert "10,4 ponto(s) de margem" in avisos[0], avisos[0]
+
+    # Sem receita nao da para calcular o efeito, e o aviso sai sem ele em vez de
+    # sair com um numero inventado.
+    avisos = []
+    _avisar_da_dentro_do_nao_recorrente([linha], avisos, None)
+    assert "ponto(s) de margem" not in avisos[0]
+    assert "164,3 milhões" in avisos[0]

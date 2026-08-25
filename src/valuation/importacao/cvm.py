@@ -960,7 +960,7 @@ _BLOCOS_NAO_RECORRENTES = ("3.04.03.", "3.04.04.", "3.04.05.")
 
 
 def _avisar_da_dentro_do_nao_recorrente(
-    linhas: list[LinhaCVM], avisos: list[str]
+    linhas: list[LinhaCVM], avisos: list[str], receita: float | None = None
 ) -> None:
     """A companhia lancou depreciacao ou amortizacao em "outras despesas"?
 
@@ -970,10 +970,14 @@ def _avisar_da_dentro_do_nao_recorrente(
     onde a companhia a lanca nesse bloco, a margem recorrente sai inflada e a
     projecao parte dela.
 
-    Medido no DFP consolidado de 2024: **43 linhas em 41 companhias**, e nao sao
-    pequenas -- Companhia Brasileira de Distribuicao com R$ 1.045,0 mi (239,7%
-    do EBIT), Casas Bahia com R$ 864,0 mi (169,4%), Marisa com R$ 166,4 mi
-    (382,2%) e Allpark com R$ 164,3 mi (77,9%).
+    Medido no DFP consolidado de 2024: **43 linhas em 41 companhias**. E o efeito
+    isolado -- so a linha de D&A, e nao o bloco inteiro -- e **concentrado**: a
+    mediana e de 0,1 ponto de margem, mas 9 companhias passam de 2 pontos e 7 de
+    5. Inbrands 16,8 p.p., Marisa 12,0, Wiz 10,6, Allpark 10,4, CBD 5,6.
+
+    E por isso que o aviso carrega o efeito em **pontos de margem**, e nao so o
+    valor: R$ 1.045,0 mi na CBD parece enorme e vale 5,6 pontos, enquanto os
+    R$ 75,4 mi da Inbrands valem 16,8. O que decide e a razao sobre a receita.
 
     **O app avisa e nao corrige**, e a escolha e deliberada: excluir a linha do
     ajuste mudaria a base de projecao de 41 companhias em silencio, e ha caso
@@ -997,16 +1001,26 @@ def _avisar_da_dentro_do_nao_recorrente(
     quais = ", ".join(
         f"{linha.descricao.strip()} ({linha.codigo})" for linha in achadas[:3]
     )
+    if receita and np.isfinite(receita) and receita > 0:
+        pontos = abs(total) / receita * 100
+        efeito = (
+            f" Isso vale **{f'{pontos:.1f}'.replace('.', ',')} ponto(s) de "
+            "margem**, que é o que a projeção herda."
+        )
+    else:
+        efeito = ""
+
     avisos.append(
         "**Esta companhia lança depreciação ou amortização dentro de "
         "\"outras receitas/despesas operacionais\"** — o bloco que o app trata "
         f"como **itens não recorrentes**. São {len(achadas)} linha(s), somando "
-        f"{em_milhoes} milhões: {quais}. "
+        f"{em_milhoes} milhões: {quais}.{efeito} "
         "Amortização de intangível é recorrente, então a **margem recorrente "
         "sai inflada** — e ela é a base que a sugestão de premissas projeta. "
         "Não corrigi: excluí-la seria decidir por você, e amortização de "
         "mais-valia é caso discutível. Medido na base de 2024, são 43 linhas em "
-        "41 companhias."
+        "41 companhias, e o efeito isolado tem mediana de 0,1 ponto — mas passa "
+        "de 5 pontos em 7 delas."
     )
 
 
@@ -1620,7 +1634,12 @@ def montar_demonstracoes(
         mapeamento[chave] = " + ".join(origens[chave])
 
     _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
-    _avisar_da_dentro_do_nao_recorrente(linhas, avisos)
+    receita_da_empresa = None
+    serie_receita = tabela.get("receita_liquida")
+    if serie_receita:
+        ultimos = [v for _, v in sorted(serie_receita.items()) if np.isfinite(v)]
+        receita_da_empresa = ultimos[-1] if ultimos else None
+    _avisar_da_dentro_do_nao_recorrente(linhas, avisos, receita_da_empresa)
     _somar_arrendamento_no_caixa(linhas, tabela, mapeamento)
     _padronizar_juros_no_fco(linhas, tabela, mapeamento, avisos)
     _reorganizar_o_fco(linhas, tabela, mapeamento, avisos)
