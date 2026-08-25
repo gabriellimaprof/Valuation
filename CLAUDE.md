@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1062 testes
+pytest                        # 1064 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -885,8 +885,11 @@ A terceira é a que pega o erro que nenhuma soma denuncia. Conta que vem de
 `3.01` em 400 companhias e de outro código em duas não quebra identidade
 nenhuma, e está errada.
 
-**Resultado das cinco rodadas: 726 → 230 → 14 → 7 → 2 achados em 467
-companhias.** Os 2 que sobraram são companhias que publicam **receita líquida
+**Resultado das seis rodadas: 726 → 230 → 14 → 7 → 2 → 3 achados em 467
+companhias.** A sexta rodou depois das correções de EBITDA, método da DFC e
+escopo: **nenhuma delas introduziu defeito de leitura**. O achado a mais é a TIM,
+que só aparece porque o app passou a ler o individual dela em vez de um
+consolidado zerado — e é a inversão de sinal do `6.05`, que tem nome próprio. Os 2 que sobraram são companhias que publicam **receita líquida
 negativa**, e isso é leitura fiel do que elas publicaram. **Não resta nenhum
 defeito de leitura conhecido na base.**
 
@@ -1198,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.062 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.064 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1409,6 +1412,63 @@ busca nem digitação.
 O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário —
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
+
+## A D&A da DVA, e o que sobrou sem EBITDA
+
+Investigar quem ficava sem EBITDA achou uma fonte que o app **lia e não
+mapeava**: `7.04.01` da DVA, "Depreciação, Amortização e Exaustão", código
+padronizado. A Farmácia e Drogaria Nissei só tem D&A ali (R$ 104,6 mi), e a Axia
+Energia Nordeste também (R$ 633,6 mi sobre R$ 8,0 bi de receita — uma
+transmissora sem depreciação, o que não existe).
+
+**Ela entra como último recurso e nunca por cima de outra fonte**, e a medição é
+que impõe isso. Nas 422 companhias de 2024 que publicam `7.04.01` e já têm D&A
+por outra via:
+
+| | Companhias |
+|---|---|
+| a DVA **concorda** com a fonte usada (≤1%) | **328** |
+| a DVA **discorda** | **94** |
+
+E discorda grande: Rumo 2.303,4 contra 5.452,6; São Martinho 1.150,0 contra
+2.348,4. A DVA carrega **exaustão** e mede em base própria — promovê-la a fonte
+geral trocaria o número de 94 companhias por outro que quer dizer outra coisa.
+
+Efeito na base de 2024:
+
+| | Antes | Depois |
+|---|---|---|
+| EBITDA calculável | 92,7% | **96,8%** |
+| Sem EBITDA, não financeira | 26 | **7** |
+
+Os 7 que sobram não publicam D&A em demonstração nenhuma, nos dois escopos —
+ausência de verdade, e o EBITDA vazio deles é a leitura honesta. É o que fecha a
+decisão de `ebitda()` não preencher a D&A ausente com zero: o custo dela caiu de
+26 companhias para 7, e as que saíram foram por **ler melhor**, não por relaxar
+a regra.
+
+## D&A lançada como item não recorrente: 41 companhias
+
+`itens_nao_recorrentes` é `3.04.03 + 3.04.04 + 3.04.05` com o sinal publicado, e
+a **margem EBITDA recorrente é a base que `sugerir_premissas` projeta**.
+Amortização de intangível é a coisa mais recorrente que existe: onde a companhia
+a lança nesse bloco, a margem recorrente sai inflada e a projeção parte dela.
+
+Medido no DFP consolidado de 2024: **43 linhas em 41 companhias**, e não são
+pequenas.
+
+| Companhia | Lançado como não recorrente | % do EBIT |
+|---|---|---|
+| Marisa | −166,4 | **382%** |
+| CBD (Pão de Açúcar) | −1.045,0 | **240%** |
+| Casas Bahia | −864,0 | **169%** |
+| Allpark | −164,3 | 78% |
+
+**O app avisa e não corrige**, e a escolha é deliberada: excluir a linha do
+ajuste mudaria a base de projeção de 41 companhias em silêncio, e amortização de
+mais-valia de combinação de negócios é caso legitimamente discutível — muito
+analista a exclui. Quem decide precisa do número, e é o número que o aviso
+entrega.
 
 ## Escopo: linha existir não é o mesmo que ter dado
 
