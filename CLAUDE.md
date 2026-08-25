@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1064 testes
+pytest                        # 1066 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.064 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.066 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1413,6 +1413,20 @@ O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário �
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
 
+## A auditoria alcança a série trimestral
+
+`auditar_base` fixava `importar_cvm`, então a série trimestral — montada por
+outro caminho — nunca tinha passado por ela. A fonte virou parâmetro, e a
+auditoria tinha o **mesmo `int(ano)`** do resto: `Achado.ano` derrubava a
+varredura inteira num rótulo `2T25`. É o quinto sítio da mesma família.
+Converter para o exercício também não serve — três trimestres do mesmo ano
+viram a mesma linha de achado e não se sabe qual quebrou.
+
+Rodada em amostra de 90 companhias (a base inteira leva horas: o zip do ITR tem
+~30 MB e cada companhia o varre várias vezes): **1 achado**, e é uma
+inconsistência publicada de R$ 406 mil numa companhia em recuperação judicial.
+O caminho do ITR está tão limpo quanto o anual.
+
 ## A D&A da DVA, e o que sobrou sem EBITDA
 
 Investigar quem ficava sem EBITDA achou uma fonte que o app **lia e não
@@ -1464,11 +1478,17 @@ pequenas.
 | Casas Bahia | −864,0 | **169%** |
 | Allpark | −164,3 | 78% |
 
-**O app avisa e não corrige**, e a escolha é deliberada: excluir a linha do
-ajuste mudaria a base de projeção de 41 companhias em silêncio, e amortização de
-mais-valia de combinação de negócios é caso legitimamente discutível — muito
-analista a exclui. Quem decide precisa do número, e é o número que o aviso
-entrega.
+**O efeito isolado é concentrado, e foi medido depois.** A tabela acima mede o
+bloco inteiro; só a linha de D&A dá **mediana de 0,1 ponto** de margem, com 9
+companhias acima de 2 pontos e 7 acima de 5. Isso é o que confirma "avisar e não
+corrigir" com número em vez de intuição: excluir a linha mudaria a base de
+projeção de 41 companhias para mover a margem de 9, e amortização de mais-valia
+de combinação de negócios é caso legitimamente discutível — muito analista a
+exclui.
+
+E o aviso traz o efeito em **pontos de margem**, porque o valor bruto engana: os
+R$ 1.045,0 mi da CBD valem 5,6 pontos e os R$ 75,4 mi da Inbrands valem 16,8 —
+a ordem se inverte.
 
 ## Escopo: linha existir não é o mesmo que ter dado
 
