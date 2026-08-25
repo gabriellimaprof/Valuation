@@ -656,7 +656,9 @@ def acoes_em_circulacao(zip_path: Path, ano: int, codigo_cvm: int) -> float | No
     return float(total - tesouraria)
 
 
-def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None:
+def escopo_da_companhia(
+    zip_path: Path, ano: int, codigo_cvm: int, documento: str = "dfp"
+) -> str | None:
     """Consolidado ou individual, decidido uma vez para a companhia inteira.
 
     Escolher por demonstracao permitiria ler a DRE do grupo economico junto com
@@ -680,9 +682,15 @@ def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None
     Medido nos arquivos: **2 companhias em 2024** (TIM S.A. e Rio Paranapanema)
     e **3 em 2025** (as duas mais CLI Sul) entregam consolidado todo zero tendo
     individual com dado.
+
+    ``documento`` existe porque o ITR tem os proprios nomes de arquivo. Sem ele
+    esta funcao montava nome de DFP dentro do zip trimestral, nao achava nada e
+    devolvia ``None`` para **toda** companhia -- e os dois chamadores do ITR
+    escreviam ``or ESCOPOS[0]``, entao o ITR inteiro era lido como consolidado
+    na marra. Funcionava por coincidencia em quem publica consolidado, e so.
     """
     for escopo in ESCOPOS:
-        if _escopo_tem_numero(zip_path, ano, codigo_cvm, escopo):
+        if _escopo_tem_numero(zip_path, ano, codigo_cvm, escopo, documento):
             return escopo
 
     # Nenhum escopo tem numero: cai na regra antiga, "existe alguma linha".
@@ -690,13 +698,38 @@ def escopo_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None
     # antes -- devolver ``None`` aqui a transformaria em "sem DFP", que e outra
     # afirmacao e nao a verdadeira.
     for escopo in ESCOPOS:
-        if _escopo_existe(zip_path, ano, codigo_cvm, escopo):
+        if _escopo_existe(zip_path, ano, codigo_cvm, escopo, documento):
             return escopo
     return None
 
 
+def _onde_fica_a_costura(anos_por_escopo: dict[str, list[int]]) -> str:
+    """Quais anos vieram de cada escopo, quando a serie mistura os dois.
+
+    Uma serie que troca de escopo no meio junta duas entidades numa tabela so, e
+    "usei a individual em ao menos um dos anos" nao diz **onde**. Sem isso o
+    analista nao consegue nem olhar o degrau: ele vira crescimento na leitura.
+
+    Devolve texto vazio quando ha um escopo so -- ai nao ha costura, e a frase
+    seria ruido.
+    """
+    if len(anos_por_escopo) < 2:
+        return ""
+    nomes = {"con": "consolidado", "ind": "individual"}
+    partes = [
+        f"**{nomes.get(escopo, escopo)}** em "
+        + ", ".join(str(a) for a in sorted(anos))
+        for escopo, anos in sorted(anos_por_escopo.items())
+    ]
+    return (
+        " **A série mistura os dois escopos**: "
+        + "; ".join(partes)
+        + ". O degrau entre eles não é crescimento."
+    )
+
+
 def _escopo_existe(
-    zip_path: Path, ano: int, codigo_cvm: int, escopo: str
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str, documento: str = "dfp"
 ) -> bool:
     """A companhia publicou **alguma linha** neste escopo, com valor ou sem?
 
@@ -707,7 +740,7 @@ def _escopo_existe(
     for grupos in GRUPOS.values():
         for grupo in grupos:
             dados = _ler_csv_do_zip(
-                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+                zip_path, _nome_no_zip(grupo, escopo, ano, documento), codigo_cvm
             )
             if dados is not None and not _filtrar_empresa(dados, codigo_cvm).empty:
                 return True
@@ -715,7 +748,7 @@ def _escopo_existe(
 
 
 def _escopo_tem_numero(
-    zip_path: Path, ano: int, codigo_cvm: int, escopo: str
+    zip_path: Path, ano: int, codigo_cvm: int, escopo: str, documento: str = "dfp"
 ) -> bool:
     """Ha ao menos um valor diferente de zero da companhia neste escopo?
 
@@ -725,7 +758,7 @@ def _escopo_tem_numero(
     for grupos in GRUPOS.values():
         for grupo in grupos:
             dados = _ler_csv_do_zip(
-                zip_path, _nome_no_zip(grupo, escopo, ano), codigo_cvm
+                zip_path, _nome_no_zip(grupo, escopo, ano, documento), codigo_cvm
             )
             recorte = _filtrar_empresa(dados, codigo_cvm)
             if recorte.empty:
@@ -1674,6 +1707,10 @@ def importar_cvm(
     # O individual foi usado porque o consolidado veio **zerado**, e nao porque
     # ele faltava? Sao dois casos com explicacoes diferentes, e o aviso muda.
     consolidado_zerado = False
+    # Qual escopo em qual ano. O escopo e decidido **por ano**, entao uma serie
+    # pode misturar os dois -- e quem le precisa saber onde fica a costura, nao
+    # so que ela existe.
+    anos_por_escopo: dict[str, list[int]] = {}
 
     for ano in anos:
         zip_path = baixar_dfp(ano, cache=cache)
@@ -1685,6 +1722,7 @@ def importar_cvm(
             continue
         if escopo == "ind" and _escopo_existe(zip_path, ano, codigo_cvm, "con"):
             consolidado_zerado = True
+        anos_por_escopo.setdefault(escopo, []).append(ano)
         do_ano: list[LinhaCVM] = []
         for demonstracao in GRUPOS:
             do_ano.extend(
@@ -1736,24 +1774,24 @@ def importar_cvm(
     if "ind" in escopos and consolidado_zerado:
         avisos.append(
             "**O consolidado desta companhia vem zerado no arquivo da CVM**, com "
-            "o plano de contas inteiro em zero, entao usei a **individual**. A "
-            "demonstracao publicada pela companhia tem o consolidado -- o que "
-            "vem vazio e o extrato estruturado desse escopo. Medido nos "
+            "o plano de contas inteiro em zero, então usei a **individual**. A "
+            "demonstração publicada pela companhia tem o consolidado — o que "
+            "vem vazio é o extrato estruturado desse escopo. Medido nos "
             "arquivos: 2 companhias em 2024 e 3 em 2025, entre elas a TIM S.A., "
-            "cuja consolidada e zero desde o exercicio de 2024 e cuja individual "
+            "cuja consolidada é zero desde o exercício de 2024 e cuja individual "
             "traz R$ 25,4 bi de receita. Confira contra a DFP no portal antes de "
-            "usar."
+            "usar." + _onde_fica_a_costura(anos_por_escopo)
         )
     elif "ind" in escopos:
         avisos.append(
-            "Esta companhia nao publica demonstracao consolidada em ao menos um "
+            "Esta companhia não publica demonstração consolidada em ao menos um "
             "dos anos; usei a **individual**, e ela costuma ser outra entidade. "
             "Medido nas 462 companhias que publicam os dois escopos em 2024: a "
-            "receita individual e **0,40x a consolidada na mediana**, fica abaixo "
-            "de 10% dela em 173 companhias e e **zero** em boa parte -- na WEG a "
-            "individual nao tem receita nenhuma, e o lucro de R$ 6,0 bi vem todo "
-            "de equivalencia patrimonial. Margem, giro e capex sobre receita nao "
-            "querem dizer nada nesse caso."
+            "receita individual é **0,40x a consolidada na mediana**, fica abaixo "
+            "de 10% dela em 173 companhias e é **zero** em boa parte — na WEG a "
+            "individual não tem receita nenhuma, e o lucro de R$ 6,0 bi vem todo "
+            "de equivalência patrimonial. Margem, giro e capex sobre receita não "
+            "querem dizer nada nesse caso." + _onde_fica_a_costura(anos_por_escopo)
         )
     if len(escalas) > 1:
         avisos.append(
@@ -2095,7 +2133,7 @@ def _abrir_itr(
 ) -> tuple[Path, int, str, list[str]]:
     """Zip do ITR, ano efetivo, escopo e trimestres com dado da companhia."""
     zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
-    escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+    escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm, "itr") or ESCOPOS[0]
     trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
     if not trimestres and _itr_vazio(zip_itr, ano):
         # Em janeiro o arquivo do ano ja existe e esta vazio; o ITR util e o do
@@ -2105,7 +2143,7 @@ def _abrir_itr(
         # por consulta, para nada.
         ano -= 1
         zip_itr = baixar_itr(ano, cache, forcar=forcar_download)
-        escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm) or ESCOPOS[0]
+        escopo = escopo_da_companhia(zip_itr, ano, codigo_cvm, "itr") or ESCOPOS[0]
         trimestres = trimestres_disponiveis(zip_itr, ano, codigo_cvm, escopo)
     if not trimestres:
         raise ErroCVM(
@@ -2610,6 +2648,14 @@ def importar_trimestral(
                     periodo="isolado",
                 )
             except ErroCVM:
+                continue
+            # **Trimestre todo zero nao e trimestre**, e o mesmo criterio do
+            # escopo um nivel abaixo: a secao existe no arquivo e nao foi
+            # preenchida. Na TIM, o `PENULTIMO` consolidado do ITR de 2026 tem
+            # 84 linhas e **nenhum valor diferente de zero**, enquanto o
+            # individual do mesmo periodo esta cheio -- entrar como coluna de
+            # zeros diria que a companhia nao faturou nada no trimestre.
+            if not (dfs.valores.fillna(0) != 0).any().any():
                 continue
             rotulo = _rotulo_do_trimestre(data_refer)
             if ordem == "penultimo":

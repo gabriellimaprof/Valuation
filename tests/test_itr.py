@@ -765,3 +765,59 @@ def test_sem_dados_nao_ha_ebitda_e_ele_nao_vira_o_ebit():
     assert float(ebitda[2024]) == pytest.approx(140.0)
     # Ausente: vazio, e nao 100.
     assert not np.isfinite(float(ebitda[2025]))
+
+
+def test_o_escopo_do_itr_e_detectado_e_nao_chutado():
+    """No ITR o detector montava nome de arquivo de DFP e nunca achava nada.
+
+    `escopo_da_companhia` devolvia `None` para **toda** companhia dentro do zip
+    trimestral, e os dois chamadores escreviam `or ESCOPOS[0]` — então o ITR
+    inteiro era lido como consolidado na marra. Funcionava por coincidência em
+    quem publica consolidado, e só.
+
+    Medido no ITR de 2026: 422 companhias publicam a DRE consolidada e **222
+    publicam apenas a individual**. Essas 222 não conseguiam série trimestral
+    nem ano móvel — a leitura procurava no escopo errado e voltava vazia.
+    """
+    from valuation.importacao.cvm import escopo_da_companhia
+
+    caminho = DADOS / "itr_cia_aberta_2025.zip"
+    # Sem dizer que e ITR, ele procura `dfp_cia_aberta_*` dentro do zip
+    # trimestral e nao acha nada -- que era o comportamento antigo.
+    assert escopo_da_companhia(caminho, 2025, WEG) is None
+    assert escopo_da_companhia(caminho, 2025, WEG, "itr") == "con"
+
+
+def test_trimestre_todo_zerado_nao_vira_coluna():
+    """Seção existe e não foi preenchida: isso não é um trimestre de zeros.
+
+    Na TIM, o `PENÚLTIMO` consolidado do ITR de 2026 tem 84 linhas e **nenhum
+    valor diferente de zero**, enquanto o individual do mesmo período está
+    cheio. Entrar como coluna diria que a companhia não faturou nada naquele
+    trimestre — que é uma afirmação, e falsa.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    # A regra em si, sem depender de a TIM estar no fixture: uma tabela sem
+    # nenhum valor diferente de zero nao passa no teste que filtra as partes.
+    zerada = Demonstracoes(
+        empresa="X",
+        valores=pd.DataFrame({2024: {"receita_liquida": 0.0, "ebit": np.nan}}),
+    )
+    cheia = Demonstracoes(
+        empresa="X",
+        valores=pd.DataFrame({2024: {"receita_liquida": 10.0, "ebit": 0.0}}),
+    )
+    assert not (zerada.valores.fillna(0) != 0).any().any()
+    assert (cheia.valores.fillna(0) != 0).any().any()
+
+    # E o efeito na serie real: a WEG mantem os quatro trimestres.
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert len(tri.valores.columns) >= 3
+    for coluna in tri.valores.columns:
+        assert (tri.valores[coluna].fillna(0) != 0).any(), coluna

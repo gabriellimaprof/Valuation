@@ -976,11 +976,36 @@ def _conferir(demonstracoes_valores: pd.DataFrame, avisos: list[str]) -> None:
         escala = variacao.abs().replace(0, np.nan)
         desvio = ((soma - variacao).abs() / escala).max()
         if np.isfinite(desvio) and desvio > 0.02:
-            avisos.append(
-                f"A DFC nao fecha em ate {desvio:.1%}: operacional, investimento, "
-                "financiamento e variacao cambial nao somam a variacao de caixa. "
-                "Confira se alguma linha foi classificada na secao errada."
+            # **"Fecha em modulo e discorda no sinal" e outro caso**, e dizer so
+            # "nao fecha em 200%" manda o analista procurar uma linha mal
+            # classificada que nao existe: as secoes estao coerentes entre si e
+            # o que esta invertido e o **total publicado**. Reconhecivel porque
+            # a soma das secoes e exatamente o negativo da variacao de caixa.
+            #
+            # Medido em 2024, nos dois escopos: **2 companhias** -- TIM S.A.
+            # (individual, 6.05 = -180,8 mil contra +180,8 das secoes) e Smart
+            # Fit (individual). Poucas, e sao justamente as em que a mensagem
+            # generica engana mais.
+            invertido = bool(
+                ((soma + variacao).abs() <= variacao.abs() * 0.001).all()
+                and (variacao.abs() > 0).any()
             )
+            if invertido:
+                avisos.append(
+                    "**A DFC fecha em módulo e discorda no sinal.** Operacional, "
+                    "investimento e financiamento somam exatamente o *oposto* da "
+                    "variação de caixa que a companhia publicou — as seções estão "
+                    "coerentes entre si, e o sinal invertido está no total. Não "
+                    "há linha classificada na seção errada para procurar; o app "
+                    "não corrige, porque a conta que não fecha é a informação."
+                )
+            else:
+                avisos.append(
+                    f"A DFC não fecha em até {desvio:.1%}: operacional, "
+                    "investimento, financiamento e variação cambial não somam a "
+                    "variação de caixa. Confira se alguma linha foi classificada "
+                    "na seção errada."
+                )
 
     # Corrente e diferido tem que reconstruir o total. Cada um pode ser credito
     # por conta propria -- em 204 das 467 companhias de 2024 eles tem sinais

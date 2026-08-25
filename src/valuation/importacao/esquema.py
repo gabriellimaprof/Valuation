@@ -1377,6 +1377,29 @@ for _conta in CONTAS:
         _CODIGOS.setdefault(_codigo, _conta.chave)
 
 
+# **"Amortizacao de intangiveis" e "Despesa de Depreciacao" ficaram de fora do
+# vocabulario de proposito, e a medicao e que decidiu.** Os dois rotulos existem
+# na DRE e nao alcancam o limiar de reconhecimento (0,42 e 0,50), entao Allpark
+# e PRIO Forte ficam sem D&A.
+#
+# Medido no DFP consolidado de 2024, o padrao alcanca **6 linhas em 5
+# companhias**, e o saldo nao paga:
+#
+#   - **4 das 5 ja tem D&A pela DFC**, que e a fonte preferida por estrutura --
+#     a linha da DRE mora dentro de "Despesas Gerais e Administrativas" e captura
+#     so a depreciacao que correu pelo SG&A. Acrescentar o sinonimo ali cria
+#     disputa com a fonte melhor, sem acrescentar dado.
+#   - **das 2 que ganhariam, uma vale R$ 0,2 mi** (PRIO Forte).
+#   - **2 das 6 linhas estao em `3.04.05`**, a subarvore que alimenta
+#     `itens_nao_recorrentes`. Amortizacao de intangivel e a coisa mais
+#     recorrente que existe: o problema da Allpark nao e a D&A faltando, e a
+#     companhia ter posto R$ 164,3 mi de amortizacao em "Outras Despesas
+#     Operacionais", o que ja infla a margem EBIT recorrente dela.
+#
+# E o mesmo desfecho do `7.08.03.02` da DVA: rotulo plausivel que a medicao
+# reprovou. Fica registrado para nao ser "descoberto" de novo.
+
+
 def reconhecer(
     rotulo: str, codigo: str | None = None, demonstracao: str | None = None
 ) -> Reconhecimento:
