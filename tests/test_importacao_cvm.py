@@ -2330,3 +2330,100 @@ def test_consolidado_zerado_nao_e_escopo_valido(tmp_path):
     # seria outra afirmacao, e falsa.
     montar(con="0", ind="0")
     assert escopo_da_companhia(caminho, 2024, 24929) == "con"
+
+
+def test_da_dentro_do_nao_recorrente_vira_aviso():
+    """Amortização em "outras despesas" infla a margem recorrente, e ela é a base.
+
+    `itens_nao_recorrentes` é `3.04.03 + 3.04.04 + 3.04.05` com o sinal
+    publicado, e a **margem EBITDA recorrente é o que `sugerir_premissas`
+    projeta**. Amortização de intangível é a coisa mais recorrente que existe:
+    onde a companhia a lança nesse bloco, a margem recorrente sai inflada e a
+    projeção parte dela.
+
+    Medido no DFP consolidado de 2024: 43 linhas em 41 companhias, e não são
+    pequenas — CBD com R$ 1.045,0 mi (239,7% do EBIT), Casas Bahia com R$ 864,0
+    mi, Marisa com R$ 166,4 mi (382,2%).
+
+    O app **avisa e não corrige**: excluir a linha mudaria a base de projeção de
+    41 companhias em silêncio, e amortização de mais-valia é caso legitimamente
+    discutível.
+    """
+    from valuation.importacao.cvm import (
+        LinhaCVM,
+        _avisar_da_dentro_do_nao_recorrente,
+    )
+
+    def linha(codigo, descricao):
+        return LinhaCVM(
+            codigo=codigo,
+            descricao=descricao,
+            valor=-164_300_000.0,
+            ano=2024,
+            demonstracao="dre",
+            escala="MIL",
+            escopo="con",
+        )
+
+    avisos: list[str] = []
+    _avisar_da_dentro_do_nao_recorrente(
+        [linha("3.04.05.01", "Amortização de intangíveis")], avisos
+    )
+    assert len(avisos) == 1
+    assert "164,3 milhões" in avisos[0], avisos[0]
+    assert "Amortização de intangíveis" in avisos[0]
+
+    # Fora do bloco nao recorrente, nao ha o que avisar: ali a D&A esta no lugar.
+    avisos = []
+    _avisar_da_dentro_do_nao_recorrente(
+        [linha("3.04.02.06", "Despesa de Depreciação")], avisos
+    )
+    assert avisos == []
+
+    # E uma linha do bloco que nao fala de D&A tambem nao acusa.
+    avisos = []
+    _avisar_da_dentro_do_nao_recorrente(
+        [linha("3.04.05.02", "Perdas com processos judiciais")], avisos
+    )
+    assert avisos == []
+
+
+def test_a_da_da_dva_e_ultimo_recurso_e_nao_substitui_a_da_dfc():
+    """`7.04.01` preenche o buraco, e nunca troca o número de quem já tem.
+
+    A DVA declara "Depreciação, Amortização e Exaustão" num código padronizado, e
+    há companhia que só a publica ali — a Farmácia e Drogaria Nissei tem R$ 104,6
+    mi só na DVA, e a Axia Energia Nordeste R$ 633,6 mi sobre R$ 8,0 bi de
+    receita (uma transmissora sem depreciação, que não existe).
+
+    **Mas ela não é equivalente à da DFC**, e é a medição que impõe isso: nas 422
+    companhias de 2024 que publicam as duas, concordam em 328 e **discordam em
+    94** — Rumo com 2.303,4 contra 5.452,6, São Martinho com 1.150,0 contra
+    2.348,4. A DVA carrega exaustão e mede em base própria.
+    """
+    from valuation.importacao.importador import _da_da_dva_como_ultimo_recurso
+
+    # Ja tem D&A: a DVA nao encosta, mesmo discordando.
+    tabela = {
+        "depreciacao_amortizacao": {2024: 2_303_400_000.0},
+        "depreciacao_dva": {2024: -5_452_600_000.0},
+    }
+    assert _da_da_dva_como_ultimo_recurso(tabela, [2024]) == ""
+    assert tabela["depreciacao_amortizacao"][2024] == 2_303_400_000.0
+
+    # Nao tem: a DVA entra, em magnitude (a DVA publica a retencao negativa).
+    tabela = {"depreciacao_dva": {2024: -104_600_000.0}}
+    assert _da_da_dva_como_ultimo_recurso(tabela, [2024]) == "2024"
+    assert tabela["depreciacao_amortizacao"][2024] == 104_600_000.0
+
+    # Zero publicado tambem e buraco: zero nao e D&A de uma operacao.
+    tabela = {
+        "depreciacao_amortizacao": {2024: 0.0},
+        "depreciacao_dva": {2024: -633_600_000.0},
+    }
+    assert _da_da_dva_como_ultimo_recurso(tabela, [2024]) == "2024"
+    assert tabela["depreciacao_amortizacao"][2024] == 633_600_000.0
+
+    # Sem DVA nenhuma, nada acontece.
+    tabela = {"depreciacao_amortizacao": {2024: 10.0}}
+    assert _da_da_dva_como_ultimo_recurso(tabela, [2024]) == ""

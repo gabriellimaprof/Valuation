@@ -1098,6 +1098,21 @@ CONTAS_DVA: tuple[Conta, ...] = (
         ),
     ),
     Conta(
+        chave="depreciacao_dva",
+        rotulo="Depreciacao, amortizacao e exaustao (DVA)",
+        demonstracao="dva",
+        sinonimos=(),
+        codigos_cvm=("7.04.01",),
+        ordem="7.04.01",
+        ajuda=(
+            "A D&A como a DVA a declara, em 'retencoes'. **Nao e equivalente a "
+            "da DFC**: ela inclui exaustao e tem base propria. Medido em 2024, "
+            "nas 422 companhias que publicam as duas, concordam em 328 e "
+            "discordam em 94 -- na Rumo, 2.303,4 contra 5.452,6. Serve como "
+            "ultimo recurso, quando nem a DFC nem a DRE trazem D&A."
+        ),
+    ),
+    Conta(
         chave="valor_adicionado_receitas",
         rotulo="Receitas (DVA)",
         demonstracao="dva",

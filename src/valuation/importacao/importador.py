@@ -700,6 +700,7 @@ def _derivar(
             "companhia zerou 3.11.01 nesses anos"
         )
     trocados = _preferir_a_da_do_fluxo_de_caixa(tabela, anos)
+    da_da_dva = _da_da_dva_como_ultimo_recurso(tabela, anos)
     if trocados:
         origem_dre = (mapeamento or {}).get("depreciacao_amortizacao", "a linha da DRE")
         derivadas["depreciacao_amortizacao"] = (
@@ -815,6 +816,51 @@ def _completar_controladores(
         controladores[ano] = consolidado - (numero(nao_controladores, ano) or 0.0)
         completados.append(ano)
     return ", ".join(str(ano) for ano in completados)
+
+
+def _da_da_dva_como_ultimo_recurso(
+    tabela: dict[str, dict[int, float]], anos: list[int]
+) -> str:
+    """Usa ``7.04.01`` da DVA **so onde nao ha nenhuma outra D&A**.
+
+    A DVA declara "Depreciacao, Amortizacao e Exaustao" num codigo padronizado,
+    e ha companhia que so a publica ali. Sem essa fonte a Farmacia e Drogaria
+    Nissei fica sem D&A tendo R$ 104,6 mi declarados, e a Axia Energia Nordeste
+    fica sem R$ 633,6 mi sobre R$ 8,0 bi de receita -- uma transmissora sem
+    depreciacao, o que nao existe.
+
+    **Ela nao substitui as outras**, e a medicao e que impoe isso: nas 422
+    companhias de 2024 que publicam ``7.04.01`` e ja tem D&A por outra via, a
+    DVA concorda com a fonte usada em **328** e discorda em **94** -- Rumo com
+    2.303,4 contra 5.452,6, Sao Martinho com 1.150,0 contra 2.348,4. A DVA
+    carrega exaustao e mede em base propria, entao promove-la a fonte geral
+    trocaria o numero de 94 companhias por outro que quer dizer outra coisa.
+
+    Ganho medido: **28 companhias** passam a ter D&A -- e portanto EBITDA -- sem
+    que nenhuma das que ja tinham seja tocada.
+
+    A DVA publica a retencao com sinal negativo; a conta canonica guarda
+    magnitude, como as demais fontes de D&A.
+    """
+    da_dva = tabela.get("depreciacao_dva")
+    if not da_dva:
+        return ""
+
+    da = tabela.setdefault("depreciacao_amortizacao", {})
+    usados: list[int] = []
+    for ano in anos:
+        atual = da.get(ano)
+        if atual is not None and np.isfinite(atual) and atual != 0:
+            continue
+        da_valor = da_dva.get(ano)
+        if da_valor is None or not np.isfinite(da_valor) or da_valor == 0:
+            continue
+        da[ano] = abs(da_valor)
+        usados.append(ano)
+    if not usados:
+        tabela.pop("depreciacao_amortizacao", None) if not da else None
+        return ""
+    return ", ".join(str(ano) for ano in usados)
 
 
 def _preferir_a_da_do_fluxo_de_caixa(

@@ -952,6 +952,64 @@ def arrendamento_no_passivo(linhas: list[LinhaCVM]) -> dict[str, dict[int, float
     return series
 
 
+_DA_NO_ROTULO = re.compile(r"deprecia|amortiza", re.IGNORECASE)
+
+# A subarvore que alimenta `itens_nao_recorrentes`: impairment, outras receitas
+# e outras despesas operacionais.
+_BLOCOS_NAO_RECORRENTES = ("3.04.03.", "3.04.04.", "3.04.05.")
+
+
+def _avisar_da_dentro_do_nao_recorrente(
+    linhas: list[LinhaCVM], avisos: list[str]
+) -> None:
+    """A companhia lancou depreciacao ou amortizacao em "outras despesas"?
+
+    `itens_nao_recorrentes` e ``3.04.03 + 3.04.04 + 3.04.05`` com o sinal
+    publicado, e a **margem EBITDA recorrente e a base que `sugerir_premissas`
+    projeta**. Amortizacao de intangivel e a coisa mais recorrente que existe:
+    onde a companhia a lanca nesse bloco, a margem recorrente sai inflada e a
+    projecao parte dela.
+
+    Medido no DFP consolidado de 2024: **43 linhas em 41 companhias**, e nao sao
+    pequenas -- Companhia Brasileira de Distribuicao com R$ 1.045,0 mi (239,7%
+    do EBIT), Casas Bahia com R$ 864,0 mi (169,4%), Marisa com R$ 166,4 mi
+    (382,2%) e Allpark com R$ 164,3 mi (77,9%).
+
+    **O app avisa e nao corrige**, e a escolha e deliberada: excluir a linha do
+    ajuste mudaria a base de projecao de 41 companhias em silencio, e ha caso
+    legitimamente discutivel no meio -- amortizacao de mais-valia de combinacao
+    de negocios e excluida por muito analista. Quem decide precisa do numero, e
+    e o numero que este aviso entrega.
+    """
+    achadas = [
+        linha
+        for linha in linhas
+        if linha.demonstracao == "dre"
+        and any(linha.codigo.startswith(b) for b in _BLOCOS_NAO_RECORRENTES)
+        and _DA_NO_ROTULO.search(linha.descricao)
+    ]
+    if not achadas:
+        return
+
+    total = sum(abs(linha.valor) for linha in achadas)
+    # Milhar com ponto e decimal com virgula: o aviso e lido em portugues.
+    em_milhoes = f"{total / 1e6:,.1f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    quais = ", ".join(
+        f"{linha.descricao.strip()} ({linha.codigo})" for linha in achadas[:3]
+    )
+    avisos.append(
+        "**Esta companhia lança depreciação ou amortização dentro de "
+        "\"outras receitas/despesas operacionais\"** — o bloco que o app trata "
+        f"como **itens não recorrentes**. São {len(achadas)} linha(s), somando "
+        f"{em_milhoes} milhões: {quais}. "
+        "Amortização de intangível é recorrente, então a **margem recorrente "
+        "sai inflada** — e ela é a base que a sugestão de premissas projeta. "
+        "Não corrigi: excluí-la seria decidir por você, e amortização de "
+        "mais-valia é caso discutível. Medido na base de 2024, são 43 linhas em "
+        "41 companhias."
+    )
+
+
 def _somar_arrendamento_fora_da_divida(
     linhas: list[LinhaCVM],
     tabela: dict[str, dict[int, float]],
@@ -1562,6 +1620,7 @@ def montar_demonstracoes(
         mapeamento[chave] = " + ".join(origens[chave])
 
     _somar_arrendamento_fora_da_divida(linhas, tabela, mapeamento, avisos)
+    _avisar_da_dentro_do_nao_recorrente(linhas, avisos)
     _somar_arrendamento_no_caixa(linhas, tabela, mapeamento)
     _padronizar_juros_no_fco(linhas, tabela, mapeamento, avisos)
     _reorganizar_o_fco(linhas, tabela, mapeamento, avisos)
