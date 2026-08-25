@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1058 testes
+pytest                        # 1062 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1198,7 +1198,7 @@ não é verificação.
 
 ## Estado atual
 
-1.058 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.062 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1409,6 +1409,53 @@ busca nem digitação.
 O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário —
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
+
+## Escopo: linha existir não é o mesmo que ter dado
+
+Perguntado o link da DFP da TIM, a correção veio do usuário: a demonstração
+**publicada** pela companhia tem o consolidado. O que vem zerado é o extrato
+estruturado desse escopo, nos dados abertos.
+
+| TIM S.A. (24929) | consolidada | individual |
+|---|---|---|
+| DFP 2023 | 23.833,9 | 23.843,0 |
+| DFP 2024 | **0,0** | 25.447,9 |
+| DFP 2025 | **0,0** | 26.624,7 |
+| ITR 2026 | cheio | cheio |
+
+`escopo_da_companhia` decidia por "existe alguma linha da companhia neste
+escopo". A linha existia — zerada —, então a queda para o individual, que só
+acontecia quando o consolidado **faltava**, nunca disparava: a TIM era importada
+como uma companhia inteiramente vazia, com o dado ao lado no mesmo zip. Agora o
+escopo precisa ter **número**, e a função sai no primeiro valor diferente de
+zero. Medido: 2 companhias em 2024 (TIM e Rio Paranapanema) e 3 em 2025 (mais
+CLI Sul); o escopo escolhido muda em **2 de 467**.
+
+A queda tem aviso próprio, porque a explicação é outra: não é "a companhia não
+publica consolidado" — caso em que o individual costuma ser outra entidade, como
+na WEG, cujo individual não tem receita nenhuma. Na TIM os dois praticamente
+coincidem (0,04% em 2023). E o aviso **diz quais anos vieram de cada escopo**:
+uma série que troca de escopo no meio junta duas entidades numa tabela só, e o
+degrau entre elas não é crescimento.
+
+**E o escopo do ITR nunca foi detectado.** A mesma função montava nome de
+arquivo de **DFP** dentro do zip trimestral, não achava nada e devolvia `None`
+para toda companhia — e os dois chamadores escreviam `or ESCOPOS[0]`. O ITR
+inteiro era lido como consolidado na marra, e funcionava por coincidência em
+quem publica consolidado. Medido no ITR de 2026: 422 companhias publicam a DRE
+consolidada e **222 publicam apenas a individual** — essas não conseguiam série
+trimestral nem ano móvel.
+
+Junto veio a mesma regra um nível abaixo: **trimestre todo zero não vira
+coluna**. Na TIM o `PENÚLTIMO` consolidado do ITR de 2026 tem 84 linhas e nenhum
+valor diferente de zero, enquanto o individual do mesmo período está cheio.
+
+**A DFC que "não fecha em 200%" pode estar fechando.** Na TIM,
+`6.01+6.02+6.03 = +180,8` e a companhia publicou `6.05 = −180,8`: as seções são
+coerentes entre si e o sinal invertido está no total. A mensagem genérica manda
+procurar uma linha mal classificada que não existe, então o caso tem nome
+próprio. Medido nos dois escopos de 2024: **2 companhias**, TIM e Smart Fit,
+ambas no individual.
 
 ## A série trimestral atravessa o app, e três coisas quebravam nela
 
