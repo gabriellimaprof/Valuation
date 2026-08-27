@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1066 testes
+pytest                        # 1067 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.066 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.067 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1413,6 +1413,34 @@ O sufixo `F` é normalizado. `NGRD3F` é o mesmo papel no mercado fracionário �
 preço mais fino, porque o livro é menor, e **sem nome de companhia** na resposta
 do Yahoo; o canônico dá os dois melhores.
 
+## O cache de leitura: o orçamento é que decide se ele paga
+
+Descomprimir é o que custa: o ITR de 2026 tem 19,4 MB comprimidos e **504,6 MB
+em 19 membros**, e uma `importar_trimestral` faz 34 chamadas a
+`_ler_csv_do_zip` — 90% dos 6,5s. Guardar os bytes não bastou (5,74s por
+companhia a 192 MB, 4,31s a 700 MB), porque o que restava era
+`_apenas_da_companhia`: ela **varre o membro inteiro a cada companhia**, e em
+lote isso custa `membros × companhias`.
+
+O índice troca a varredura por uma busca — o membro é percorrido uma vez e as
+linhas ficam agrupadas por `CD_CVM`. E aí a medição inverteu duas vezes:
+
+| Orçamento | Por companhia |
+|---|---|
+| 192 MB | **7,53s** — pior que sem cache: paga o índice e o despeja antes do reuso |
+| 900 MB | **0,97s** — contra 6,4s a frio, **6,6x** |
+
+O conjunto de trabalho é de 496 MB. Abaixo dele o cache atrapalha; acima, ganha
+uma ordem de grandeza. Por isso o orçamento vem de
+`VALUATION_CACHE_LEITURA_MB`, com padrão modesto: o **app** lê uma companhia por
+vez num servidor compartilhado e não pode reservar meio giga; as **ferramentas
+de lote** sobem a variável.
+
+Ele é lido **a cada chamada, e não na importação**. Ler no import obrigaria a
+recarregar o módulo para mudá-lo — e recarregar troca a identidade das classes,
+de modo que um `ErroCVM` levantado depois deixa de casar com o que o teste
+importou. Isso derrubou um teste vizinho que nada tinha a ver com cache.
+
 ## A auditoria alcança a série trimestral
 
 `auditar_base` fixava `importar_cvm`, então a série trimestral — montada por
@@ -1422,10 +1450,22 @@ varredura inteira num rótulo `2T25`. É o quinto sítio da mesma família.
 Converter para o exercício também não serve — três trimestres do mesmo ano
 viram a mesma linha de achado e não se sabe qual quebrou.
 
-Rodada em amostra de 90 companhias (a base inteira leva horas: o zip do ITR tem
-~30 MB e cada companhia o varre várias vezes): **1 achado**, e é uma
-inconsistência publicada de R$ 406 mil numa companhia em recuperação judicial.
-O caminho do ITR está tão limpo quanto o anual.
+Com o cache dimensionado ela rodou na **base inteira, em ~4 minutos**: **4
+achados em 467 companhias**, todos inconsistência publicada e nenhum defeito de
+leitura — duas em `receita − CPV = lucro bruto`, uma receita negativa de R$ 25
+mil e uma decomposição do FCO na CELG Participações. O caminho do ITR está tão
+limpo quanto o anual.
+
+**As 208 SPEs que ganharam ITR foram conferidas conta a conta**: 1.330 pares
+contra a linha publicada, **1.271 batem (95,56%)**. As 59 divergências são todas
+banco, onde o código canônico industrial não se aplica — `2.03` vale zero e o PL
+está em `2.08`, que é o caso do plano financeiro já documentado. O conferidor é
+que era ingênuo, não a leitura.
+
+**Uma lacuna ficou declarada:** o `mapeamento` da série trimestral guarda a
+**origem** ("CVM ITR — trimestres isolados de…") no lugar do código da conta, e
+com isso a série trimestral **não tem de-para utilizável**. A auditoria de origem
+— a que pega o erro que nenhuma soma denuncia — só alcança o caminho anual.
 
 ## A D&A da DVA, e o que sobrou sem EBITDA
 
