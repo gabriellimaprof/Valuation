@@ -392,6 +392,15 @@ def _qualidade(analise) -> None:
         "ancorada num lucro que não vira caixa herda o problema inteiro."
     )
 
+    # **O aviso da D&A no bloco dos não recorrentes pertence aqui.** Ele nasce na
+    # importação, e a tela de Dados o mostra junto de outros dez — mas o que ele
+    # diz é sobre a **margem recorrente**, que é o que esta aba discute e o que a
+    # sugestão de premissas projeta. Medido na base de 2024: 43 linhas em 41
+    # companhias, com efeito isolado de até 16,8 pontos de margem.
+    for aviso in getattr(analise.demonstracoes, "avisos", ()) or ():
+        if "não recorrentes" in aviso and "depreciação ou amortização" in aviso:
+            st.warning(aviso)
+
     qualidade = avaliar_qualidade(analise)
     st.session_state["qualidade"] = qualidade
 

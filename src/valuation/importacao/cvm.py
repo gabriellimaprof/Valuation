@@ -53,7 +53,9 @@ import re
 import unicodedata
 import urllib.error
 import urllib.request
+import os
 import zipfile
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -504,9 +506,81 @@ def _apenas_da_companhia(bruto: bytes, codigo_cvm: int) -> bytes | None:
     return quebra.join([linhas[0], *mantidas]) + quebra
 
 
-def _ler_csv_do_zip(
-    zip_path: Path, nome: str, codigo_cvm: int | None = None
-) -> pd.DataFrame | None:
+# **Descomprimir e o que custa a leitura, e o mesmo membro e lido varias vezes.**
+# Medido no ITR de 2026: o zip tem 19,4 MB comprimidos e **504,6 MB em 19
+# membros** descomprimidos, e uma unica ``importar_trimestral`` faz **34
+# chamadas** a ``_ler_csv_do_zip`` -- 90% dos 6,5s da leitura ficam ali dentro.
+# Numa varredura da base o mesmo membro e descomprimido centenas de vezes.
+#
+# O cache guarda os **bytes do membro** com orcamento em memoria e descarte do
+# menos usado. A chave inclui tamanho e mtime do arquivo: zip re-baixado tem de
+# invalidar o que estava guardado, senao a correcao de uma reapresentacao nunca
+# chega.
+#
+# **O orcamento decide se o cache paga ou atrapalha**, e a medicao mostrou os
+# dois lados. O conjunto de trabalho de uma companhia sao ~19 membros, e o do
+# ITR de 2026 soma 496 MB:
+#
+#   orcamento  192 MB -> 7,53s por companhia  (7 indices: despeja e reconstroi)
+#   orcamento  900 MB -> **0,97s** por companhia (16 indices, 496 MB)
+#
+# Contra 6,4s a frio, sao **6,6x** -- mas so quando o conjunto cabe. Abaixo
+# disso o cache e pior que nao ter: ele paga a construcao do indice e o despeja
+# antes do reuso.
+#
+# Por isso o padrao e modesto e a decisao e de quem roda: o **app** le uma
+# companhia por vez num servidor compartilhado, e nao pode reservar meio giga; as
+# **ferramentas de lote** (auditoria, universo de pares) sobem
+# ``VALUATION_CACHE_LEITURA_MB`` e ganham a varredura completa em minutos em vez
+# de horas.
+ORCAMENTO_PADRAO_MB = 192
+
+
+def _orcamento_do_cache() -> int:
+    """Le a variavel a cada chamada, e nao na importacao.
+
+    Ler no import obrigaria quem quer mudar o orcamento a recarregar o modulo --
+    e recarregar troca a identidade das classes, de modo que um ``ErroCVM``
+    levantado depois deixa de casar com o ``ErroCVM`` que o teste importou. Isso
+    derrubou um teste vizinho e nao tinha nada a ver com cache.
+    """
+    try:
+        mb = int(os.environ.get("VALUATION_CACHE_LEITURA_MB", ORCAMENTO_PADRAO_MB))
+    except ValueError:
+        mb = ORCAMENTO_PADRAO_MB
+    return max(mb, 0) * 1024 * 1024
+
+_membros_em_memoria: "OrderedDict[tuple, bytes]" = OrderedDict()
+_bytes_em_memoria = 0
+
+
+def limpar_cache_de_membros() -> None:
+    """Esvazia os caches de leitura: bytes crus e indices por companhia."""
+    global _bytes_em_memoria, _bytes_dos_indices
+
+    _membros_em_memoria.clear()
+    _bytes_em_memoria = 0
+    _indices.clear()
+    _bytes_dos_indices = 0
+
+
+def _bytes_do_membro(zip_path: Path, nome: str) -> bytes | None:
+    """Os bytes de um membro do zip, reusando a descompressao anterior."""
+    global _bytes_em_memoria
+
+    try:
+        estado = zip_path.stat()
+        chave = (str(zip_path), nome, estado.st_size, estado.st_mtime_ns)
+    except OSError as erro:
+        raise ErroCVM(
+            f"O arquivo {zip_path.name} nao pode ser lido ({erro})."
+        ) from erro
+
+    guardado = _membros_em_memoria.get(chave)
+    if guardado is not None:
+        _membros_em_memoria.move_to_end(chave)
+        return guardado
+
     try:
         with zipfile.ZipFile(zip_path) as arquivo:
             if nome not in arquivo.namelist():
@@ -519,8 +593,95 @@ def _ler_csv_do_zip(
             "Ele pode ter sido baixado pela metade -- apague-o do cache e tente de novo."
         ) from erro
 
+    orcamento = _orcamento_do_cache()
+    if len(bruto) <= orcamento:
+        _membros_em_memoria[chave] = bruto
+        _bytes_em_memoria += len(bruto)
+        while _bytes_em_memoria > orcamento and _membros_em_memoria:
+            _, saiu = _membros_em_memoria.popitem(last=False)
+            _bytes_em_memoria -= len(saiu)
+    return bruto
+
+
+_indices: "OrderedDict[tuple, tuple[bytes, bytes, dict[bytes, bytes]]]" = OrderedDict()
+_bytes_dos_indices = 0
+
+
+def _indice_do_membro(
+    zip_path: Path, nome: str
+) -> tuple[bytes, bytes, dict[bytes, bytes]] | None:
+    """Agrupa as linhas do membro por companhia, uma vez so.
+
+    **Guardar os bytes crus nao bastava.** ``_apenas_da_companhia`` varre o
+    membro inteiro a cada companhia, entao ler a base em lote custa
+    ``membros x companhias`` -- com o DMPL do ITR em 110 MB, e essa varredura, e
+    nao a descompressao, que domina. Medido com cache de bytes: 5,74s por
+    companhia com 192 MB de orcamento e 4,31s com 700 MB, quando o que se queria
+    era ordem de grandeza.
+
+    O indice troca a varredura por uma busca: o membro e percorrido uma vez, as
+    linhas ficam agrupadas por ``CD_CVM``, e cada companhia seguinte custa um
+    acesso a dicionario. A memoria e a mesma dos bytes crus, porque sao os
+    mesmos bytes -- so que ordenados pela pergunta que se faz deles.
+    """
+    global _bytes_dos_indices
+
+    try:
+        estado = zip_path.stat()
+        chave = (str(zip_path), nome, estado.st_size, estado.st_mtime_ns)
+    except OSError as erro:
+        raise ErroCVM(
+            f"O arquivo {zip_path.name} nao pode ser lido ({erro})."
+        ) from erro
+
+    guardado = _indices.get(chave)
+    if guardado is not None:
+        _indices.move_to_end(chave)
+        return guardado
+
+    bruto = _bytes_do_membro(zip_path, nome)
+    if bruto is None:
+        return None
+
+    quebra = b"\r\n" if b"\r\n" in bruto else b"\n"
+    linhas = bruto.split(quebra)
+    if not linhas:
+        return None
+    cabecalho = linhas[0]
+    por_companhia: dict[bytes, list[bytes]] = {}
+    for linha in linhas[1:]:
+        if not linha:
+            continue
+        por_companhia.setdefault(_codigo_da_linha(linha), []).append(linha)
+    indice = {
+        codigo: quebra.join([cabecalho, *linhas_da]) + quebra
+        for codigo, linhas_da in por_companhia.items()
+    }
+
+    tamanho = sum(len(v) for v in indice.values())
+    resultado = (cabecalho, quebra, indice)
+    orcamento = _orcamento_do_cache()
+    if tamanho <= orcamento:
+        _indices[chave] = resultado
+        _bytes_dos_indices += tamanho
+        while _bytes_dos_indices > orcamento and len(_indices) > 1:
+            _, saiu = _indices.popitem(last=False)
+            _bytes_dos_indices -= sum(len(v) for v in saiu[2].values())
+    return resultado
+
+
+def _ler_csv_do_zip(
+    zip_path: Path, nome: str, codigo_cvm: int | None = None
+) -> pd.DataFrame | None:
     if codigo_cvm is not None:
-        bruto = _apenas_da_companhia(bruto, codigo_cvm)
+        indexado = _indice_do_membro(zip_path, nome)
+        if indexado is None:
+            return None
+        bruto = indexado[2].get(str(codigo_cvm).encode().lstrip(b"0") or b"0")
+        if bruto is None:
+            return None
+    else:
+        bruto = _bytes_do_membro(zip_path, nome)
         if bruto is None:
             return None
 

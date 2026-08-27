@@ -2476,3 +2476,39 @@ def test_o_aviso_de_da_nao_recorrente_traz_o_efeito_na_margem():
     _avisar_da_dentro_do_nao_recorrente([linha], avisos, None)
     assert "ponto(s) de margem" not in avisos[0]
     assert "164,3 milhões" in avisos[0]
+
+
+def test_o_orcamento_do_cache_vem_do_ambiente():
+    """O orçamento decide se o cache paga ou atrapalha, e quem roda é que decide.
+
+    O conjunto de trabalho de uma companhia são ~19 membros, e o do ITR de 2026
+    soma 496 MB. Medido:
+
+        192 MB -> 7,53s por companhia (despeja e reconstrói o índice)
+        900 MB -> **0,97s**, contra 6,4s a frio — 6,6x
+
+    Abaixo do conjunto de trabalho o cache é **pior que não ter**: paga a
+    construção do índice e o despeja antes do reuso. Por isso o padrão é modesto
+    (o app lê uma companhia por vez num servidor compartilhado) e as ferramentas
+    de lote sobem `VALUATION_CACHE_LEITURA_MB`.
+    """
+    import os
+
+    from valuation.importacao.cvm import ORCAMENTO_PADRAO_MB, _orcamento_do_cache
+
+    anterior = os.environ.get("VALUATION_CACHE_LEITURA_MB")
+    try:
+        os.environ["VALUATION_CACHE_LEITURA_MB"] = "512"
+        assert _orcamento_do_cache() == 512 * 1024 * 1024
+
+        # Valor invalido cai no padrao, em vez de derrubar a leitura inteira.
+        os.environ["VALUATION_CACHE_LEITURA_MB"] = "muito"
+        assert _orcamento_do_cache() == ORCAMENTO_PADRAO_MB * 1024 * 1024
+
+        os.environ.pop("VALUATION_CACHE_LEITURA_MB")
+        assert _orcamento_do_cache() == ORCAMENTO_PADRAO_MB * 1024 * 1024
+    finally:
+        if anterior is None:
+            os.environ.pop("VALUATION_CACHE_LEITURA_MB", None)
+        else:
+            os.environ["VALUATION_CACHE_LEITURA_MB"] = anterior
