@@ -670,8 +670,34 @@ def _qualitativo(evidencias, respostas=None) -> list[str]:
         "dados não alcançam. A resposta fica em branco de propósito: é a parte "
         "que exige julgamento, e nenhuma conta deste relatório a substitui.",
         "",
+        # **O total, e não só a marca por bloco.** Cada pergunta já diz "(não
+        # respondida)", mas quem abre o documento no meio não sabe se encontrou
+        # a única em branco ou uma de dez. E este é o número que mede o quanto do
+        # material está pronto: o resto o app calcula sozinho.
+        _quanto_respondido(respostas),
+        "",
     ]
     return linhas + _blocos_de_evidencia(evidencias, respostas)
+
+
+# As dez perguntas de framework: cinco forcas, fosso e as quatro do VRIO.
+PERGUNTAS_DE_FRAMEWORK = 10
+
+
+def _quanto_respondido(respostas) -> str:
+    """Uma linha dizendo quanto do julgamento ja foi escrito."""
+    feitas = len([v for v in (respostas or {}).values() if str(v).strip()])
+    if feitas == 0:
+        return (
+            f"> **Nenhuma das {PERGUNTAS_DE_FRAMEWORK} perguntas foi respondida.** "
+            "O que segue é a evidência reunida, e não a análise."
+        )
+    if feitas < PERGUNTAS_DE_FRAMEWORK:
+        return (
+            f"> **{feitas} de {PERGUNTAS_DE_FRAMEWORK} perguntas respondidas.** As "
+            "demais aparecem marcadas como não respondidas."
+        )
+    return f"> As {PERGUNTAS_DE_FRAMEWORK} perguntas foram respondidas."
 
 
 def _blocos_de_evidencia(evidencias, respostas=None) -> list[str]:

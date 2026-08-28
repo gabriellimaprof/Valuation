@@ -14,7 +14,11 @@ from __future__ import annotations
 
 import streamlit as st
 
-from valuation.qualitativo import reunir_evidencias, reunir_vrio
+from valuation.qualitativo import (
+    por_que_nao_se_aplica,
+    reunir_evidencias,
+    reunir_vrio,
+)
 
 from .. import estado
 from ..componentes import etapa, secao
@@ -33,6 +37,20 @@ def render() -> None:
             "Nenhuma demonstração importada ainda. Vá em **Dados**: sem histórico "
             "não há evidência para sustentar nenhuma das perguntas, e a tela "
             "viraria um formulário em branco."
+        )
+        return
+
+    # **A mesma recusa que o relatório já fazia.** Ele deixa a seção de fora no
+    # caminho do banco; a tela mostrava os blocos, com margem EBITDA e capex
+    # sobre receita descrevendo uma instituição financeira. A proteção existia
+    # num consumidor e não no outro.
+    recusa = por_que_nao_se_aplica(analise)
+    if recusa is not None:
+        st.warning(recusa)
+        st.caption(
+            "As perguntas continuam suas para responder — o que falta é a "
+            "evidência, e ela pede indicadores de banco que este app não monta: "
+            "custo de funding, composição da carteira, índice de capital."
         )
         return
 
@@ -104,8 +122,14 @@ def _blocos(evidencias, respondidas: dict[str, str]) -> None:
 
 
 def _placar(respondidas: dict[str, str]) -> None:
-    """Quantas das dez perguntas ja tem resposta escrita."""
-    total = 10
+    """Quantas das dez perguntas ja tem resposta escrita.
+
+    O total vem do relatorio, e nao de um `10` escrito aqui: os dois contam a
+    mesma coisa, e duas copias divergem no dia em que uma pergunta entrar.
+    """
+    from valuation.relatorio import PERGUNTAS_DE_FRAMEWORK
+
+    total = PERGUNTAS_DE_FRAMEWORK
     feitas = len([v for v in respondidas.values() if v.strip()])
     st.divider()
     if feitas == 0:

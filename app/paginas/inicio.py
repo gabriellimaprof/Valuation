@@ -115,7 +115,9 @@ def _quanto_do_qualitativo_foi_respondido() -> None:
     if not estado.tem_historico():
         return
 
-    total = 10
+    from valuation.relatorio import PERGUNTAS_DE_FRAMEWORK
+
+    total = PERGUNTAS_DE_FRAMEWORK
     feitas = len([v for v in estado.respostas_qualitativas().values() if v.strip()])
     alvo = pagina("qualitativo")
     if feitas == total:

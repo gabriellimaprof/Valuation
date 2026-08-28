@@ -316,6 +316,38 @@ def _e_financeira(analise) -> bool:
         return False
 
 
+def por_que_nao_se_aplica(analise) -> str | None:
+    """Por que a evidencia nao serve a esta companhia, ou ``None``.
+
+    **O problema e maior que o percentil.** Corrigir `_com_referencia` tirou o
+    numero que comparava um banco com 445 companhias a que ele nao pertence, mas
+    os **indicadores** continuam sendo os errados: medido no Bradesco, a
+    rivalidade sai como "margem EBITDA mediana de 4,5%" e a ameaca de entrantes
+    como "capex de 3,9% da receita -- o capital que um concorrente precisaria
+    por para montar a mesma operacao". Um banco nao se monta com capex; se monta
+    com licenca e capital regulatorio.
+
+    O relatorio ja recusava a secao inteira no caminho do banco
+    (`relatorio._nao_se_aplica_ao_banco`). A **tela** nao recusava, e mostrava
+    esses numeros -- a protecao existia num consumidor e nao no outro. Por isso a
+    razao mora aqui: quem consumir o modulo daqui em diante recebe a recusa
+    junto com os blocos.
+    """
+    if not _e_financeira(analise):
+        return None
+    return (
+        "**A evidência desta seção não descreve uma instituição financeira.** As "
+        "perguntas continuam valendo — rivalidade, poder de barganha e fosso são "
+        "centrais em banco —, mas os números que as sustentam aqui são de "
+        "empresa não financeira: margem EBITDA, capex sobre receita e giro do "
+        "capital investido. Medido no Bradesco, a rivalidade sairia como "
+        "\"margem EBITDA de 4,5%\" e a barreira de entrada como \"capex de 3,9% "
+        "da receita\" — um banco não se monta com capex, se monta com licença e "
+        "capital regulatório. O percentil já é suprimido; os indicadores é que "
+        "não transferem, e inventar equivalentes seria pior que a ausência."
+    )
+
+
 def _vrio_raridade(analise) -> Evidencia:
     """Quantos concorrentes tem o mesmo? E a que o percentil de fato responde."""
     if _e_financeira(analise):
