@@ -82,7 +82,8 @@ class Entrada:
 
     caminho: Path
     empresa: str
-    anos: tuple[int, ...]
+    # O rotulo do periodo, e nao o ano: numa serie trimestral ele e "2T26".
+    anos: tuple[int | str, ...]
     unidade: str
     atualizado_em: datetime
     erro: str = ""
@@ -100,6 +101,12 @@ class Entrada:
     @property
     def legivel(self) -> bool:
         return not self.erro
+
+
+def _periodo(valor) -> int | str:
+    """O ano como inteiro quando e um ano; o rotulo como veio quando nao e."""
+    texto = str(valor).strip()
+    return int(texto) if texto.isdigit() else texto
 
 
 def _descrever(caminho: Path) -> Entrada:
@@ -122,7 +129,13 @@ def _descrever(caminho: Path) -> Entrada:
 
     empresa = dados.get("empresa") or {}
     demonstracoes = dados.get("demonstracoes") or {}
-    anos = tuple(int(a) for a in (demonstracoes.get("anos") or []))
+    # `int(a)` aqui derrubava **a biblioteca inteira**, e nao so a entrada
+    # ruim: um valuation trimestral salvo tem `anos = ["1T25", ...]`, o
+    # `ValueError` subia por `_descrever` e `listar` estourava antes de devolver
+    # qualquer coisa. E o docstring acima diz justamente o contrario -- arquivo
+    # que o app nao entende tem de aparecer na lista com o problema visivel, e
+    # nao levar a lista junto. Setimo sitio da familia `int(ano)`.
+    anos = tuple(_periodo(a) for a in (demonstracoes.get("anos") or []))
     return Entrada(
         caminho=caminho,
         empresa=str(empresa.get("nome") or caminho.stem),

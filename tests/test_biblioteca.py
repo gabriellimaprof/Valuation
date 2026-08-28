@@ -193,3 +193,34 @@ def test_excluir_fora_da_biblioteca_e_recusado(ligada, tmp_path, projeto):
     with pytest.raises(ValueError, match="nao esta na biblioteca"):
         excluir(intruso)
     assert intruso.exists(), "o arquivo de fora nao pode ter sido apagado"
+
+
+def test_valuation_trimestral_nao_derruba_a_listagem(ligada, empresa_exemplo, demonstracoes):
+    """Sétimo sítio de `int(ano)`, e este levava a lista inteira junto.
+
+    Uma série trimestral salva grava `anos: ["1T25", ...]` — o rótulo, e não o
+    exercício, porque converter faria 1T24, 2T24 e 3T24 colapsarem na mesma
+    chave. `int(a)` na descrição estourava, o `ValueError` subia por `listar` e
+    **nenhuma** entrada aparecia: o valuation anual guardado ao lado sumia da
+    tela por causa do vizinho.
+
+    É o oposto exato do que `_descrever` promete — arquivo que o app não entende
+    aparece na lista com o problema visível, e não leva a lista consigo.
+    """
+    from dataclasses import replace
+
+    guardar(Projeto(empresa=replace(empresa_exemplo, nome="Anual"), demonstracoes=demonstracoes))
+
+    trimestral = demonstracoes.valores.rename(columns={2023: "1T25", 2024: "2T25"})
+    guardar(
+        Projeto(
+            empresa=replace(empresa_exemplo, nome="Trimestral"),
+            demonstracoes=replace(demonstracoes, valores=trimestral),
+        )
+    )
+
+    entradas = {e.empresa: e for e in listar()}
+    assert set(entradas) == {"Anual", "Trimestral"}, "uma entrada não pode derrubar a outra"
+    assert entradas["Trimestral"].anos == ("1T25", "2T25")
+    assert entradas["Trimestral"].periodo == "1T25–2T25"
+    assert entradas["Anual"].anos == (2023, 2024), "o ano continua inteiro"
