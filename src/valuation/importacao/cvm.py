@@ -562,6 +562,7 @@ def limpar_cache_de_membros() -> None:
     _bytes_em_memoria = 0
     _indices.clear()
     _bytes_dos_indices = 0
+    _pedidos_por_membro.clear()
 
 
 def _bytes_do_membro(zip_path: Path, nome: str) -> bytes | None:
@@ -605,6 +606,26 @@ def _bytes_do_membro(zip_path: Path, nome: str) -> bytes | None:
 
 _indices: "OrderedDict[tuple, tuple[bytes, bytes, dict[bytes, bytes]]]" = OrderedDict()
 _bytes_dos_indices = 0
+
+# **Indice so se paga no reuso, e a maioria dos membros nao e reusada.** Medido
+# numa importacao de uma companhia em sete exercicios: sao **56 membros
+# distintos, 49 deles pedidos uma vez so**. Construir e guardar o indice desses
+# 49 e custo puro -- percorre 3,5 milhoes de linhas para achar uma chave, e o
+# orcamento o despeja antes de qualquer segunda pergunta.
+#
+# Medido no caso do app (uma companhia, sete anos), com o padrao de 192 MB:
+#
+#   sem cache  6,37s  |  6,35s na segunda   |  6,36s em outra companhia
+#   192 MB     6,75s  |  5,51s              |  5,66s
+#   400 MB     5,54s  |  5,55s              |  5,93s   (nao reusa nada)
+#   900 MB     5,98s  |  **0,97s**          |  **1,02s**
+#
+# A 192 MB o cache **cobrava** 0,38s na primeira leitura para devolver 0,84s na
+# segunda -- quase empate, ocupando 192 MB. O primeiro pedido de um membro passa
+# a usar a varredura dirigida que ja existia (`_apenas_da_companhia`, o caminho
+# anterior ao indice) e o indice so e montado quando o membro e pedido de novo:
+# o lote continua ganhando o indice, e quem le uma companhia so nao paga por ele.
+_pedidos_por_membro: dict[tuple, int] = {}
 
 
 def _indice_do_membro(
@@ -670,14 +691,43 @@ def _indice_do_membro(
     return resultado
 
 
+def _recorte_da_companhia(zip_path: Path, nome: str, codigo_cvm: int) -> bytes | None:
+    """As linhas de uma companhia, pelo indice ou pela varredura dirigida.
+
+    A escolha e por **reuso**, e nao por tamanho: enquanto o membro foi pedido
+    uma vez so, a varredura sai mais barata que agrupar o arquivo inteiro por
+    companhia. Do segundo pedido em diante o indice se paga, e e o que faz a
+    varredura da base inteira caber em minutos.
+
+    Os dois caminhos filtram pelo mesmo ``_codigo_da_linha``, entao devolvem os
+    mesmos bytes -- ha teste exigindo isso membro a membro.
+    """
+    try:
+        estado = zip_path.stat()
+        chave = (str(zip_path), nome, estado.st_size, estado.st_mtime_ns)
+    except OSError as erro:
+        raise ErroCVM(f"O arquivo {zip_path.name} nao pode ser lido ({erro}).") from erro
+
+    ja_pedido = _pedidos_por_membro.get(chave, 0)
+    _pedidos_por_membro[chave] = ja_pedido + 1
+
+    if ja_pedido or chave in _indices:
+        indexado = _indice_do_membro(zip_path, nome)
+        if indexado is None:
+            return None
+        return indexado[2].get(str(codigo_cvm).encode().lstrip(b"0") or b"0")
+
+    bruto = _bytes_do_membro(zip_path, nome)
+    if bruto is None:
+        return None
+    return _apenas_da_companhia(bruto, codigo_cvm)
+
+
 def _ler_csv_do_zip(
     zip_path: Path, nome: str, codigo_cvm: int | None = None
 ) -> pd.DataFrame | None:
     if codigo_cvm is not None:
-        indexado = _indice_do_membro(zip_path, nome)
-        if indexado is None:
-            return None
-        bruto = indexado[2].get(str(codigo_cvm).encode().lstrip(b"0") or b"0")
+        bruto = _recorte_da_companhia(zip_path, nome, codigo_cvm)
         if bruto is None:
             return None
     else:

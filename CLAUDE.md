@@ -1441,6 +1441,52 @@ recarregar o módulo para mudá-lo — e recarregar troca a identidade das class
 de modo que um `ErroCVM` levantado depois deixa de casar com o que o teste
 importou. Isso derrubou um teste vizinho que nada tinha a ver com cache.
 
+### O índice só se paga no reuso, e a maioria dos membros não é reusada
+
+O padrão de 192 MB estava na **zona morta** que a tabela acima descreve, e a
+medição no caso do app — uma companhia, sete exercícios — confirmou:
+
+| Orçamento | 1ª importação | 2ª, mesma cia | 3ª, outra cia |
+|---|---|---|---|
+| sem cache | 6,37s | 6,35s | 6,36s |
+| **192 MB (padrão)** | **6,75s** | 5,51s | 5,66s |
+| 400 MB | 5,54s | 5,55s | 5,93s — não reusa nada |
+| 900 MB | 5,98s | **0,97s** | **1,02s** |
+
+No padrão o cache **cobrava** 0,38s na primeira leitura para devolver 0,84s na
+segunda, ocupando 192 MB — quase empate, pago em memória. E a causa apareceu ao
+contar os pedidos: numa importação de uma companhia são **56 membros distintos,
+49 deles pedidos uma vez só**. Montar o índice desses 49 percorre milhões de
+linhas para achar uma chave, e o orçamento o despeja antes da segunda pergunta.
+
+A decisão passou a ser por **reuso, e não por tamanho**: o primeiro pedido de um
+membro usa a varredura dirigida que já existia (`_apenas_da_companhia`, o
+caminho anterior ao índice), e o índice só é montado quando o membro é pedido de
+novo. Medido depois:
+
+| | Antes | Depois |
+|---|---|---|
+| App, 1 companhia × 7 anos, padrão 192 MB | 6,75s | **4,91s** |
+| Lote de 20 companhias, 900 MB | 3,46s | 3,86s |
+| Lote de 120 companhias, 900 MB | 17,79s | **18,10s (+1,7%)** |
+
+O custo no lote é fixo — uma varredura a mais por membro — então ele amortiza: 12%
+em 20 companhias, 1,7% em 120, menos ainda nas 437 da base. O ganho no app é
+permanente, e vale para a leitura que o usuário espera olhando a tela.
+
+**Uma escolha de desempenho não pode mudar o que se lê**, e é isso que o teste
+`test_os_dois_caminhos_de_leitura_devolvem_os_mesmos_bytes` trava: os dois
+caminhos filtram pelo mesmo `_codigo_da_linha` e são comparados **membro a
+membro**, para todas as companhias do recorte — divergência numa demonstração
+pouco usada não apareceria numa conta canônica. Conferido também fora do teste,
+contra a base de verdade: 40 companhias sorteadas × 19 membros do DFP de 2024,
+**760 pares, 760 idênticos, zero divergências**.
+
+**Uma via foi medida e descartada**: recortar por busca de substring em vez de
+varrer linha a linha é 2,6x mais rápido e **perde linhas** — o código da
+companhia vem preenchido com zeros e a largura varia entre arquivos. Trocar
+correção de leitura por latência é o pior negócio possível nesta base.
+
 ## A auditoria alcança a série trimestral
 
 `auditar_base` fixava `importar_cvm`, então a série trimestral — montada por

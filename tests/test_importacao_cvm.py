@@ -2512,3 +2512,75 @@ def test_o_orcamento_do_cache_vem_do_ambiente():
             os.environ.pop("VALUATION_CACHE_LEITURA_MB", None)
         else:
             os.environ["VALUATION_CACHE_LEITURA_MB"] = anterior
+
+
+def test_os_dois_caminhos_de_leitura_devolvem_os_mesmos_bytes():
+    """O índice e a varredura dirigida têm de ser indistinguíveis.
+
+    A escolha entre eles é de desempenho — o índice se paga do segundo pedido do
+    mesmo membro em diante, e antes disso a varredura sai mais barata — e uma
+    escolha de desempenho **não pode mudar o que se lê**. Os dois filtram pelo
+    mesmo `_codigo_da_linha`; este teste é o que impede que um deles mude
+    sozinho.
+
+    Confere membro a membro, e não só o resultado final: uma divergência numa
+    demonstração pouco usada não apareceria numa conta canônica.
+    """
+    import zipfile
+
+    from valuation.importacao.cvm import (
+        _apenas_da_companhia,
+        _indice_do_membro,
+        listar_companhias_do_ano,
+    )
+
+    zip_path = DADOS / "dfp_cia_aberta_2024.zip"
+    with zipfile.ZipFile(zip_path) as arquivo:
+        membros = [(n, arquivo.read(n)) for n in arquivo.namelist()]
+
+    codigos = listar_companhias_do_ano(2024, cache=DADOS)
+    assert codigos, "o recorte precisa ter companhia"
+
+    pares = 0
+    for codigo in codigos:
+        alvo = str(codigo).encode().lstrip(b"0") or b"0"
+        for nome, bruto in membros:
+            indexado = _indice_do_membro(zip_path, nome)
+            via_indice = indexado[2].get(alvo) if indexado else None
+            via_varredura = _apenas_da_companhia(bruto, codigo)
+            assert via_indice == via_varredura, f"{nome} divergiu na companhia {codigo}"
+            pares += 1
+
+    assert pares >= len(codigos), "nenhum par foi conferido de verdade"
+
+
+def test_o_indice_so_e_montado_quando_o_membro_se_repete():
+    """A regra que faz o app parar de pagar por um índice que ele não reusa.
+
+    Medido numa importação de uma companhia em sete exercícios: **56 membros
+    distintos, 49 pedidos uma vez só**. Montar o índice desses 49 percorre
+    milhões de linhas para achar uma chave, e o orçamento o despeja antes da
+    segunda pergunta — 6,75s contra 4,91s depois da correção, no padrão de
+    192 MB.
+    """
+    from valuation.importacao.cvm import (
+        _indices,
+        _recorte_da_companhia,
+        limpar_cache_de_membros,
+    )
+
+    zip_path = DADOS / "dfp_cia_aberta_2024.zip"
+    nome = "dfp_cia_aberta_DRE_con_2024.csv"
+    codigo = 5410
+
+    limpar_cache_de_membros()
+    primeiro = _recorte_da_companhia(zip_path, nome, codigo)
+    assert primeiro, "a primeira leitura tem de devolver as linhas"
+    assert not _indices, "o primeiro pedido não monta índice nenhum"
+
+    segundo = _recorte_da_companhia(zip_path, nome, codigo)
+    assert _indices, "o segundo pedido do mesmo membro monta o índice"
+    assert segundo == primeiro, "montar o índice não pode mudar o que se lê"
+
+    limpar_cache_de_membros()
+    assert not _indices
