@@ -30,6 +30,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from . import referencias
 from .diagnostico import ALERTA, ERRO, Diagnostico
 from .margem import MargemDeSeguranca
 from .modelo import ResultadoValuation
@@ -312,6 +313,89 @@ def _investimento(composicao) -> list[str]:
             "entendeu esta companhia; confira as linhas publicadas antes de usar "
             "o número por natureza."
         )
+    return linhas
+
+
+def _ciclo_de_caixa(analise) -> list[str]:
+    """Para onde o ciclo foi, e qual perna o moveu.
+
+    O relatorio dizia quanto capital de giro a empresa consome sobre a receita,
+    o que responde "quanto pesa" e nao "por que mudou". A decomposicao e exata
+    por construcao -- ``dCCC = dPMR + dPME - dPMP`` --, e a traducao em caixa e
+    o que deixa o numero acionavel: "o ciclo alongou 14 dias" nao decide nada
+    sozinho; "prendeu R$ 1,6 bi" decide.
+    """
+    from .historico import NOME_DO_CICLO, caixa_preso_no_ciclo, ponte_do_ciclo
+
+    titulo = "## O ciclo de caixa, e para onde ele foi"
+    ponte = ponte_do_ciclo(analise) if analise is not None else None
+    if ponte is None or not ponte.fecha:
+        return [
+            titulo,
+            "",
+            "**Não avaliado** — o ciclo precisa de recebíveis, estoques, "
+            "fornecedores e custo dos produtos vendidos em pelo menos dois "
+            "períodos, e esta companhia não publica todos.",
+        ]
+
+    curto = {
+        "Prazo medio de recebimento (dias)": "Recebimento",
+        "Prazo medio de estoque (dias)": "Estoque",
+        "Prazo medio de pagamento (dias)": "Pagamento",
+    }
+    direcao = "alongou" if ponte.variacao > 0 else "encurtou"
+    linhas = [
+        titulo,
+        "",
+        f"O ciclo saiu de **{ponte.ciclo_de:,.0f} dias** em {ponte.de} para "
+        f"**{ponte.ciclo_para:,.0f} dias** em {ponte.para} — "
+        f"{direcao} {abs(ponte.variacao):,.0f} dias.",
+        "",
+    ]
+
+    quadro = pd.DataFrame(
+        {
+            str(ponte.de): [f"{p.de:,.0f}" for p in ponte.pernas],
+            str(ponte.para): [f"{p.para:,.0f}" for p in ponte.pernas],
+            "Contribuição (dias)": [f"{p.contribuicao:+,.0f}" for p in ponte.pernas],
+        },
+        index=[curto.get(p.nome, p.nome) for p in ponte.pernas],
+    )
+    quadro.index.name = "Perna"
+    linhas.append(_tabela_markdown(quadro))
+    linhas.append("")
+
+    maior = max(ponte.pernas, key=lambda p: abs(p.contribuicao))
+    linhas.append(
+        f"A perna que mais pesou foi **{curto.get(maior.nome, maior.nome)}** "
+        f"({maior.contribuicao:+,.0f} dias). As três somam a variação exatamente: "
+        "a decomposição é uma identidade, e prazo de pagamento entra com sinal "
+        "invertido porque alongá-lo **encurta** o ciclo."
+    )
+
+    if np.isfinite(ponte.caixa):
+        verbo = "prendeu" if ponte.caixa > 0 else "liberou"
+        unidade = ponte.unidade or ""
+        linhas.append("")
+        linhas.append(
+            f"Sobre a venda diária de {ponte.para}, essa variação **{verbo} "
+            f"{_num(abs(ponte.caixa), 0)} {unidade}** de caixa."
+        )
+
+    preso = caixa_preso_no_ciclo(analise).dropna()
+    if not preso.empty:
+        linhas.append("")
+        linhas.append(
+            f"No total, o ciclo mantém **{_num(float(preso.iloc[-1]), 0)} "
+            f"{ponte.unidade}** parados entre pagar o fornecedor e receber do "
+            "cliente."
+        )
+
+    referencia = referencias.descrever(NOME_DO_CICLO, ponte.ciclo_para)
+    if referencia:
+        linhas.append("")
+        linhas.append(f"O ciclo de {ponte.para} fica {referencia}.")
+
     return linhas
 
 
@@ -969,6 +1053,7 @@ def montar(
         _historico(analise),
         _qualidade(qualidade, analise),
         _investimento(investimento),
+        _ciclo_de_caixa(analise),
         _ifrs16(ifrs16),
         _premissas(resultado),
         _ponte(resultado),

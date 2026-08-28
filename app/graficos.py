@@ -165,12 +165,21 @@ def roic_versus_wacc(
     return figura
 
 
-def cascata_ponte(itens: list[tuple[str, float]], unidade: str = "") -> go.Figure:
-    """Cascata do Enterprise Value ate o Equity Value.
+def cascata_ponte(
+    itens: list[tuple[str, float]],
+    unidade: str = "",
+    titulo: str = "Da empresa ao acionista",
+    em_dias: bool = False,
+) -> go.Figure:
+    """Cascata de uma ponte: de um total a outro, item a item.
 
     A cascata e a forma certa aqui porque a pergunta e de composicao: quanto
     cada item tira ou acrescenta ao caminho entre os dois totais. Um grafico de
     barras soltas perderia justamente o encadeamento.
+
+    ``em_dias`` troca a formatacao de moeda por dias -- a ponte do ciclo de caixa
+    e a mesma figura sobre outra unidade, e duplicar a funcao para trocar o
+    sufixo faria as duas divergirem na primeira mudanca de estilo.
     """
     p = paleta()
     rotulos = [nome for nome, _ in itens]
@@ -183,17 +192,25 @@ def cascata_ponte(itens: list[tuple[str, float]], unidade: str = "") -> go.Figur
             measure=medidas,
             x=rotulos,
             y=valores,
-            text=[_formatar_moeda(v) for v in valores],
+            text=(
+                [f"{v:,.0f} d" for v in valores]
+                if em_dias
+                else [_formatar_moeda(v) for v in valores]
+            ),
             textposition="outside",
             connector={"line": {"color": p.grade, "width": 1}},
             increasing={"marker": {"color": p.serie(2)}},
             decreasing={"marker": {"color": p.serie(1)}},
             totals={"marker": {"color": p.serie(0)}},
-            hovertemplate="<b>%{x}</b>: %{y:,.1f} " + unidade + "<extra></extra>",
+            hovertemplate=(
+                "<b>%{x}</b>: %{y:,.0f} dias<extra></extra>"
+                if em_dias
+                else "<b>%{x}</b>: %{y:,.1f} " + unidade + "<extra></extra>"
+            ),
         )
     )
 
-    layout = layout_base(400, "Da empresa ao acionista")
+    layout = layout_base(400, titulo)
     layout["hovermode"] = "closest"
     layout["showlegend"] = False
     layout["xaxis"]["tickangle"] = -30
@@ -463,29 +480,6 @@ def pequenos_multiplos(
     return figuras
 
 
-def barras_ciclo(dados: pd.Series, titulo: str = "") -> go.Figure:
-    """Prazos medios em dias, em barras horizontais."""
-    p = paleta()
-    figura = go.Figure(
-        go.Bar(
-            y=[str(i) for i in dados.index],
-            x=dados.astype(float),
-            orientation="h",
-            marker={"color": p.serie(0), "line": {"width": 0}},
-            text=[f"{v:,.0f} dias" for v in dados],
-            textposition="outside",
-            textfont={"size": 11, "color": p.texto_secundario},
-            hovertemplate="<b>%{y}</b>: %{x:,.0f} dias<extra></extra>",
-        )
-    )
-    layout = layout_base(80 + 40 * len(dados), titulo)
-    layout["hovermode"] = "closest"
-    layout["showlegend"] = False
-    layout["yaxis"]["gridcolor"] = "rgba(0,0,0,0)"
-    figura.update_layout(**layout)
-    return figura
-
-
 def cascata_tsr(
     contribuicoes: list[tuple[str, float]], total: float, titulo: str = ""
 ) -> go.Figure:
@@ -573,5 +567,69 @@ def tsr_por_preco(
     layout["hovermode"] = "x"
     layout["showlegend"] = False
     layout["yaxis"]["tickformat"] = ".0%"
+    figura.update_layout(**layout)
+    return figura
+
+
+def linhas_em_dias(
+    dados: pd.DataFrame,
+    titulo: str = "",
+    altura: int = 340,
+    total: str | None = None,
+) -> go.Figure:
+    """Prazos e ciclo ao longo do tempo, em dias.
+
+    Irma de :func:`linhas_percentuais`, e separada dela pelo mesmo motivo que a
+    justifica: series so podem dividir um eixo quando estao na mesma unidade.
+    Dia e dia -- as tres pernas e o ciclo somam entre si e se leem juntas.
+
+    O **total vem em linha grossa e as parcelas mais finas**: as tres pernas
+    explicam a quarta serie, e desenhar as quatro com o mesmo peso faz o leitor
+    procurar qual delas e a soma. ``total`` diz **qual** e ela pelo nome, e nao
+    por pedaco de texto: reconhecer o total por substring quebraria calado no dia
+    em que o rotulo mudasse -- e ele mudou, quando a tela passou a acentua-lo.
+    Sem ``total``, a ultima linha e a soma, que e a ordem em que se monta a
+    tabela.
+    """
+    p = paleta()
+    figura = go.Figure()
+    nome_do_total = total if total is not None else (
+        str(dados.index[-1]) if len(dados) else ""
+    )
+
+    for indice, (nome, serie) in enumerate(dados.iterrows()):
+        e_total = str(nome) == nome_do_total
+        cor = p.texto_primario if e_total else p.serie(indice)
+        valores = serie.astype(float)
+        figura.add_trace(
+            go.Scatter(
+                x=[str(c) for c in dados.columns],
+                y=valores,
+                name=str(nome),
+                mode="lines+markers",
+                line={
+                    "color": cor,
+                    "width": LARGURA_LINHA + 1 if e_total else LARGURA_LINHA,
+                    "dash": "solid" if e_total else "dot",
+                },
+                marker={"size": TAMANHO_MARCADOR, "color": cor},
+                connectgaps=False,
+                hovertemplate=f"<b>{nome}</b>: %{{y:,.0f}} dias<extra></extra>",
+            )
+        )
+        validos = valores.dropna()
+        if e_total and not validos.empty:
+            figura.add_annotation(
+                x=str(validos.index[-1]),
+                y=float(validos.iloc[-1]),
+                text=f"{float(validos.iloc[-1]):,.0f} d",
+                showarrow=False,
+                xshift=28,
+                font={"size": 11, "color": p.texto_secundario},
+            )
+
+    layout = layout_base(altura, titulo)
+    layout["yaxis"]["ticksuffix"] = " d"
+    layout["showlegend"] = True
     figura.update_layout(**layout)
     return figura

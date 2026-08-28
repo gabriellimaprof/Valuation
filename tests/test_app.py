@@ -14,7 +14,7 @@ import pytest
 
 from app.componentes import _markdown_para_html, formatar, tabela_formatada
 from app.graficos import (
-    barras_ciclo,
+    linhas_em_dias,
     barras_de_faixa,
     barras_temporais,
     cascata_ponte,
@@ -405,10 +405,39 @@ def test_pequenos_multiplos_um_grafico_por_indicador():
         assert figura.layout.showlegend is not True
 
 
-def test_barras_ciclo():
-    dados = pd.Series([45.0, 60.0, 30.0], index=["Recebimento", "Estoque", "Pagamento"])
-    figura = barras_ciclo(dados, "Ciclo")
-    assert len(figura.data[0].y) == 3
+def test_linhas_em_dias_desenha_o_ciclo_e_as_pernas():
+    """O gráfico do ciclo é uma série temporal, e não o retrato de um período.
+
+    A tela mostrava barras do último exercício, que respondem "qual é o ciclo
+    hoje" e não "para onde ele foi" — que é a pergunta de quem acompanha uma
+    empresa. As quatro séries dividem o eixo porque estão na mesma unidade.
+    """
+    dados = pd.DataFrame(
+        {
+            2023: [68.0, 120.0, 37.0, 151.0],
+            2024: [71.0, 144.0, 55.0, 160.0],
+        },
+        index=[
+            "Prazo medio de recebimento (dias)",
+            "Prazo medio de estoque (dias)",
+            "Prazo medio de pagamento (dias)",
+            "Ciclo de conversao de caixa (dias)",
+        ],
+    )
+    figura = linhas_em_dias(dados, "Ciclo")
+
+    assert len(figura.data) == 4
+    # O total tem de se distinguir das pernas: quatro linhas de mesmo peso
+    # obrigam quem lê a procurar qual delas é a soma.
+    # O total e a ultima linha da tabela, por convencao de montagem -- e nao
+    # "a que tem 'ciclo' no nome": reconhecer por substring quebra calado quando
+    # o rotulo muda, e ele muda (a tela acentua o que o motor guarda sem acento).
+    ciclo = figura.data[-1]
+    pernas = list(figura.data[:-1])
+    assert ciclo.name == "Ciclo de conversao de caixa (dias)"
+    assert all(t.line.dash == "dot" for t in pernas)
+    assert ciclo.line.dash == "solid"
+    assert ciclo.line.width > pernas[0].line.width
 
 
 def test_nenhum_grafico_usa_eixo_secundario(serie_anual):

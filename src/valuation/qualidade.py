@@ -401,7 +401,7 @@ def avaliar_qualidade(analise: AnaliseHistorica) -> QualidadeDosLucros:
 # converte?". Estar acima do quarto inferior ja responde que sim, e e por isso
 # que ele alcanca 73% da base -- para a maioria das companhias o FCO fraco e
 # mesmo giro, imposto e juro.
-CGO_BOM = 0.86
+CGO_BOM = 0.87
 # O P10. Um veredito **ruim** tem de ser mais raro que um de atencao: este
 # acusa 10% da base, contra os 25% do quartil inferior do FCO.
 CGO_FRACO = 0.54

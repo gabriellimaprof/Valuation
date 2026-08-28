@@ -33,6 +33,32 @@ from .premissas import (
 
 DIAS_NO_ANO = 365
 
+
+def dias_do_periodo(colunas) -> "pd.Series":
+    """Quantos dias cada coluna cobre: 365 num exercicio, 91,25 num trimestre.
+
+    **O prazo medio divide um saldo por uma venda diaria**, e a venda diaria sai
+    da receita do periodo. Com a constante de 365 fixa, uma serie trimestral
+    divide o saldo de estoque pela receita de tres meses e multiplica por um ano
+    inteiro: medido na WEG, o ciclo lia **689 dias** contra os 166 do exercicio
+    -- quase exatamente 4x, e com cara de numero plausivel, porque dia e dia.
+
+    O rotulo da coluna e quem sabe a duracao, e ele ja e lido em
+    ``series.periodo_do_rotulo``. 365/4 e nao os 89-91 dias reais do trimestre:
+    assim quatro trimestres somam o ano, e o prazo trimestral fica comparavel com
+    o anual em vez de oscilar com o calendario.
+    """
+    from .importacao.series import periodo_do_rotulo
+
+    return pd.Series(
+        [
+            DIAS_NO_ANO / 4 if periodo_do_rotulo(c) else DIAS_NO_ANO
+            for c in colunas
+        ],
+        index=list(colunas),
+        dtype=float,
+    )
+
 # Teto do que se pode chamar de custo de divida corporativa no Brasil. A Selic
 # oscilou entre 10% e 14% no periodo coberto pelos dados; um Kd acima disto quase
 # sempre indica que o numerador nao e juro, e nao que a empresa paga tanto.
@@ -184,6 +210,9 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     lair = d.serie("lucro_antes_impostos")
     impostos = d.serie("impostos")
     cpv = d.serie("custo_produtos_vendidos")
+    # A duracao da coluna decide o multiplicador do prazo medio, e nao uma
+    # constante: numa serie trimestral o denominador e a receita de tres meses.
+    dias = dias_do_periodo(receita.index)
     depreciacao = d.serie("depreciacao_amortizacao")
     capex = d.serie("capex")
     ativo = d.serie("ativo_total")
@@ -238,13 +267,13 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         # Capital de giro e ciclo
         "Capital de giro / Receita": _divisao_segura(giro_operacional, receita),
         "Prazo medio de recebimento (dias)": _divisao_segura(
-            d.serie("contas_receber") * DIAS_NO_ANO, receita
+            d.serie("contas_receber") * dias, receita
         ),
         "Prazo medio de estoque (dias)": _divisao_segura(
-            d.serie("estoques") * DIAS_NO_ANO, cpv
+            d.serie("estoques") * dias, cpv
         ),
         "Prazo medio de pagamento (dias)": _divisao_segura(
-            d.serie("fornecedores") * DIAS_NO_ANO, cpv
+            d.serie("fornecedores") * dias, cpv
         ),
         # Estrutura de capital
         "Divida liquida / EBITDA": _divisao_segura(divida_liquida, ebitda),
@@ -401,10 +430,20 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
                 divida_liquida_ex, ebitda_ex
             )
 
+    # **O ciclo exige recebimento e pagamento; o estoque pode ser zero.**
+    # `fill_value=0` sozinho transforma "nao publicou" em "e zero", que e o
+    # defeito mais caro que esta base ja teve. Medido no universo 2021-2025:
+    # 413 das 418 companhias com ciclo publicam as tres pernas, e as outras 5
+    # tem **so o recebimento** -- sem fornecedor, o ciclo delas saia inflado,
+    # com mediana de 107 dias, e nada dizia que faltava a perna que o encurta.
+    #
+    # O estoque continua podendo ser zero porque **103 companhias o publicam
+    # como zero**: prestadora de servico nao tem estoque, e ali o zero e o dado.
+    pmr = indicadores["Prazo medio de recebimento (dias)"]
+    pme = indicadores["Prazo medio de estoque (dias)"]
+    pmp = indicadores["Prazo medio de pagamento (dias)"]
     indicadores["Ciclo de conversao de caixa (dias)"] = (
-        indicadores["Prazo medio de recebimento (dias)"]
-        .add(indicadores["Prazo medio de estoque (dias)"], fill_value=0)
-        .sub(indicadores["Prazo medio de pagamento (dias)"], fill_value=0)
+        pmr.add(pme, fill_value=0).sub(pmp, fill_value=0).where(pmr.notna() & pmp.notna())
     )
 
     tabela = pd.DataFrame(indicadores).T
@@ -752,3 +791,150 @@ def sugerir_premissas(
         justificativas=justificativas,
         alertas=alertas,
     )
+
+
+# ---------------------------------------------------------------------------
+# O ciclo de conversao de caixa, acompanhado ao longo do tempo
+# ---------------------------------------------------------------------------
+
+# O app calculava os quatro numeros e mostrava **um exercicio so**, num grafico
+# de barras. Isso responde "qual e o ciclo hoje" e nao responde a pergunta que
+# se faz de um ciclo: **para onde ele foi, e por causa de qual perna**.
+#
+# A decomposicao e exata por construcao -- ``CCC = PMR + PME - PMP`` --, entao a
+# variacao tambem e: ``dCCC = dPMR + dPME - dPMP``, sem termo residual. E o
+# mesmo tipo de ponte que o TSR e a conversao de caixa ja usam neste projeto, e
+# pela mesma razao: a soma que fecha e o que separa diagnostico de impressao.
+
+NOME_DO_CICLO = "Ciclo de conversao de caixa (dias)"
+NOME_DO_PMR = "Prazo medio de recebimento (dias)"
+NOME_DO_PME = "Prazo medio de estoque (dias)"
+NOME_DO_PMP = "Prazo medio de pagamento (dias)"
+
+
+@dataclass(frozen=True)
+class PernaDoCiclo:
+    """Uma perna do ciclo, do periodo de partida ao de chegada."""
+
+    nome: str
+    de: float
+    para: float
+    #: Quanto ela moveu o ciclo, **ja com o sinal da contribuicao**: alongar o
+    #: prazo de pagamento encurta o ciclo, entao entra negativa.
+    contribuicao: float
+
+    @property
+    def variacao(self) -> float:
+        """A variacao da propria perna, sem inverter o sinal."""
+        return self.para - self.de
+
+
+@dataclass(frozen=True)
+class PonteDoCiclo:
+    """O que moveu o ciclo entre dois periodos, em dias e em caixa."""
+
+    de: object
+    para: object
+    ciclo_de: float
+    ciclo_para: float
+    pernas: tuple[PernaDoCiclo, ...]
+    receita_diaria: float
+    unidade: str = ""
+
+    @property
+    def variacao(self) -> float:
+        return self.ciclo_para - self.ciclo_de
+
+    @property
+    def fecha(self) -> bool:
+        """A soma das pernas reproduz a variacao do ciclo?
+
+        Tem de fechar por construcao. Nao fechar significa que alguma perna nao
+        pode ser lida num dos periodos, e ai a ponte nao deve ser apresentada
+        como se explicasse a variacao inteira.
+        """
+        soma = sum(p.contribuicao for p in self.pernas)
+        return bool(np.isfinite(soma)) and abs(soma - self.variacao) < 0.5
+
+    @property
+    def caixa(self) -> float:
+        """Quanto caixa a variacao do ciclo prendeu (positivo) ou liberou.
+
+        E a variacao em dias vezes a **venda diaria do periodo de chegada**.
+        Segurar a receita fixa e deliberado: misturar o efeito do ciclo com o do
+        crescimento devolve um numero que nao responde nem a uma pergunta nem a
+        outra. Empresa que cresce prende caixa no giro com o ciclo parado, e isso
+        e outro assunto -- ``Capital de giro / Receita`` ja o diz.
+        """
+        return self.variacao * self.receita_diaria
+
+
+def ponte_do_ciclo(analise, de=None, para=None) -> "PonteDoCiclo | None":
+    """Decompoe a variacao do ciclo de caixa entre dois periodos.
+
+    Por padrao compara o **primeiro periodo legivel com o ultimo**: e a leitura
+    que responde "o ciclo desta empresa vem alongando?", que e a pergunta de
+    quem acompanha. Devolve ``None`` quando nao ha dois periodos com ciclo -- e
+    ausencia honesta, e nao uma ponte de um ponto so.
+    """
+    indicadores = analise.indicadores
+    if NOME_DO_CICLO not in indicadores.index:
+        return None
+
+    ciclo = indicadores.loc[NOME_DO_CICLO].dropna()
+    if len(ciclo) < 2:
+        return None
+
+    de = ciclo.index[0] if de is None else de
+    para = ciclo.index[-1] if para is None else para
+    if de not in ciclo.index or para not in ciclo.index or de == para:
+        return None
+
+    def _valor(nome: str, coluna) -> float:
+        if nome not in indicadores.index:
+            return float("nan")
+        return float(indicadores.loc[nome, coluna])
+
+    pernas = tuple(
+        PernaDoCiclo(
+            nome=nome,
+            de=_valor(nome, de),
+            para=_valor(nome, para),
+            contribuicao=sinal * (_valor(nome, para) - _valor(nome, de)),
+        )
+        # O sinal e a informacao: alongar o pagamento ao fornecedor **encurta** o
+        # ciclo, e uma ponte que mostrasse os tres com o mesmo sinal nao somaria
+        # a variacao -- e nao somar e o que faz uma ponte deixar de ser ponte.
+        for nome, sinal in ((NOME_DO_PMR, 1.0), (NOME_DO_PME, 1.0), (NOME_DO_PMP, -1.0))
+    )
+
+    receita = analise.demonstracoes.serie("receita_liquida")
+    dias = float(dias_do_periodo([para]).iloc[0])
+    receita_final = float(receita.get(para, float("nan")))
+    diaria = receita_final / dias if np.isfinite(receita_final) else float("nan")
+
+    return PonteDoCiclo(
+        de=de,
+        para=para,
+        ciclo_de=float(ciclo.loc[de]),
+        ciclo_para=float(ciclo.loc[para]),
+        pernas=pernas,
+        receita_diaria=diaria,
+        unidade=getattr(analise.demonstracoes, "unidade", "") or "",
+    )
+
+
+def caixa_preso_no_ciclo(analise) -> pd.Series:
+    """Quanto caixa o ciclo prende em cada periodo, na moeda da demonstracao.
+
+    ``dias de ciclo x venda diaria`` -- a traducao que falta para quem le "o
+    ciclo subiu 12 dias" e precisa decidir se isso importa. E o mesmo principio
+    ja aplicado ao resto do app: "nao fecha" sem tamanho nao ajuda a decidir.
+    """
+    indicadores = analise.indicadores
+    if NOME_DO_CICLO not in indicadores.index:
+        return pd.Series(dtype="float64")
+    ciclo = indicadores.loc[NOME_DO_CICLO]
+    receita = analise.demonstracoes.serie("receita_liquida").reindex(ciclo.index)
+    dias = dias_do_periodo(ciclo.index)
+    return ciclo * (receita / dias)

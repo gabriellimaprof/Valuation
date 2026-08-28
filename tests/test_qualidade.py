@@ -427,4 +427,12 @@ def test_o_sinal_cita_o_percentil_da_conversao_operacional():
         s for s in avaliar_qualidade(analisar(dfs)).sinais if s.codigo == "conversao"
     )
     assert "percentil" in sinal.detalhe
-    assert "398 companhias" in sinal.detalhe
+    # O **n sai de `referencias.BASE`**, e nao de um literal: pinar "398
+    # companhias" faz o teste virar falha sozinho quando a safra e remedida --
+    # que e o defeito dos testes que este projeto ja corrigiu duas vezes. O que
+    # se trava e a propriedade (o sinal cita a base que usou), nao o tamanho
+    # dela naquele dia.
+    from valuation import referencias
+
+    n, _ = referencias.BASE["Conversao operacional (CGO / EBITDA)"]
+    assert f"{n} companhias" in sinal.detalhe

@@ -128,7 +128,7 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (409, (-0.824, -0.394, 0.166, 0.530, 0.785, 1.021, 1.295)),
+    "Conversao de caixa (FCO / EBITDA)": (405, (-0.683, -0.356, 0.166, 0.529, 0.770, 1.017, 1.267)),
     # A conversao **operacional** -- caixa gerado pelas operacoes sobre EBITDA,
     # antes de giro, imposto e juro. Medida na mesma safra e com a mesma
     # metodologia (mediana por companhia, quantis entre companhias).
@@ -137,26 +137,26 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # ao lucro despesas que nao foram caixa e que o EBITDA nao captura --
     # provisao, impairment. E a distancia para a conversao final, na mediana, e
     # de **48,9 pontos**: e o que giro, imposto e juro consomem.
-    "Conversao operacional (CGO / EBITDA)": (398, (0.191, 0.537, 0.859, 1.029, 1.159, 1.421, 1.738)),
-    "Margem EBITDA": (418, (-0.214, 0.035, 0.103, 0.208, 0.399, 0.598, 0.733)),
+    "Conversao operacional (CGO / EBITDA)": (391, (0.218, 0.549, 0.872, 1.028, 1.156, 1.395, 1.664)),
+    "Margem EBITDA": (413, (-0.184, 0.042, 0.103, 0.210, 0.409, 0.596, 0.737)),
     "Margem liquida": (418, (-0.410, -0.161, -0.004, 0.062, 0.140, 0.283, 0.417)),
-    "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.093, 0.199, 0.371, 0.515)),
-    "Capex / Receita": (389, (0.003, 0.008, 0.021, 0.047, 0.112, 0.262, 0.381)),
+    "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.092, 0.199, 0.371, 0.515)),
+    "Capex / Receita": (391, (0.004, 0.008, 0.022, 0.049, 0.124, 0.291, 0.406)),
     "ROIC": (397, (-0.088, 0.001, 0.044, 0.101, 0.165, 0.255, 0.401)),
-    "Investimento em giro (DFC) / Receita": (396, (-0.232, -0.077, -0.009, 0.026, 0.078, 0.152, 0.258)),
-    "Divida liquida / EBITDA": (409, (-1.478, -0.566, 0.572, 2.051, 3.554, 5.963, 10.455)),
+    "Investimento em giro (DFC) / Receita": (401, (-0.224, -0.077, -0.009, 0.026, 0.078, 0.152, 0.275)),
+    "Divida liquida / EBITDA": (405, (-1.482, -0.610, 0.569, 2.024, 3.455, 5.783, 8.014)),
     "Liquidez corrente": (421, (0.324, 0.638, 1.087, 1.546, 2.167, 2.943, 4.022)),
-    "Payout (dividendos / lucro)": (334, (0.000, 0.000, 0.151, 0.364, 0.603, 0.858, 1.082)),
+    "Payout (dividendos / lucro)": (334, (0.000, 0.000, 0.151, 0.360, 0.603, 0.859, 1.082)),
     # Os quatro abaixo entraram para o **balizador** das telas de Premissas e de
     # Custo de capital: cada campo passa a dizer onde o numero digitado cai na
     # base, ao lado do que a propria companhia entregou. Sem distribuicao medida
     # nao ha percentil, e sem percentil o balizador so tem metade da resposta.
     #
     # Medidos na safra 2021-2025, mesma metodologia dos demais.
-    "Divida bruta / Patrimonio liquido": (396, (0.009, 0.093, 0.348, 0.972, 1.834, 3.160, 5.315)),
-    "ROE": (399, (-0.325, -0.143, 0.013, 0.106, 0.195, 0.320, 0.423)),
-    "Margem EBIT": (430, (-0.287, -0.015, 0.061, 0.151, 0.265, 0.479, 0.575)),
-    "Taxa de reinvestimento": (411, (-1.068, -0.674, -0.142, 0.089, 0.560, 1.268, 1.964)),
+    "Divida bruta / Patrimonio liquido": (395, (0.009, 0.093, 0.349, 0.975, 1.838, 3.161, 5.327)),
+    "ROE": (385, (-0.329, -0.152, 0.003, 0.104, 0.195, 0.320, 0.421)),
+    "Margem EBIT": (418, (-0.312, -0.020, 0.061, 0.150, 0.256, 0.482, 0.580)),
+    "Taxa de reinvestimento": (399, (-1.240, -0.736, -0.187, 0.081, 0.560, 1.325, 1.957)),
     # As duas ultimas linhas do balizador da projecao, que saiam com "-".
     #
     # A **dispersao** delas e o motivo de o percentil valer mais aqui que em
@@ -164,13 +164,25 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # (P90) -- vinte vezes -- porque separa servico de infraestrutura, e capital
     # de giro sobre receita vai de -2,1% a 60,7%, separando quem recebe adiantado
     # de incorporadora. Num intervalo desses, "4,5%" nao se le sozinho.
-    "Depreciacao / Receita": (394, (0.005, 0.010, 0.025, 0.059, 0.128, 0.202, 0.271)),
-    "Capital de giro / Receita": (418, (-0.068, -0.021, 0.048, 0.144, 0.307, 0.607, 1.138)),
+    "Depreciacao / Receita": (413, (0.006, 0.011, 0.026, 0.060, 0.136, 0.212, 0.277)),
+    "Capital de giro / Receita": (418, (-0.068, -0.018, 0.048, 0.144, 0.307, 0.607, 1.138)),
     # O arrendamento do IFRS 16 como fracao da divida bruta. A distribuicao e
     # **bimodal na pratica**: P10 = 0 (uma em cada dez nao tem arrendamento
     # nenhum) e P95 = 1,0 (em uma em cada vinte, o arrendamento **e** toda a
     # divida). E por isso que a mediana de 4,1% engana quem so olha ela.
     "Arrendamento / Divida bruta": (417, (0.000, 0.000, 0.003, 0.041, 0.227, 0.584, 1.000)),
+    # O ciclo de conversao de caixa e as tres pernas. Sem distribuicao medida,
+    # "166 dias" nao tinha resposta para "e muito?" -- e este projeto ja
+    # registrou que corte de leitura sem medicao vira ruido.
+    #
+    # A leitura que surpreende esta no P25 do ciclo: **um quarto da base opera
+    # com ciclo zero ou negativo**, ou seja, o fornecedor financia a operacao.
+    # E o estoque tem P25 em zero porque 103 companhias o publicam zerado --
+    # prestadora de servico nao tem estoque, e ali o zero e o dado.
+    "Prazo medio de recebimento (dias)": (418, (15.340, 20.768, 38.988, 61.879, 93.840, 154.581, 213.176)),
+    "Prazo medio de estoque (dias)": (413, (0.000, 0.000, 0.003, 29.868, 105.187, 214.466, 416.923)),
+    "Prazo medio de pagamento (dias)": (413, (11.509, 18.165, 33.961, 53.374, 90.356, 150.241, 226.043)),
+    "Ciclo de conversao de caixa (dias)": (413, (-94.740, -42.765, -0.864, 42.505, 125.635, 261.776, 511.457)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de

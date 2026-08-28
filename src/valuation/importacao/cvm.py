@@ -2606,7 +2606,7 @@ def importar_ltm(
         empresa=anual.empresa,
         valores=tabela,
         origem=f"CVM ITR — ano móvel até {data_refer}",
-        unidade="reais",
+        unidade="R$",
         mapeamento=origem_da_conta,
         avisos=avisos,
         fonte={
@@ -2987,7 +2987,7 @@ def importar_trimestral(
     return montar_serie(
         partes,
         empresa=nome,
-        unidade="reais",
+        unidade="R$",
         origem=f"CVM ITR — trimestres isolados de {ano} e do exercício anterior",
         # **Estes textos vao para a tela**, e por isso vem acentuados. O codigo
         # em volta escreve em ASCII; o que o usuario le, nao.
@@ -3068,7 +3068,7 @@ def importar_ltm_rolante(
     return montar_serie(
         partes,
         empresa=nome,
-        unidade="reais",
+        unidade="R$",
         origem=f"CVM ITR — ano móvel rolante de {ano}",
         avisos=[
             "**Cada coluna e um ano movel de doze meses**, encerrado no trimestre "

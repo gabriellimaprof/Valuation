@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1095 testes
+pytest                        # 1102 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.095 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.102 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1668,6 +1668,90 @@ Efeito na projeção, que é onde isso decide valor:
 
 Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
 uma companhia que constrói shopping projetada como se não construísse.
+
+## O ciclo de caixa, acompanhado — e o 4x que ninguém tinha visto
+
+O motor já calculava PMR, PME, PMP e o ciclo, com verbete de fórmula e uso na
+evidência qualitativa. O que faltava era a leitura que se faz de um ciclo: a
+tela mostrava **um gráfico de barras do último exercício**, que responde "qual é
+o ciclo hoje" e não "para onde ele foi, e por causa de qual perna".
+
+**E o número estava 4x errado na série trimestral.** `DIAS_NO_ANO = 365` era
+constante, e o prazo médio divide um saldo pela venda diária — que sai da
+receita do período. Num trimestre a receita é de três meses e o multiplicador
+continuava sendo o ano inteiro. Medido na WEG:
+
+| | Exercício | Trimestre, antes | Trimestre, depois |
+|---|---|---|---|
+| Ciclo | 166 d | **689 d** | **172 d** |
+
+É um número errado com cara de número plausível — dia é dia, e nada na tela
+dizia que aquele denominador era de 90. `dias_do_periodo` decide pelo rótulo da
+coluna, que já é lido em `series.periodo_do_rotulo`. São 365/4 e não os 89-91
+dias reais do trimestre: assim quatro trimestres somam o ano e o prazo
+trimestral fica comparável com o anual em vez de oscilar com o calendário.
+
+**A decomposição é exata por construção.** `CCC = PMR + PME − PMP` é definição,
+então `ΔCCC = ΔPMR + ΔPME − ΔPMP` também é, sem termo residual — é o mesmo tipo
+de ponte que o TSR e a conversão de caixa já usam, e pela mesma razão: a soma que
+fecha é o que separa diagnóstico de impressão. Na WEG, de 2019 a 2025:
+
+| Perna | 2019 | 2025 | Contribuição |
+|---|---|---|---|
+| Recebimento | 75 d | 70 d | **−5 d** |
+| Estoque | 109 d | 133 d | **+24 d** |
+| Pagamento | 33 d | 38 d | **−5 d** |
+| **Ciclo** | **152 d** | **166 d** | **+14 d** |
+
+Prazo de pagamento entra com **sinal invertido**, e é isso que faz a soma fechar:
+alongar o prazo do fornecedor encurta o ciclo. Uma ponte que mostrasse as três
+com o mesmo sinal não somaria a variação, e não somar é o que faz uma ponte
+deixar de ser ponte.
+
+**E os dias viram caixa**, porque "o ciclo subiu 14 dias" não decide nada
+sozinho. Dias × venda diária: na WEG a variação **prendeu R$ 1,56 bi**, e o
+ciclo mantém **R$ 18,6 bi** parados entre pagar o fornecedor e receber do
+cliente — contra R$ 5,6 bi em 2019. A receita fica fixa no período de chegada de
+propósito: misturar o efeito do ciclo com o do crescimento devolveria um número
+que não responde a nenhuma das duas perguntas, e `Capital de giro / Receita` já
+responde a segunda.
+
+### "166 dias é muito?" passou a ter resposta
+
+Nenhuma das quatro séries tinha distribuição medida, e sem percentil o número
+não tem âncora — a regra que este projeto já escreveu para os cortes de leitura.
+Medidas na safra 2021-2025, mesma metodologia das demais (mediana por companhia,
+quantis entre companhias):
+
+| | P10 | P25 | Mediana | P75 | P90 |
+|---|---|---|---|---|---|
+| Recebimento | 20,8 | 39,0 | 61,9 | 93,8 | 154,6 |
+| Estoque | 0,0 | 0,0 | 29,9 | 105,2 | 214,5 |
+| Pagamento | 18,2 | 34,0 | 53,4 | 90,4 | 150,2 |
+| **Ciclo** | **−42,8** | **−0,9** | **42,5** | **125,6** | **261,8** |
+
+**Um quarto da base tem ciclo zero ou negativo** — o fornecedor financia a
+operação. A WEG, com 166 dias, fica perto do percentil 80.
+
+**E medir expôs um `fill_value=0`.** O ciclo somava as três pernas preenchendo
+ausência com zero — o defeito que este arquivo registra como o mais caro da base,
+"não publicou" virando "é zero". Medido: das 418 companhias com ciclo, **413
+publicam as três pernas e 5 têm só o recebimento**; sem a perna do fornecedor o
+ciclo delas saía inflado, com mediana de 107 dias, e nada dizia que faltava
+justamente a parcela que o encurta. O ciclo passou a exigir recebimento **e**
+pagamento; o estoque continua podendo ser zero, porque **103 companhias o
+publicam como zero** e ali o zero é o dado — prestadora de serviço não tem
+estoque. A distribuição mal se moveu (mediana 43,4 → 42,5), o que confirma que a
+guarda corrige sem distorcer.
+
+**Duas ferramentas estavam mais estreitas do que pareciam**, e as duas apareceram
+aqui. `construir_universo` aceita `indicadores_extra` e a **CLI não os passava**:
+refazer o universo pelo comando documentado produzia uma base sem `Payout`, sem
+`Liquidez corrente` e sem os demais — calado. E `Arrendamento / Divida bruta`
+estava publicado em `referencias.BASE` sem ser coletado pelo universo, de modo
+que regerar as referências o **apagaria**. `INDICADORES_EXTRA` passou a ser a
+lista única, e há teste exigindo o invariante: tudo que `BASE` publica sai do
+universo.
 
 ## Escopo: linha existir não é o mesmo que ter dado
 

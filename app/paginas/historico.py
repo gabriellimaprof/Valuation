@@ -6,12 +6,22 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation import referencias
+from valuation.historico import (
+    NOME_DO_CICLO,
+    NOME_DO_PME,
+    NOME_DO_PMP,
+    NOME_DO_PMR,
+    caixa_preso_no_ciclo,
+    ponte_do_ciclo,
+)
 from valuation.qualidade import BOM, RUIM, SEM_DADOS, avaliar_qualidade
 
 from .. import estado
 from ..componentes import (
     conceito,
     em_texto,
+    escapar_cifrao,
     etapa,
     formatar,
     grafico,
@@ -24,12 +34,33 @@ from ..componentes import (
     unidade_curta,
 )
 from ..graficos import (
-    barras_ciclo,
     barras_temporais,
+    cascata_ponte,
+    linhas_em_dias,
     linhas_percentuais,
     pequenos_multiplos,
     roic_versus_wacc,
 )
+
+# Rotulo curto para a cascata e para a tabela da ponte: "Prazo medio de
+# recebimento (dias)" no eixo de um grafico de quatro barras vira uma linha de
+# texto girada que ninguem le.
+_PERNA_CURTA = {
+    NOME_DO_PMR: "Recebimento",
+    NOME_DO_PME: "Estoque",
+    NOME_DO_PMP: "Pagamento",
+}
+
+# A chave do indicador no motor e sem acento, por convencao de codigo, e ela
+# chegava crua a tela -- "Prazo medio", "Ciclo de conversao". Texto de usuario e
+# em portugues acentuado, entao a traducao acontece na borda: o motor mantem a
+# chave, a tela mostra o nome.
+_ROTULO_DO_CICLO = {
+    NOME_DO_PMR: "Prazo médio de recebimento",
+    NOME_DO_PME: "Prazo médio de estoque",
+    NOME_DO_PMP: "Prazo médio de pagamento",
+    NOME_DO_CICLO: "Ciclo de conversão de caixa",
+}
 
 
 def render() -> None:
@@ -1053,14 +1084,11 @@ def _capital_de_giro(analise) -> None:
     conceito("capital_giro", "O caixa preso no ciclo do negócio")
 
     ciclo = analise.ciclo_de_caixa()
-    ultimo_ano = ciclo.columns[-1]
-    valores = ciclo[ultimo_ano].dropna()
-    if not valores.empty:
-        grafico(
-            barras_ciclo(valores, f"Ciclo de caixa em {ultimo_ano}"),
-            ciclo.style.format("{:,.0f}", na_rep="—"),
-        )
+    _ciclo_ao_longo_do_tempo(analise, ciclo)
+    _ponte_do_ciclo(analise)
+    _caixa_preso(analise)
 
+    secao("O giro que a projeção usa")
     giro = analise.indicadores.loc[["Capital de giro / Receita"]]
     grafico(
         linhas_percentuais(giro, "Capital de giro sobre receita"),
@@ -1069,4 +1097,130 @@ def _capital_de_giro(analise) -> None:
     st.caption(
         "É este percentual que a projeção usa: quando a receita cresce, o capital de "
         "giro cresce junto e consome caixa."
+    )
+
+
+def _ciclo_ao_longo_do_tempo(analise, ciclo) -> None:
+    """As quatro séries no tempo, e não o retrato de um período só.
+
+    A tela mostrava um gráfico de barras do último exercício. Isso responde
+    "qual é o ciclo hoje" e não responde a pergunta de quem acompanha uma
+    empresa: **para onde ele foi**. As três pernas dividem o eixo com o ciclo
+    porque estão na mesma unidade e somam entre si.
+    """
+    if ciclo.empty or ciclo.dropna(how="all").empty:
+        st.info(
+            "Não foi possível medir o ciclo: falta recebíveis, estoques, fornecedores "
+            "ou o custo dos produtos vendidos nesta companhia."
+        )
+        return
+
+    exibido = ciclo.rename(index=_ROTULO_DO_CICLO)
+    grafico(
+        linhas_em_dias(exibido, "Ciclo de conversão de caixa e suas pernas"),
+        exibido.style.format("{:,.0f}", na_rep="—"),
+    )
+
+    ultimo = ciclo.columns[-1]
+    valores = ciclo[ultimo].dropna()
+    dias = valores.get(NOME_DO_CICLO)
+    if dias is None or not np.isfinite(dias):
+        return
+
+    referencia = referencias.descrever(NOME_DO_CICLO, float(dias))
+    linhas = [
+        f"Em **{ultimo}** o ciclo é de **{dias:,.0f} dias**"
+        + (f" — {referencia}." if referencia else ".")
+    ]
+    if dias < 0:
+        # Ciclo negativo nao e erro de leitura, e modelo de negocio: varejo que
+        # recebe a vista e paga o fornecedor em 60 dias opera com caixa do
+        # fornecedor. Dizer isso evita que o numero seja lido como defeito.
+        linhas.append(
+            "Ciclo **negativo** significa que o fornecedor financia a operação: "
+            "a companhia recebe do cliente antes de pagar quem lhe vendeu."
+        )
+    st.markdown(escapar_cifrao(" ".join(linhas)))
+
+
+def _ponte_do_ciclo(analise) -> None:
+    """Qual perna moveu o ciclo — a soma fecha por construção."""
+    ponte = ponte_do_ciclo(analise)
+    if ponte is None:
+        return
+
+    secao("O que moveu o ciclo")
+    if not ponte.fecha:
+        st.caption(
+            "Alguma perna não pode ser lida nos dois períodos, então a decomposição "
+            "não explica a variação inteira e não é mostrada."
+        )
+        return
+
+    itens = [(f"Ciclo em {ponte.de}", ponte.ciclo_de)]
+    itens += [(_PERNA_CURTA[p.nome], p.contribuicao) for p in ponte.pernas]
+    itens.append((f"Ciclo em {ponte.para}", ponte.ciclo_para))
+    grafico(
+        cascata_ponte(
+            itens, em_dias=True, titulo=f"Do ciclo de {ponte.de} ao de {ponte.para}"
+        ),
+        pd.DataFrame(
+            [
+                {
+                    "Perna": _PERNA_CURTA[p.nome],
+                    str(ponte.de): p.de,
+                    str(ponte.para): p.para,
+                    "Contribuição (dias)": p.contribuicao,
+                }
+                for p in ponte.pernas
+            ]
+        )
+        .set_index("Perna")
+        .style.format("{:,.0f}", na_rep="—"),
+    )
+
+    maior = max(ponte.pernas, key=lambda p: abs(p.contribuicao))
+    direcao = "alongou" if ponte.variacao > 0 else "encurtou"
+    st.markdown(
+        escapar_cifrao(
+            f"O ciclo **{direcao} {abs(ponte.variacao):,.0f} dias** entre {ponte.de} e "
+            f"{ponte.para}, e a perna que mais pesou foi **{_PERNA_CURTA[maior.nome]}** "
+            f"({maior.contribuicao:+,.0f} dias). A soma das três reproduz a variação "
+            "exatamente — a decomposição é uma identidade, não uma atribuição."
+        )
+    )
+    st.caption(
+        "Prazo de pagamento entra com sinal invertido: alongar o prazo do fornecedor "
+        "**encurta** o ciclo, porque o caixa fica mais tempo na empresa."
+    )
+
+
+def _caixa_preso(analise) -> None:
+    """Os dias traduzidos em reais, que é o que decide se a variação importa."""
+    caixa = caixa_preso_no_ciclo(analise).dropna()
+    if caixa.empty:
+        return
+
+    unidade = analise.demonstracoes.unidade
+    secao("Quanto isso vale em caixa")
+    tabela = pd.DataFrame({f"Caixa preso no ciclo ({unidade_curta(unidade)})": caixa}).T
+    grafico(
+        barras_temporais(tabela, "Caixa preso entre pagar o fornecedor e receber"),
+        tabela.style.format("{:,.0f}", na_rep="—"),
+    )
+
+    ponte = ponte_do_ciclo(analise)
+    if ponte is not None and np.isfinite(ponte.caixa):
+        verbo = "prendeu" if ponte.caixa > 0 else "liberou"
+        st.markdown(
+            escapar_cifrao(
+                f"A variação do ciclo entre {ponte.de} e {ponte.para} **{verbo} "
+                f"{formatar(abs(ponte.caixa), 'moeda')} {unidade_curta(unidade)}**, "
+                f"medida sobre a venda diária de {ponte.para}."
+            )
+        )
+    st.caption(
+        "Dias × venda diária. A receita fica fixa no período de chegada de propósito: "
+        "misturar o efeito do ciclo com o do crescimento devolveria um número que não "
+        "responde a nenhuma das duas perguntas."
     )

@@ -351,3 +351,57 @@ def test_o_relatorio_descreve_o_caminho_em_dolar_quando_e_ele(empresa_exemplo):
     assert "Ke em USD" in texto
     assert "risco-país)" in texto
     assert "NTN-B" not in texto
+
+
+def test_a_secao_do_ciclo_confessa_quando_nao_da_para_medir(resultado):
+    """Sem histórico importado o ciclo não existe, e o relatório tem de dizer.
+
+    É a regra que estrutura este arquivo: sair bonito com a seção omitida faria
+    o leitor supor que o ciclo foi verificado e estava bem. Ausente e ausente
+    têm de se distinguir de ausente e ok.
+    """
+    texto = montar(resultado)
+
+    assert "## O ciclo de caixa, e para onde ele foi" in texto
+    assert "**Não avaliado**" in texto
+
+
+def test_a_secao_do_ciclo_decompoe_e_a_soma_fecha(empresa_exemplo):
+    """A ponte do ciclo no relatório, e a identidade que ela publica."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            2023: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "contas_receber": 200.0,
+                "estoques": 150.0,
+                "fornecedores": 100.0,
+            },
+            2024: {
+                "receita_liquida": 1100.0,
+                "custo_produtos_vendidos": 660.0,
+                "ebit": 220.0,
+                "contas_receber": 250.0,
+                "estoques": 200.0,
+                "fornecedores": 110.0,
+            },
+        }
+    )
+    analise = analisar(
+        Demonstracoes(empresa="Teste S.A.", valores=valores, unidade="R$ milhões")
+    )
+    texto = montar(avaliar(empresa_exemplo), analise=analise)
+
+    assert "## O ciclo de caixa, e para onde ele foi" in texto
+    assert "| Perna |" in texto
+    for perna in ("Recebimento", "Estoque", "Pagamento"):
+        assert perna in texto
+    # A frase que impede a ponte de ser lida como atribuicao arbitraria.
+    assert "identidade" in texto
+    assert "**Não avaliado**" not in texto.split("## O ciclo de caixa")[1].split("##")[0]

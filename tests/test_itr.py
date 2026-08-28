@@ -904,3 +904,24 @@ def test_coluna_de_metadado_nova_precisa_ser_declarada():
         columns=["codigo", "rotulo", "demonstracao", "nivel", "ordem", 2024, "1T25"]
     )
     assert colunas_de_periodo(tabela) == [2024, "1T25"]
+
+
+def test_as_series_declaram_a_mesma_unidade_que_a_anual():
+    """Unidade é rótulo de tela, e duas grafias leem como dois apps.
+
+    O caminho anual gravava `"R$"` e o trimestral `"reais"`: a mesma companhia
+    aparecia com duas unidades conforme a série, e o relatório dizia
+    "18.551.191.186 R$" numa seção e "19.136.238.154 reais" na outra.
+    """
+    from valuation.importacao.cvm import (
+        importar_cvm,
+        importar_ltm_rolante,
+        importar_trimestral,
+    )
+
+    anual = importar_cvm(WEG, [2024], cache=DADOS)
+    trimestral = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+
+    assert trimestral.unidade == anual.unidade
+    assert rolante.unidade == anual.unidade

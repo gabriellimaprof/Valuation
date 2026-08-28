@@ -75,6 +75,38 @@ COLUNAS_DE_IDENTIDADE = ("nome", "receita", "setor")
 # semelhanca -- e quem le nao tem como perceber.
 MINIMO_DE_DIMENSOES = 4
 
+# Gravados junto do perfil **sem entrar na distancia**: a mesma passada custosa
+# que responde "quem se parece com quem" tambem calibra os cortes contra a base.
+# Sao os indicadores que `referencias.BASE` publica e que nao sao dimensao de
+# comparacao -- a lista mora aqui porque a CLI a passava vazia, e refazer o
+# universo pelo comando documentado produzia uma base **mais estreita** que a que
+# estava em cache, calada.
+INDICADORES_EXTRA: tuple[str, ...] = (
+    "Conversao de caixa (FCO / EBITDA)",
+    "Conversao operacional (CGO / EBITDA)",
+    "Margem liquida",
+    "Margem EBIT",
+    "Margem EBIT recorrente",
+    "Itens nao recorrentes / EBIT",
+    "Investimento em giro (DFC) / Receita",
+    "Capital de giro / Receita",
+    "Liquidez corrente",
+    "Payout (dividendos / lucro)",
+    "Divida bruta / Patrimonio liquido",
+    "ROE",
+    "Taxa de reinvestimento",
+    "Depreciacao / Receita",
+    "Aliquota efetiva de IR",
+    "Arrendamento / Divida bruta",
+    # O ciclo e as tres pernas. Sem distribuicao medida, "166 dias" nao tem
+    # resposta para "e muito?" -- e este projeto ja registrou que corte sem
+    # medicao vira ruido.
+    "Prazo medio de recebimento (dias)",
+    "Prazo medio de estoque (dias)",
+    "Prazo medio de pagamento (dias)",
+    "Ciclo de conversao de caixa (dias)",
+)
+
 
 class UniversoVazio(ValueError):
     """Nao ha companhias suficientes para comparar."""
@@ -385,7 +417,9 @@ def _principal(argumentos: list[str] | None = None) -> int:
             print(f"  {i}/{total}", flush=True)
 
     print(f"Construindo o universo de {anos[0]} a {anos[-1]}...", flush=True)
-    universo = construir_universo(anos, cache=cache, progresso=progresso)
+    universo = construir_universo(
+        anos, cache=cache, progresso=progresso, indicadores_extra=INDICADORES_EXTRA
+    )
     destino = salvar_universo(universo)
     print(f"{len(universo)} companhias medidas -> {destino}")
     return 0

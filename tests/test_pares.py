@@ -320,3 +320,25 @@ def test_sem_dfp_no_cache_o_universo_nao_e_julgado():
         caminho=Path("perfis.csv"),
     )
     assert not sem_referencia.desatualizado
+
+
+def test_a_base_de_referencia_nao_pede_indicador_que_o_universo_nao_mede():
+    """Regerar as referências não pode encolher `BASE` calado.
+
+    `gerar_referencias` só emite o indicador que existe no universo. Se `BASE`
+    publica um que `INDICADORES_EXTRA` não coleta, refazer a medição o **apaga**
+    sem avisar — foi o que quase aconteceu com `Arrendamento / Divida bruta`,
+    que estava publicado e não era coletado.
+
+    O invariante: tudo que `BASE` publica sai do universo, ou é dimensão de
+    comparação (que o perfil já traz).
+    """
+    from valuation.pares import DIMENSOES, INDICADORES_EXTRA
+    from valuation.referencias import BASE
+
+    medidos = set(DIMENSOES) | set(INDICADORES_EXTRA)
+    faltando = sorted(nome for nome in BASE if nome not in medidos)
+    assert not faltando, (
+        "estes indicadores são publicados em referencias.BASE e o universo não "
+        f"os coleta, então refazer a medição os perderia: {faltando}"
+    )

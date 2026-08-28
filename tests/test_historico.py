@@ -365,3 +365,87 @@ def test_sem_item_nao_recorrente_a_sugestao_nao_muda():
     sugestao = sugerir_premissas(analise)
     assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.25)
     assert not any("recorrente" in a and "reportada" in a for a in sugestao.alertas)
+
+
+# ---------------------------------------------------------------------------
+# O ciclo de conversao de caixa
+# ---------------------------------------------------------------------------
+
+
+def test_a_ponte_do_ciclo_e_uma_identidade(dfs):
+    """As três pernas têm de somar exatamente a variação do ciclo.
+
+    `CCC = PMR + PME − PMP` é definição, então `ΔCCC = ΔPMR + ΔPME − ΔPMP`
+    também é — sem termo residual. Uma ponte que não fecha deixa de ser ponte e
+    vira atribuição, que é o que este projeto recusa no TSR e na conversão de
+    caixa pelos mesmos motivos.
+    """
+    from valuation.historico import NOME_DO_PMP, ponte_do_ciclo
+
+    ponte = ponte_do_ciclo(analisar(dfs))
+    assert ponte is not None
+
+    soma = sum(p.contribuicao for p in ponte.pernas)
+    assert soma == pytest.approx(ponte.variacao)
+    assert ponte.fecha
+
+    # O sinal do fornecedor é invertido, e essa é a informação: alongar o prazo
+    # de pagamento **encurta** o ciclo. Sem inverter, a soma não fecharia.
+    pagamento = next(p for p in ponte.pernas if p.nome == NOME_DO_PMP)
+    assert pagamento.contribuicao == pytest.approx(-pagamento.variacao)
+
+
+def test_o_prazo_medio_usa_a_duracao_do_periodo_e_nao_365_fixo():
+    """Numa série trimestral o denominador é a receita de três meses.
+
+    Com a constante de 365 aplicada a um trimestre, o prazo médio sai **4x**
+    maior: medido na WEG antes da correção, o ciclo lia 689 dias contra os 166
+    do exercício. É um número errado com cara de número plausível, porque dia é
+    dia e nada na tela dizia que aquele denominador era de 90.
+    """
+    from valuation.historico import NOME_DO_CICLO, dias_do_periodo
+
+    assert list(dias_do_periodo([2023, 2024])) == [365.0, 365.0]
+    assert list(dias_do_periodo(["1T25", "3T26"])) == [365 / 4, 365 / 4]
+
+    anual = _demonstracoes(
+        {
+            "receita_liquida": [1000.0, 1000.0],
+            "custo_produtos_vendidos": [600.0, 600.0],
+            "contas_receber": [200.0, 200.0],
+            "estoques": [150.0, 150.0],
+            "fornecedores": [100.0, 100.0],
+        },
+        [2023, 2024],
+    )
+    # A mesma empresa medida por trimestre: receita e custo de tres meses, com
+    # os mesmos saldos de balanco -- saldo e saldo, nao se divide por quatro.
+    trimestral = _demonstracoes(
+        {
+            "receita_liquida": [250.0, 250.0],
+            "custo_produtos_vendidos": [150.0, 150.0],
+            "contas_receber": [200.0, 200.0],
+            "estoques": [150.0, 150.0],
+            "fornecedores": [100.0, 100.0],
+        },
+        ["1T24", "2T24"],
+    )
+
+    ciclo_anual = analisar(anual).indicadores.loc[NOME_DO_CICLO].iloc[-1]
+    ciclo_tri = analisar(trimestral).indicadores.loc[NOME_DO_CICLO].iloc[-1]
+
+    # A mesma operacao lida nas duas frequencias tem de dar o mesmo prazo.
+    assert ciclo_tri == pytest.approx(ciclo_anual, rel=0.001)
+
+
+def test_o_caixa_preso_traduz_os_dias_em_dinheiro(dfs):
+    """"O ciclo subiu 12 dias" não decide nada sem o tamanho em caixa."""
+    from valuation.historico import NOME_DO_CICLO, caixa_preso_no_ciclo
+
+    analise = analisar(dfs)
+    caixa = caixa_preso_no_ciclo(analise)
+    ciclo = analise.indicadores.loc[NOME_DO_CICLO]
+
+    ultimo = caixa.index[-1]
+    esperado = ciclo[ultimo] * dfs.serie("receita_liquida")[ultimo] / 365
+    assert caixa[ultimo] == pytest.approx(esperado)
