@@ -844,9 +844,10 @@ def _composicao_do_investimento(analise) -> None:
                 analise.demonstracoes.unidade,
             )
         )
+        unidade = analise.demonstracoes.unidade
         st.caption(
             f"**Capex** (imobilizado + intangível + outros): "
-            f"{formatar(composicao.capex, 'moeda', analise.demonstracoes.unidade)}."
+            f"{formatar(composicao.capex, 'moeda', unidade)}."
             + (
                 ""
                 if composicao.fecha
@@ -855,6 +856,59 @@ def _composicao_do_investimento(analise) -> None:
                 "olhada nas linhas publicadas antes de ser usado."
             )
         )
+        _caixa_livre_com_reciclagem(analise, composicao)
+
+
+def _caixa_livre_com_reciclagem(analise, composicao) -> None:
+    """As duas leituras do caixa livre, quando a companhia recicla ativo.
+
+    Venda de imobilizado **não reduz o capex** — capex líquido de
+    desinvestimento subestima a manutenção —, mas o dinheiro entrou, e o
+    indicador `FCO − capex` o ignorava.
+
+    Medido no DFP consolidado, 2021 a 2024: **180 companhias** têm venda de ativo
+    no FCI e **114 (63%) a repetem em três dos quatro exercícios** — não é evento
+    pontual na maioria. Em 34 de 161 medidas ela passa de 10% do fluxo livre.
+
+    O bloco **não escolhe entre as duas**: uma companhia que recicla ativo como
+    parte do negócio — shopping, locadora, incorporadora — só se lê pela segunda;
+    uma que vendeu a sede uma vez, só pela primeira. Quem conhece a companhia
+    decide, e para decidir precisa dos dois números na mesma linha.
+    """
+    if not composicao.venda_de_ativos:
+        return
+    fco = analise.demonstracoes.valor("fluxo_operacional", composicao.ano)
+    if not np.isfinite(fco):
+        return
+
+    sem, com = composicao.caixa_livre(float(fco))
+    unidade = analise.demonstracoes.unidade
+    st.caption(
+        f"**A venda de ativo não abate o capex, mas entrou no caixa.** "
+        f"Fluxo livre sem ela: {formatar(sem, 'moeda', unidade)}; "
+        f"com ela: **{formatar(com, 'moeda', unidade)}**."
+    )
+    if sem and abs(composicao.entradas / sem) >= 0.10:
+        st.warning(
+            "**As entradas do fluxo de investimento valem mais de 10% do fluxo "
+            "livre desta companhia.** A leitura sem elas subestima a geração de "
+            "caixa; projetar com uma venda pontual a superestima. Os dois "
+            "números estão acima porque **os dados não separam os dois casos** "
+            "— a frequência abaixo sugere, e quem conhece a companhia decide."
+        )
+
+    # A frequencia e o que separa "vendeu a sede" de "recicla ativo": ela nao
+    # decide, mas e a unica evidencia que os dados oferecem.
+    from valuation.investimento import recorrencia_das_entradas
+
+    recorrencias = recorrencia_das_entradas(analise.demonstracoes)
+    if recorrencias:
+        secao("Essas entradas se repetem?")
+        for r in recorrencias:
+            st.markdown(
+                f"- **{r.natureza}** — {r.leitura}. Mediana de "
+                f"{formatar(r.mediana, 'moeda', unidade)}."
+            )
 
 
 def _retorno(analise) -> None:
