@@ -475,3 +475,57 @@ def test_o_achado_acusa_a_operacao_quando_o_cgo_e_baixo(empresa_exemplo):
     assert achado is not None
     assert "a operação converte" not in achado.titulo
     assert "antes de ser recebida" in achado.detalhe
+
+
+def test_capex_perpetuo_muito_acima_da_depreciacao(empresa_exemplo):
+    """O inverso de `capex_abaixo_da_depreciacao`, e ele faltava.
+
+    A lacuna apareceu medindo a correção do capex de imóvel de renda: com
+    "propriedades para investimento" dentro da conta, a premissa da Multiplan
+    foi de 1,5% para 28,2% da receita e o equity caiu **59,8%**. A leitura ficou
+    certa — o dinheiro saiu mesmo —, e a projeção passou a supor que ela
+    constrói shopping no mesmo ritmo eternamente.
+
+    O corte é o P90 medido na safra 2021-2025 (n=389), onde a mediana é 1,0x:
+    repor o que se deprecia. O teste monta o caso a partir da constante, e não
+    de um número solto — corte recalibrado não pode virar falha sozinho.
+    """
+    from valuation.diagnostico import CAPEX_MUITO_ACIMA_DA_DEPRECIACAO
+
+    deprec = 0.05
+    empresa = substituir_varios(
+        empresa_exemplo,
+        {
+            "operacionais.depreciacao_pct_receita": deprec,
+            "operacionais.capex_pct_receita": deprec * (CAPEX_MUITO_ACIMA_DA_DEPRECIACAO + 1),
+        },
+    )
+    diagnostico = diagnosticar(avaliar(empresa))
+    assert "capex_perpetuo_acima_da_depreciacao" in _codigos(diagnostico)
+
+    achado = next(
+        a for a in diagnostico.achados
+        if a.codigo == "capex_perpetuo_acima_da_depreciacao"
+    )
+    # O achado tem de dizer **quanto custa** a hipótese, e não só que ela está
+    # montada: "supõe expansão para sempre" sem tamanho não ajuda a decidir.
+    assert "maior" in achado.detalhe
+
+
+def test_capex_no_estado_estacionario_nao_acusa(empresa_exemplo):
+    """Capex igual à depreciação é o estado estacionário, e é a mediana da base.
+
+    O contrapeso do teste acima: um sinal que dispara na mediana não dirige
+    atenção, gasta — foi assim que `DESCOLAMENTO_DO_JURO` precisou ser
+    recalibrado duas vezes neste projeto.
+    """
+    empresa = substituir_varios(
+        empresa_exemplo,
+        {
+            "operacionais.depreciacao_pct_receita": 0.05,
+            "operacionais.capex_pct_receita": 0.05,
+        },
+    )
+    assert "capex_perpetuo_acima_da_depreciacao" not in _codigos(
+        diagnosticar(avaliar(empresa))
+    )

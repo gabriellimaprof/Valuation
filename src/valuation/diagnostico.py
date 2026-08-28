@@ -267,6 +267,7 @@ def diagnosticar(
     achados: list[Achado] = []
     achados += _checar_perpetuidade(resultado, g, wacc, crescimento_nominal_economia)
     achados += _checar_reinvestimento(resultado, g, wacc)
+    achados += _checar_capex_perpetuo(resultado)
     achados += _checar_custo_de_capital(resultado, wacc)
     achados += _checar_estrutura_do_valor(resultado)
     # Nao exige historico: a hipotese esta nas premissas e no resultado, e
@@ -1378,3 +1379,102 @@ def _checar_itens_nao_recorrentes(
                 )
             )
     return achados
+
+
+# ---------------------------------------------------------------------------
+# Capex muito acima da depreciacao entrando na perpetuidade
+# ---------------------------------------------------------------------------
+
+# **O inverso ja existia e este nao.** `capex_abaixo_da_depreciacao` acusa a base
+# de ativos que encolhe enquanto a receita cresce; faltava o outro lado -- a
+# empresa que entra na perpetuidade investindo muitas vezes o que deprecia, o que
+# afirma expansao pesada **para sempre**.
+#
+# A lacuna apareceu ao medir a correcao do capex de imovel de renda. Com
+# "propriedades para investimento" dentro da conta, a premissa da Multiplan foi
+# de 1,5% para 28,2% da receita, e o equity caiu **59,8%** -- a leitura ficou
+# certa (o dinheiro saiu mesmo) e a projecao passou a supor que ela constroi
+# shopping no mesmo ritmo, eternamente. Medido junto: Allos -26,2%, BR Malls
+# -33,7%, WEG (controle, sem imovel) 0,0%.
+#
+# O corte e o **P90** da base, medido na safra 2021-2025 (n=389):
+#
+#   P25 0,56x   mediana 0,99x   P75 1,75x   P90 3,15x   P95 5,42x
+#
+# A mediana em 1,0x e o estado estacionario -- repor o que se gasta. Acima de 3x
+# estao 10,5% das companhias, que e a raridade que um sinal deve ter para dirigir
+# atencao. Na Multiplan o capex projetado e 2,97x a depreciacao; no MRV, 5,83x.
+CAPEX_MUITO_ACIMA_DA_DEPRECIACAO = 3.0
+
+
+def _checar_capex_perpetuo(resultado: ResultadoValuation) -> list[Achado]:
+    """A perpetuidade supoe expansao pesada para sempre? E quanto isso custa.
+
+    Nao diz qual hipotese esta certa -- empresa em ciclo de expansao **de fato**
+    investe multiplos da depreciacao, e a projecao a partir da mediana historica
+    e defensavel. Diz quanto vale a que esta montada, que e o que o analista
+    precisa para escolher.
+    """
+    projecao = resultado.projecao
+    capex = float(projecao.capex[-1])
+    deprec = float(projecao.depreciacao[-1])
+    if not (np.isfinite(capex) and np.isfinite(deprec)) or deprec <= 0:
+        return []
+
+    razao = capex / deprec
+    if razao < CAPEX_MUITO_ACIMA_DA_DEPRECIACAO:
+        return []
+
+    perpetuidade = resultado.empresa.perpetuidade
+    if perpetuidade.metodo != "gordon":
+        return []
+
+    # Quanto o valor subiria se a expansao parasse no fim do horizonte explicito
+    # -- capex convergindo para a depreciacao, que e o estado estacionario.
+    dcf = resultado.dcf
+    fcff_final = float(projecao.fcff[-1])
+    fator = 1 / (1 + dcf.taxa_desconto) ** projecao.horizonte
+    try:
+        vt_sem = valor_terminal_gordon(
+            fluxo_final=fcff_final + (capex - deprec),
+            taxa=dcf.taxa_desconto,
+            crescimento=perpetuidade.crescimento_perpetuo,
+            base_normalizada=float(projecao.nopat[-1]),
+            retorno=perpetuidade.roic_perpetuidade,
+        )
+    except ValueError:  # inclui CombinacaoInviavel
+        return []
+
+    folga = vt_sem * fator - dcf.valor_presente_terminal
+    if not resultado.equity_value:
+        return []
+    folga_relativa = folga / abs(resultado.equity_value)
+
+    return [
+        Achado(
+            codigo="capex_perpetuo_acima_da_depreciacao",
+            severidade=INFORMACAO,
+            titulo=(
+                f"O valor terminal supõe expansão para sempre "
+                f"(capex de {_num(razao, 2)}x a depreciação)"
+            ),
+            detalhe=(
+                f"No último ano projetado o capex é {_num(razao, 2)}x a depreciação, e "
+                "o fluxo que entra na perpetuidade já está líquido dessa diferença. "
+                "Isso supõe que a companhia continua expandindo a base de ativos no "
+                "mesmo ritmo, **eternamente** — e não apenas repondo o que gasta. "
+                f"Se a expansão parasse no fim do horizonte, o equity seria "
+                f"{_pct(folga_relativa, 1)} maior. Na base brasileira a mediana é "
+                "1,0x, ou seja, repor o que se deprecia; acima de 3x estão 10% das "
+                "companhias."
+            ),
+            acao=(
+                "Decida se a companhia está num ciclo de expansão que termina ou num "
+                "regime permanente. Empresa de imóvel de renda e incorporadora ficam "
+                "na primeira com frequência: o capex delas constrói ativo novo, e "
+                "projetar a mediana histórica como perpétua cobra a construção sem "
+                "creditar a receita que ela geraria."
+            ),
+            referencia="Koller, Goedhart & Wessels, Valuation, cap. 10",
+        )
+    ]

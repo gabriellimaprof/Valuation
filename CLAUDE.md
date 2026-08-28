@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1102 testes
+pytest                        # 1107 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.102 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.107 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1668,6 +1668,47 @@ Efeito na projeção, que é onde isso decide valor:
 
 Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
 uma companhia que constrói shopping projetada como se não construísse.
+
+## O capex de imóvel corrigido custou 60% do valor, e o modelo não avisava
+
+A correção que pôs "propriedades para investimento" dentro do capex mudou a
+premissa da Multiplan de **1,5% para 28,2% da receita**. Faltava a consequência,
+e ela é grande. Medida isolando a premissa — mesmo modelo, mesmo histórico,
+trocando **só** `capex_pct_receita` pelo nível que a leitura antiga daria:
+
+| Companhia | Capex/receita antes → depois | Equity value |
+|---|---|---|
+| Multiplan | 1,5% → 28,2% | R$ 35,2 bi → **R$ 14,1 bi (−59,8%)** |
+| BR Malls | 4,1% → 16,8% | −33,7% |
+| Allos | 5,0% → 18,7% | −26,2% |
+| WEG (controle) | 4,9% → 4,9% | **0,0%** |
+
+A WEG em zero é o que garante que a diferença é atribuível ao capex e não a uma
+segunda leitura inteira. **O MRV sai de −R$ 3,4 bi para −R$ 50,0 bi**, negativo
+nos dois casos: ali o DCF não produz número utilizável, e a razão entre os dois
+não quer dizer nada.
+
+**A leitura ficou certa e a projeção ficou dura.** O dinheiro saiu mesmo — mas
+projetar a mediana histórica como perpétua afirma que a companhia constrói
+shopping no mesmo ritmo, eternamente, sem creditar a receita que essa construção
+geraria. Medido nas projeções: capex de **3,36x a depreciação na Multiplan** e
+**5,66x no MRV**.
+
+`capex_abaixo_da_depreciacao` já existia — a base de ativos que encolhe enquanto
+a receita cresce. **O outro lado não.** Entrou `capex_perpetuo_acima_da_depreciacao`,
+com o corte no P90 medido na safra 2021-2025 (n=389):
+
+| | P25 | Mediana | P75 | P90 | P95 |
+|---|---|---|---|---|---|
+| Capex / Depreciação | 0,56x | **0,99x** | 1,75x | **3,15x** | 5,42x |
+
+A mediana em 1,0x é o estado estacionário: repor o que se gasta. Acima de 3x
+estão 10,5% das companhias, que é a raridade que um sinal precisa ter para
+dirigir atenção. E o achado **traz o preço da hipótese**, como o do arrendamento:
+se a expansão parasse no fim do horizonte explícito, o equity da Multiplan seria
+**87,9% maior**; o do MRV, 67,2%. Ele não diz qual leitura está certa — empresa
+em ciclo de expansão de fato investe múltiplos da depreciação. Diz quanto custa a
+que está montada.
 
 ## O ciclo de caixa, acompanhado — e o 4x que ninguém tinha visto
 
