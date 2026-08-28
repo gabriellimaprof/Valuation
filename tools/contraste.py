@@ -46,11 +46,25 @@ TELAS = ("Dados", "Histórico", "Premissas", "Valor", "Qualitativo")
 # Os alvos incluem os elementos de **menor contraste por desenho** -- legenda e
 # placeholder. Medir so o corpo do texto daria a resposta facil: ele e branco
 # puro (ou preto puro) e passa em qualquer fundo.
+# `pixel=True` so onde o metodo foi **validado**: texto simples, sem borda,
+# fundo chapado. Generalizar a amostragem para qualquer elemento produziu falso
+# positivo duas vezes seguidas, e as duas ficaram registradas em
+# `_cores_do_elemento` -- num cabecalho com borda a cor "mais distante do fundo"
+# e a **borda**, e o par sai em 1,4 como se o texto tivesse sumido. Onde nao ha
+# validacao, vale a leitura por estilo, que erra para o lado de superestimar.
 ALVOS = (
-    ("cabeçalho do expander", "[data-testid='stExpander'] summary"),
-    ("texto do expander", "[data-testid='stExpander'] li"),
-    ("campo de texto", "textarea"),
-    ("legenda (caption)", "[data-testid='stCaptionContainer'] p"),
+    ("cabeçalho do expander", "[data-testid='stExpander'] summary", False),
+    ("texto do expander", "[data-testid='stExpander'] li", False),
+    ("campo de texto", "textarea", False),
+    ("legenda (caption)", "[data-testid='stCaptionContainer'] p", True),
+    # **A tabela publicada usa o CSS do app**, e os testes dela leem a paleta --
+    # nao o pixel. Sao os pares que o revamp ja reprovou uma vez: o cabecalho
+    # (branco sobre azul), o nivel 5 (o mais fraco da arvore) e o negativo sobre
+    # a tinta do subtotal. Se algum voltar a cair, cai aqui.
+    ("tabela: cabeçalho", ".df-publicada th", False),
+    ("tabela: nível 5", ".df-publicada tr.n5 td", False),
+    ("tabela: negativo", ".df-publicada td.negativo", False),
+    ("tabela: subtotal (n2)", ".df-publicada tr.n2 td", False),
 )
 
 
@@ -118,7 +132,14 @@ def _cores_do_elemento(locator):
         from PIL import Image
     except ImportError:
         return None
+    # **Sem texto visivel nao ha o que amostrar**, e ignorar isso produz falso
+    # positivo: numa celula quase vazia a cor "mais distante do fundo" e a
+    # **borda**, e o par sai em 1,48 como se o negativo tivesse sumido. Foi o
+    # que aconteceu na primeira medicao da tabela publicada -- o mesmo seletor
+    # media 6,27 noutra tela, onde a celula tinha numero dentro.
     try:
+        if not (locator.inner_text() or "").strip():
+            return None
         bruto = locator.screenshot()
     except Exception:  # noqa: BLE001 -- elemento fora de vista ou sem caixa
         return None
@@ -131,8 +152,12 @@ def _cores_do_elemento(locator):
     if len(cores) < 2:
         return None
     fundo = cores.most_common(1)[0][0]
-    # 30 pixels: acima do respingo de antialiasing e abaixo de qualquer traco de
-    # letra numa caixa desse tamanho.
+    # 30 pixels: acima do respingo de antialiasing e abaixo do traco de letra
+    # numa caixa de texto simples. **Tentei torna-lo proporcional a area e
+    # piorou** -- em elemento grande, meio por cento da area e mais do que o
+    # miolo da letra ocupa, e a escolha caia na borda. O limiar fixo funciona no
+    # caso para o qual este metodo esta validado, e por isso `ALVOS` declara
+    # onde ele vale.
     candidatos = [c for c, n in cores.items() if n >= 30 and c != fundo]
     if not candidatos:
         return None
@@ -191,6 +216,25 @@ def _placeholder_por_pixel(pg):
     return None
 
 
+def _com_mais_texto(pg, seletor: str):
+    """O elemento com mais texto entre os que casam o seletor.
+
+    `.first` pega o primeiro da pagina, que numa tabela costuma ser a celula
+    mais curta -- e celula curta da pouco pixel de letra para amostrar. O que se
+    quer medir e o caso tipico, e nao o primeiro que aparece.
+    """
+    itens = pg.locator(seletor)
+    melhor, tamanho = itens.first, -1
+    for i in range(min(itens.count(), 12)):
+        try:
+            texto = (itens.nth(i).inner_text() or "").strip()
+        except Exception:  # noqa: BLE001
+            continue
+        if len(texto) > tamanho:
+            melhor, tamanho = itens.nth(i), len(texto)
+    return melhor
+
+
 def _medir_a_tela(pg) -> list[tuple]:
     """Os pares frente/fundo desta tela, para os componentes de risco."""
     resultados = []
@@ -198,7 +242,7 @@ def _medir_a_tela(pg) -> list[tuple]:
     # placeholder e a prova: `getComputedStyle` dizia 15,73 e o pixel diz 6,39 --
     # a atenuacao vinha de onde a leitura de estilo nao alcanca. Onde o valor
     # importar de verdade, amostre o pixel, como `_placeholder_por_pixel` faz.
-    for nome, seletor in ALVOS:
+    for nome, seletor, por_pixel in ALVOS:
         if pg.locator(seletor).count() == 0:
             continue
         estilo = pg.evaluate(
@@ -226,19 +270,22 @@ def _medir_a_tela(pg) -> list[tuple]:
         # sem caixa, fora de vista), fica o estilo -- com o valor de antes, e
         # nao com nenhum.
         por_estilo = contraste(frente, fundo)
-        amostra = _cores_do_elemento(pg.locator(seletor).first)
+        amostra = (
+            _cores_do_elemento(_com_mais_texto(pg, seletor)) if por_pixel else None
+        )
         if amostra is not None:
             razao, frente, fundo = amostra
-            if abs(razao - por_estilo) >= 1.0:
-                nome = f"{nome} (pixel; estilo dizia {por_estilo:.2f})"
         else:
             razao = por_estilo
-        resultados.append((nome, razao, frente, fundo))
+        # A discordancia vai numa coluna, e **nao no nome**: mudar o rotulo
+        # criava duas entradas para o mesmo elemento -- uma por tela que
+        # discordava --, e o "pior par de cada elemento" deixava de ser um.
+        resultados.append((nome, razao, frente, fundo, por_estilo))
 
     amostra = _placeholder_por_pixel(pg)
     if amostra is not None:
         razao, frente, fundo = amostra
-        resultados.append(("placeholder (por pixel)", razao, frente, fundo))
+        resultados.append(("placeholder", razao, frente, fundo, float("nan")))
     return resultados
 
 
@@ -283,15 +330,16 @@ def medir(porta: str, esquema: str = "dark") -> int:
                 continue
             alvo.first.click()
             pg.wait_for_timeout(5000)
-            for nome, razao, frente, fundo in _medir_a_tela(pg):
+            for nome, razao, frente, fundo, por_estilo in _medir_a_tela(pg):
                 if nome not in piores or razao < piores[nome][0]:
-                    piores[nome] = (razao, frente, fundo, tela)
+                    piores[nome] = (razao, frente, fundo, tela, por_estilo)
 
         print(
-            f"{'elemento':26s} {'tela':14s} {'frente':17s} {'fundo':17s} {'razão':>7s}"
+            f"{'elemento':24s} {'tela':13s} {'frente':17s} {'fundo':17s} "
+            f"{'razão':>7s} {'estilo':>8s}"
         )
-        print("-" * 86)
-        for nome, (razao, frente, fundo, tela) in sorted(
+        print("-" * 92)
+        for nome, (razao, frente, fundo, tela, por_estilo) in sorted(
             piores.items(), key=lambda kv: kv[1][0]
         ):
             if razao < MINIMO:
@@ -300,10 +348,16 @@ def medir(porta: str, esquema: str = "dark") -> int:
                 marca = "  <-- margem estreita"
             else:
                 marca = ""
+            estilo = (
+                f"{por_estilo:>8.2f}"
+                if por_estilo == por_estilo and abs(por_estilo - razao) >= 1.0
+                else " " * 8
+            )
             print(
-                f"{nome:26s} {tela:14s} "
+                f"{nome:24s} {tela:13s} "
                 f"{str(tuple(int(c) for c in frente)):17s} "
-                f"{str(tuple(int(c) for c in fundo)):17s} {razao:>6.2f}{marca}"
+                f"{str(tuple(int(c) for c in fundo)):17s} "
+                f"{razao:>6.2f} {estilo}{marca}"
             )
             if razao < MINIMO:
                 problemas.append(

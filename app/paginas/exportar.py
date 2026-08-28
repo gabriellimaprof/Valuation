@@ -174,6 +174,7 @@ def _relatorio(resultado) -> None:
             ifrs16=ver_ex_ifrs16(analise) if analise is not None else None,
             lucro_residual=banco[0] if banco else None,
             historico_do_banco=banco[1] if banco else None,
+            vrio_do_banco=banco[2] if banco else None,
         )
 
     st.session_state["relatorio"] = texto
@@ -317,7 +318,23 @@ def _valuation_do_banco():
         )
     except ValueError:
         return None
-    return valuation, sugestao.historico
+
+    # O VRIO do banco sai daqui e nao do chamador porque **depende do mesmo
+    # `ke`** que o lucro residual usou -- o realavancado pela marca de
+    # instituicao financeira. Recalcula-lo la fora daria um Ke diferente do que
+    # o relatorio mostra tres secoes acima, e o leitor nao teria como saber qual
+    # dos dois vale.
+    from valuation.bancos import beta_de_indiferenca
+    from valuation.qualitativo import reunir_vrio_do_banco
+
+    try:
+        beta = beta_de_indiferenca(
+            empresa.custo_capital, empresa.macro, sugestao.historico.roe_mediano
+        )
+    except Exception:  # noqa: BLE001 -- sem ROE nao ha beta de indiferenca
+        beta = None
+    vrio = reunir_vrio_do_banco(sugestao.historico, ke, beta)
+    return valuation, sugestao.historico, vrio
 
 
 def _slug(nome: str) -> str:

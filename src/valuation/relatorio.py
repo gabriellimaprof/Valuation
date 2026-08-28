@@ -570,6 +570,30 @@ def _historico_do_banco(historico) -> list[str]:
     return linhas
 
 
+def _qualitativo_do_banco(vrio, respostas=None) -> list[str]:
+    """VRIO com a serie que vale para instituicao financeira.
+
+    O relatorio do banco deixava as perguntas de framework **inteiramente** de
+    fora, e a razao era boa -- margem EBITDA e capex nao descrevem um banco. Mas
+    a pergunta do fosso num banco e *a* pergunta, e o app ja calculava o que a
+    sustenta: ROE contra Ke, persistencia e o beta de indiferenca.
+
+    Some quando nao ha o historico do banco: sem ROE nao ha o que perguntar, e
+    um cabecalho com quatro blocos vazios diria que a analise foi feita.
+    """
+    if not vrio:
+        return []
+    linhas = [
+        "## VRIO — o que vale para uma instituição financeira",
+        "",
+        "As mesmas quatro perguntas, com **ROE contra Ke** no lugar de margem e "
+        "capex. Raridade fica **sem número**: são 19 instituições na base "
+        "medida, e quantil sobre 19 é ruído.",
+        "",
+    ]
+    return linhas + _blocos_de_evidencia(vrio, respostas)
+
+
 def _nao_se_aplica_ao_banco() -> list[str]:
     """O que o relatório deixou de fora por não valer para instituição financeira.
 
@@ -591,7 +615,9 @@ def _nao_se_aplica_ao_banco() -> list[str]:
         "## O que não foi avaliado aqui",
         "",
         "Duas seções que este relatório traz para empresa não financeira ficaram "
-        "de fora, porque descreveriam outra companhia:",
+        "de fora, porque descreveriam outra companhia — as perguntas de VRIO "
+        "**não** estão entre elas: elas aparecem acima, com ROE contra Ke no "
+        "lugar dos indicadores industriais.",
         "",
         "- **Comparação com pares** — o universo de comparáveis exclui bancos e "
         "seguradoras de propósito: margem EBITDA e capex sobre receita não querem "
@@ -857,6 +883,7 @@ def montar(
     ifrs16=None,
     lucro_residual=None,
     historico_do_banco=None,
+    vrio_do_banco=None,
     data: str = "",
 ) -> str:
     """Monta o relatorio completo em markdown.
@@ -881,6 +908,7 @@ def montar(
             if historico_do_banco is not None
             else _historico(analise),
             _qualidade(qualidade, analise),
+            _qualitativo_do_banco(vrio_do_banco, respostas_qualitativas),
             _nao_se_aplica_ao_banco(),
             _limites(resultado, analise, qualidade),
         ]
