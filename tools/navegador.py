@@ -64,6 +64,18 @@ def conferir(pg, nome: str) -> str:
     ):
         problemas.append(f"[{nome}] a página rola na horizontal")
 
+    # **Tabela com cabeçalho e sem número.** A árvore publicada saía assim numa
+    # série trimestral -- 34 linhas, zero colunas -- e nada acusava: o script
+    # contava caracteres, e o rótulo das contas já enche a tela. Uma tabela de
+    # demonstração com uma coluna só (a do rótulo) é sempre defeito: ou a leitura
+    # perdeu os períodos, ou a tela os filtrou fora.
+    vazias = pg.evaluate(
+        """() => Array.from(document.querySelectorAll('.df-publicada table'))
+                .filter(t => t.querySelectorAll('thead th').length < 2).length"""
+    )
+    if vazias:
+        problemas.append(f"[{nome}] {vazias} tabela(s) de demonstração sem coluna de período")
+
     seguro = "".join(c if c.isalnum() else "_" for c in nome).strip("_")
     SAIDA.mkdir(exist_ok=True)
     pg.screenshot(path=str(SAIDA / f"{PREFIXO}{seguro}.png"))
@@ -84,9 +96,25 @@ def percorrer(porta: str, trimestral: bool = False) -> int:
             "console",
             lambda m: erros_js.append(m.text) if m.type == "error" else None,
         )
+        # "Failed to load resource: 404" sem dizer **qual** recurso nao dirige
+        # atencao nenhuma -- e a mesma queixa que este projeto tem de "nao fecha"
+        # sem tamanho. O status e a URL vem junto.
+        pg.on(
+            "response",
+            lambda r: erros_js.append(f"HTTP {r.status} em {r.url}")
+            if r.status >= 400
+            else None,
+        )
 
-        pg.goto(f"{url}/dados", wait_until="domcontentloaded", timeout=60000)
+        # Entra pela **raiz**, e nao por `/dados`: com a URL numa subpagina o
+        # navegador resolve `_stcore/host-config` e `_stcore/health` relativos a
+        # ela e recebe 404 nos dois. Nao quebra nada, mas enche a lista de erros
+        # de console com um falso positivo permanente -- e lista de alarme que
+        # sempre tem alarme treina quem le a ignorar.
+        pg.goto(url, wait_until="domcontentloaded", timeout=60000)
         esperar(pg, 7000)
+        pg.locator("[data-testid='stSidebarNav'] a", has_text="Dados").first.click()
+        esperar(pg, 4000)
 
         # Importa pela própria interface: driblar a tela e escrever no estado
         # testaria o motor, que já tem teste, e não a ligação entre os dois.
