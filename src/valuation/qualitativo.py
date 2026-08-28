@@ -70,7 +70,18 @@ def _serie(analise, nome: str):
     return analise.linha(nome).replace([np.inf, -np.inf], np.nan).dropna()
 
 
-def _com_referencia(indicador: str, valor: float) -> str:
+def _com_referencia(indicador: str, valor: float, analise=None) -> str:
+    """O percentil na base, colado ao numero -- **quando ele se aplica**.
+
+    `analise` existe so para reconhecer banco e seguradora: o universo de
+    referencia os exclui de proposito, entao um percentil ali compara a
+    instituicao com 445 companhias a que ela nao pertence. O ponto de corte fica
+    aqui, e nao em cada bloco, porque o percentil aparece em oito lugares e
+    esquecer um deles devolveria justamente o numero que parece informacao e
+    nao e.
+    """
+    if analise is not None and _e_financeira(analise):
+        return ""
     onde = referencias.descrever(indicador, valor)
     return f" — {onde}" if onde else ""
 
@@ -82,7 +93,7 @@ def _rivalidade(analise) -> Evidencia:
         mediana = float(margens.median())
         medido.append(
             f"Margem EBITDA mediana de {_pct(mediana)}"
-            f"{_com_referencia('Margem EBITDA', mediana)}."
+            f"{_com_referencia('Margem EBITDA', mediana, analise)}."
         )
     if len(margens) >= 3:
         amplitude = float(margens.max() - margens.min())
@@ -156,7 +167,7 @@ def _entrantes(analise, resultado) -> Evidencia:
     if np.isfinite(capex):
         medido.append(
             f"Capex mediano de {_pct(capex)} da receita"
-            f"{_com_referencia('Capex / Receita', capex)}."
+            f"{_com_referencia('Capex / Receita', capex, analise)}."
         )
     giro = analise.mediana("Giro do capital investido")
     if np.isfinite(giro):
@@ -194,7 +205,7 @@ def _fosso(analise, resultado) -> Evidencia:
 
     if not roics.empty:
         mediana = float(roics.median())
-        medido.append(f"ROIC mediano de {_pct(mediana)}{_com_referencia('ROIC', mediana)}.")
+        medido.append(f"ROIC mediano de {_pct(mediana)}{_com_referencia('ROIC', mediana, analise)}.")
 
     if not roics.empty and np.isfinite(wacc):
         acima = int((roics > wacc).sum())
@@ -285,14 +296,50 @@ def _vrio_valor(analise, resultado) -> Evidencia:
     )
 
 
+def _e_financeira(analise) -> bool:
+    """A companhia publica no plano de banco ou seguradora?
+
+    Importa aqui porque **o universo de referencia exclui essas companhias de
+    proposito** -- comparar contra 445 companhias a que a instituicao nao
+    pertence produz um percentil que parece informacao e nao e. O relatorio ja
+    tinha essa consciencia (`_nao_se_aplica_ao_banco`); o modulo nao tinha, e a
+    tela nova herdaria o defeito.
+    """
+    from .bancos import e_instituicao_financeira
+
+    demonstracoes = getattr(analise, "demonstracoes", None)
+    if demonstracoes is None:
+        return False
+    try:
+        return e_instituicao_financeira(demonstracoes)
+    except Exception:  # noqa: BLE001 -- ausencia de aviso nao e erro
+        return False
+
+
 def _vrio_raridade(analise) -> Evidencia:
     """Quantos concorrentes tem o mesmo? E a que o percentil de fato responde."""
+    if _e_financeira(analise):
+        return Evidencia(
+            tema="VRIO — Raridade",
+            pergunta="Quantos concorrentes já controlam o mesmo recurso?",
+            medido=[],
+            limite=(
+                "**O percentil não se aplica a esta companhia.** O universo de "
+                "referência exclui bancos e seguradoras de propósito — margem "
+                "EBITDA e conversão de caixa não querem dizer para um banco o "
+                "que querem dizer no resto —, então comparar contra ele "
+                "produziria um número com aparência de informação. Raridade "
+                "aqui se discute contra os pares do próprio setor: carteira, "
+                "custo de funding, base de depósito."
+            ),
+        )
+
     medido = []
     for indicador in ("ROIC", "Margem EBITDA", "Conversao de caixa (FCO / EBITDA)"):
         valor = analise.mediana(indicador)
         if not np.isfinite(valor):
             continue
-        onde = _com_referencia(indicador, valor)
+        onde = _com_referencia(indicador, valor, analise)
         if not onde:
             continue
         posicao = referencias.posicao(indicador, valor)
@@ -341,7 +388,7 @@ def _vrio_imitabilidade(analise, resultado) -> Evidencia:
     if np.isfinite(capex):
         medido.append(
             f"Capex mediano de {_pct(capex)} da receita"
-            f"{_com_referencia('Capex / Receita', capex)} — é o capital que um "
+            f"{_com_referencia('Capex / Receita', capex, analise)} — é o capital que um "
             "concorrente precisaria pôr para montar a mesma operação."
         )
     return Evidencia(
@@ -364,14 +411,14 @@ def _vrio_organizacao(analise) -> Evidencia:
     if np.isfinite(conversao):
         medido.append(
             f"Converte {_pct(conversao)} do EBITDA em caixa operacional"
-            f"{_com_referencia('Conversao de caixa (FCO / EBITDA)', conversao)} — "
+            f"{_com_referencia('Conversao de caixa (FCO / EBITDA)', conversao, analise)} — "
             "vantagem que não vira caixa não foi capturada."
         )
     reinvestimento = analise.mediana("Taxa de reinvestimento")
     if np.isfinite(reinvestimento):
         medido.append(
             f"Reinveste {_pct(reinvestimento)} do NOPAT"
-            f"{_com_referencia('Taxa de reinvestimento', reinvestimento)}."
+            f"{_com_referencia('Taxa de reinvestimento', reinvestimento, analise)}."
         )
     payout = analise.mediana("Payout (dividendos / lucro)")
     if np.isfinite(payout):

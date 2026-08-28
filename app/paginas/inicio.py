@@ -85,6 +85,8 @@ def render() -> None:
     else:
         _confronto_com_o_mercado(resultado, empresa)
 
+    _quanto_do_qualitativo_foi_respondido()
+
     st.divider()
     secao(
         "O caminho completo",
@@ -96,6 +98,37 @@ def render() -> None:
     st.divider()
     st.caption(AVISO_FINAL)
 
+
+
+def _quanto_do_qualitativo_foi_respondido() -> None:
+    """O estado do trabalho que só o analista faz, na tela de abertura.
+
+    O número de premissas preenchidas o app sabe sozinho; **as dez perguntas de
+    framework só avançam com alguém escrevendo**, e por isso o placar delas é o
+    que mede quanto do material está pronto. Ele existia dentro da própria tela
+    de Qualitativo, que é o único lugar onde não ajuda: quem está lá já está
+    fazendo.
+
+    Some sem histórico — sem evidência as perguntas não têm o que ancorar, e um
+    "0 de 10" ali seria cobrança por algo que ainda não dá para fazer.
+    """
+    if not estado.tem_historico():
+        return
+
+    total = 10
+    feitas = len([v for v in estado.respostas_qualitativas().values() if v.strip()])
+    alvo = pagina("qualitativo")
+    if feitas == total:
+        st.caption(f"As {total} perguntas de Porter e VRIO respondidas.")
+        return
+
+    st.caption(
+        f"**{feitas} de {total}** perguntas de Porter e VRIO respondidas — é a "
+        "parte que nenhuma conta deste app faz por você, e a que falta no "
+        "relatório enquanto estiver em branco."
+    )
+    if alvo is not None:
+        st.page_link(alvo, label="Responder agora", icon=":material/psychology:")
 
 
 def _confronto_com_o_mercado(resultado, empresa) -> None:

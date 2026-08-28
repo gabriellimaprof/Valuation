@@ -24,6 +24,7 @@ from ..componentes import (
     tabela_formatada,
 )
 from ..graficos import barras_temporais, linhas_percentuais
+from ..navegacao import pagina
 
 
 def render() -> None:
@@ -538,8 +539,47 @@ def _campos_do_gordon(perpetuidade, analise, ipca: float, pib_nominal: float):
                     "empregar capital novo melhor do que empregou o antigo."
                 ),
             )
+            _evidencia_do_fosso(analise)
 
     return ancora, crescimento, previsto, normalizar, roic_real, roic, para_o_acionista
+
+
+def _evidencia_do_fosso(analise) -> None:
+    """A evidência do fosso ao lado do campo que a supõe permanente.
+
+    Este campo é onde se afirma que a vantagem competitiva não erode, e a
+    evidência sobre isso morava duas telas adiante — em **Qualitativo**, que só
+    existe depois do Diagnóstico. Quem escolhe o ROIC perpétuo escolhe antes de
+    ver, e o balizador ao lado responde "é muito para esta empresa?" mas não
+    "por que ela conseguiria manter?".
+
+    Traz só o bloco do fosso, dobrado: a tela de Premissas já é densa, e as dez
+    perguntas aqui virariam parede. A resposta continua sendo escrita lá — o
+    link leva para o lugar onde ela é salva.
+    """
+    if analise is None:
+        return
+    from valuation.qualitativo import reunir_evidencias
+
+    fosso = next(
+        (e for e in reunir_evidencias(analise, estado.resultado()) if "Fosso" in e.tema),
+        None,
+    )
+    if fosso is None or not fosso.medido:
+        return
+
+    with st.expander("O que sustenta um retorno excedente permanente?"):
+        st.caption(fosso.pergunta)
+        for linha in fosso.medido:
+            st.markdown(f"- {linha}")
+        st.caption(f"**O que os números não alcançam:** {fosso.limite}")
+        alvo = pagina("qualitativo")
+        if alvo is not None:
+            st.page_link(
+                alvo,
+                label="Responder em Qualitativo",
+                icon=":material/psychology:",
+            )
 
 
 def _campos_do_multiplo(perpetuidade):
