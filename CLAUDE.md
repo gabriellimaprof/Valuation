@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1073 testes
+pytest                        # 1075 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.073 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.075 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1686,16 +1686,33 @@ O método: foto do `textarea` vazio, contagem de cores, fundo = a mais frequente
 frente = a mais distante em luminância entre as que aparecem 30 vezes ou mais —
 abaixo disso é antialiasing.
 
+**E a amostragem foi estendida a todos os alvos**, o que achou mais um número
+errado meu: a legenda não era 18,11 — é **7,09** no escuro e **5,12** no claro.
+Captions são atenuadas, e o `getComputedStyle` no `p` devolvia a cor herdada,
+do mesmo jeito que fazia com o placeholder. Onde os dois discordam por mais de
+1,0 o script mostra os dois números, para a diferença não sumir.
+
 Medido nos dois modos, com `tools/contraste.py` percorrendo cinco telas e
 guardando o pior par de cada elemento:
 
-| | Placeholder | Demais |
-|---|---|---|
-| escuro | 6,39 | 15,73 a 18,11 |
-| claro | **4,99** | 17,86 a 19,17 |
+| | Placeholder | Legenda | Expander |
+|---|---|---|---|
+| escuro | 6,39 | 7,09 | 16,50 a 17,42 |
+| claro | **4,99** | **5,12** | 18,51 a 19,17 |
 
-**O claro passa por 0,49 de margem** sobre o mínimo de 4,5 — é o único par do
-app que anda perto do limite, e fica registrado por isso.
+**Os dois apertados passam, e a decisão é não repintar.** O Streamlit não expõe
+token de texto atenuado — ele o deriva de `textColor` —, então mexer exigiria
+CSS por cima; e o projeto só repintou o que **reprovava** (4,42, 3,70, 3,24). O
+que faltava não era cor, era guarda: entrou uma faixa de `margem estreita`
+(abaixo de 5,5) que **não reprova** — reprovar ali seria pinar um número, e o
+padrão é o AA. Ela existe para a estreiteza aparecer, porque um passo mais claro
+no tema derruba os dois sem nada acusar.
+
+`contraste.py` roda na **varredura agendada**, nos dois temas. Precisa de duas
+instâncias porque `--theme.base` é do servidor: medir os dois modos no mesmo app
+mediria o mesmo tema duas vezes — o erro que a primeira versão do script
+cometeu. Junto foi a passada `--trimestral` do navegador, que também só rodava
+à mão.
 
 ## O menu colapsa a partir de 10 itens, e some com o fim do caminho
 
@@ -2137,6 +2154,21 @@ Em ordem de valor:
    proteção existia num consumidor e não no outro.
    `qualitativo.por_que_nao_se_aplica` põe a razão no motor, onde os dois a
    compartilham.
+
+   **Mas recusar o indicador errado não é ficar sem evidência.** Num banco a
+   pergunta do fosso é *a* pergunta, e o app já calculava o que a sustenta —
+   faltava usar a série certa. `reunir_vrio_do_banco` troca três das quatro:
+
+   | | O que passa a medir |
+   |---|---|
+   | **Valor** | ROE contra Ke — a própria conta do lucro residual |
+   | **Imitabilidade** | anos de ROE acima do Ke, mais o **beta de indiferença**: quanto a conclusão aguenta de erro no parâmetro que a decide |
+   | **Organização** | payout e retenção — reter com ROE abaixo do Ke destrói mais rápido |
+
+   **Raridade continua sem número, e a ausência é medida**: são 19 instituições
+   na base de 2024, e quantil sobre 19 é ruído — publicar um daria aparência de
+   medida a um chute. Medido no Bradesco: ROE mediano de 10,4% contra Ke de
+   13,4%, superou o Ke em 1 de 3 exercícios, beta de indiferença de 0,72.
 9. **O universo de pares e os percentis avisam quando ficam para trás.** Eles são
    construídos uma vez e lidos muitas, e não se atualizam sozinhos: quando sai
    DFP nova o app passava a comparar contra uma base antiga **com a mesma
