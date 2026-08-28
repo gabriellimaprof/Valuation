@@ -50,16 +50,16 @@ class ResultadoValuation:
         linhas = {
             "WACC (BRL nominal)": self.custo_capital.wacc_brl,
             "Ke (BRL nominal)": self.custo_capital.ke_brl,
-            "Crescimento perpetuo": self.empresa.perpetuidade.crescimento_perpetuo,
-            "VP dos fluxos explicitos": self.dcf.valor_presente_explicito,
+            "Crescimento perpétuo": self.empresa.perpetuidade.crescimento_perpetuo,
+            "VP dos fluxos explícitos": self.dcf.valor_presente_explicito,
             "VP do valor terminal": self.dcf.valor_presente_terminal,
             "% do EV na perpetuidade": self.dcf.peso_perpetuidade,
             "Enterprise Value": self.dcf.enterprise_value,
-            "(-) Divida liquida": -self.empresa.ponte.divida_liquida,
+            "(-) Dívida líquida": -self.empresa.ponte.divida_liquida,
             "Equity Value": self.dcf.equity_value,
         }
         if self.dcf.valor_por_acao is not None:
-            linhas["Valor por acao"] = self.dcf.valor_por_acao
+            linhas["Valor por ação"] = self.dcf.valor_por_acao
         return pd.DataFrame({"Valor": linhas})
 
 

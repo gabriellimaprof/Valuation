@@ -19,6 +19,7 @@ from valuation.qualidade import BOM, RUIM, SEM_DADOS, avaliar_qualidade
 
 from .. import estado
 from ..componentes import (
+    com_rotulos,
     conceito,
     em_texto,
     escapar_cifrao,
@@ -51,16 +52,6 @@ _PERNA_CURTA = {
     NOME_DO_PMP: "Pagamento",
 }
 
-# A chave do indicador no motor e sem acento, por convencao de codigo, e ela
-# chegava crua a tela -- "Prazo medio", "Ciclo de conversao". Texto de usuario e
-# em portugues acentuado, entao a traducao acontece na borda: o motor mantem a
-# chave, a tela mostra o nome.
-_ROTULO_DO_CICLO = {
-    NOME_DO_PMR: "Prazo médio de recebimento",
-    NOME_DO_PME: "Prazo médio de estoque",
-    NOME_DO_PMP: "Prazo médio de pagamento",
-    NOME_DO_CICLO: "Ciclo de conversão de caixa",
-}
 
 
 def render() -> None:
@@ -1115,10 +1106,16 @@ def _ciclo_ao_longo_do_tempo(analise, ciclo) -> None:
         )
         return
 
-    exibido = ciclo.rename(index=_ROTULO_DO_CICLO)
+    # O rotulo acentuado vem de `componentes.ROTULOS_DE_INDICADOR`, aplicado
+    # dentro do grafico e da tabela -- e nao de um mapa local, que divergiria do
+    # das outras abas.
     grafico(
-        linhas_em_dias(exibido, "Ciclo de conversão de caixa e suas pernas"),
-        exibido.style.format("{:,.0f}", na_rep="—"),
+        linhas_em_dias(
+            ciclo,
+            "Ciclo de conversão de caixa e suas pernas",
+            total=NOME_DO_CICLO,
+        ),
+        com_rotulos(ciclo).style.format("{:,.0f}", na_rep="—"),
     )
 
     ultimo = ciclo.columns[-1]

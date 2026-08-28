@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import referencias
+from .formulas import rotulo_do_indicador
 
 # Anos com ROIC acima do WACC a partir dos quais o retorno excedente deixa de
 # parecer sorte de ciclo. Nao e prova de fosso -- e o que faz a pergunta valer.
@@ -380,7 +381,7 @@ def _vrio_raridade(analise) -> Evidencia:
             if np.isfinite(posicao) and posicao >= PERCENTIL_INCOMUM
             else ""
         )
-        medido.append(f"{indicador} de {_pct(valor)}{onde}{marca}.")
+        medido.append(f"{rotulo_do_indicador(indicador)} de {_pct(valor)}{onde}{marca}.")
     if medido:
         medido.append(
             "Percentil alto em vários indicadores ao mesmo tempo é o que separa "

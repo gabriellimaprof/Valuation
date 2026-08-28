@@ -67,7 +67,7 @@ def valor_terminal_gordon(
             )
         if crescimento > retorno:
             raise CombinacaoInviavel(
-                f"Crescimento perpetuo ({crescimento:.2%}) nao pode superar o "
+                f"Crescimento perpétuo ({crescimento:.2%}) não pode superar o "
                 f"retorno de perpetuidade ({retorno:.2%})."
             )
         fluxo_perpetuo = (
@@ -243,13 +243,13 @@ def ponte_ev_equity(enterprise_value: float, ponte: PonteValor) -> tuple[float, 
     """Aplica a ponte EV -> Equity Value e devolve o detalhamento auditavel."""
     itens = [
         ("Enterprise Value", enterprise_value),
-        ("(-) Divida bruta", -ponte.divida_bruta),
+        ("(-) Dívida bruta", -ponte.divida_bruta),
         ("(+) Caixa e equivalentes", ponte.caixa),
-        ("(+) Aplicacoes financeiras", ponte.aplicacoes_financeiras),
-        ("(-) Participacao de minoritarios", -ponte.minoritarios),
-        ("(-) Contingencias", -ponte.contingencias),
-        ("(-) Deficit atuarial", -ponte.deficit_atuarial),
-        ("(+) Ativos nao operacionais", ponte.ativos_nao_operacionais),
+        ("(+) Aplicações financeiras", ponte.aplicacoes_financeiras),
+        ("(-) Participação de minoritários", -ponte.minoritarios),
+        ("(-) Contingências", -ponte.contingencias),
+        ("(-) Déficit atuarial", -ponte.deficit_atuarial),
+        ("(+) Ativos não operacionais", ponte.ativos_nao_operacionais),
     ]
     equity = sum(valor for _, valor in itens)
     itens.append(("Equity Value", equity))

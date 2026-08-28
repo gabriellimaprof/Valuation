@@ -151,7 +151,7 @@ def avaliar_por_multiplos(
                 "Metrica do alvo": metrica,
                 "Enterprise Value": ev,
                 "Equity Value": equity,
-                "Valor por acao": por_acao,
+                "Valor por ação": por_acao,
             }
         )
     return pd.DataFrame(linhas).set_index("Multiplo")

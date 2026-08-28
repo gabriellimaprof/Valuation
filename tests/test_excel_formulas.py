@@ -247,7 +247,7 @@ def test_a_ancora_do_g_viaja_para_a_planilha_como_formula(empresa_exemplo, tmp_p
     exportar_excel(avaliar(ancorada), caminho)
 
     ws = load_workbook(caminho)["Premissas"]
-    linha = _localizar_linha(ws, "Crescimento perpetuo (ancorado em PIB nominal)")
+    linha = _localizar_linha(ws, "Crescimento perpétuo (ancorado em PIB nominal)")
     assert str(ws.cell(row=linha, column=2).value).startswith("="), "saiu como constante"
 
     valores = _valores_calculados(caminho)

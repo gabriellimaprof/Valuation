@@ -295,7 +295,7 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     aba.secao("Perpetuidade", largura=n + 3)
     refs["metodo_perp"] = aba.entrada("Metodo", perp.metodo, "General")
     if perp.ancora == "livre":
-        refs["g_perpetuo"] = aba.entrada("Crescimento perpetuo", perp.crescimento_perpetuo, PCT)
+        refs["g_perpetuo"] = aba.entrada("Crescimento perpétuo", perp.crescimento_perpetuo, PCT)
     else:
         # A ancora viaja para a planilha como formula: quem mexer no IPCA da
         # celula azul ve o g acompanhar, como acompanha no app. Exportar o
@@ -307,7 +307,7 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
         )
         rotulo = "IPCA" if perp.ancora == "ipca" else "PIB nominal"
         refs["g_perpetuo"] = aba.formula(
-            f"Crescimento perpetuo (ancorado em {rotulo})", f"={origem}", PCT
+            f"Crescimento perpétuo (ancorado em {rotulo})", f"={origem}", PCT
         )
     if perp.roic_real is not None:
         refs["roic_real"] = aba.entrada("ROIC na perpetuidade (real)", perp.roic_real, PCT)
@@ -331,10 +331,10 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
 
     ponte = empresa.ponte
     aba.secao("Ponte EV -> Equity (data-base)", largura=n + 3)
-    refs["divida_bruta"] = aba.entrada("Divida bruta", ponte.divida_bruta, MOEDA)
+    refs["divida_bruta"] = aba.entrada("Dívida bruta", ponte.divida_bruta, MOEDA)
     refs["caixa"] = aba.entrada("Caixa e equivalentes", ponte.caixa, MOEDA)
-    refs["aplicacoes"] = aba.entrada("Aplicacoes financeiras", ponte.aplicacoes_financeiras, MOEDA)
-    refs["minoritarios"] = aba.entrada("Participacao de minoritarios", ponte.minoritarios, MOEDA)
+    refs["aplicacoes"] = aba.entrada("Aplicações financeiras", ponte.aplicacoes_financeiras, MOEDA)
+    refs["minoritarios"] = aba.entrada("Participação de minoritários", ponte.minoritarios, MOEDA)
     refs["contingencias"] = aba.entrada("Contingencias", ponte.contingencias, MOEDA)
     refs["deficit_atuarial"] = aba.entrada("Deficit atuarial", ponte.deficit_atuarial, MOEDA)
     refs["ativos_nao_op"] = aba.entrada("Ativos nao operacionais", ponte.ativos_nao_operacionais, MOEDA)
@@ -715,19 +715,19 @@ def _aba_dcf(
 
     aba.secao("Ponte para o Equity Value")
     itens = [
-        ("(-) Divida bruta", f"=-{p['divida_bruta']}"),
+        ("(-) Dívida bruta", f"=-{p['divida_bruta']}"),
         ("(+) Caixa e equivalentes", f"={p['caixa']}"),
-        ("(+) Aplicacoes financeiras", f"={p['aplicacoes']}"),
-        ("(-) Participacao de minoritarios", f"=-{p['minoritarios']}"),
-        ("(-) Contingencias", f"=-{p['contingencias']}"),
-        ("(-) Deficit atuarial", f"=-{p['deficit_atuarial']}"),
-        ("(+) Ativos nao operacionais", f"={p['ativos_nao_op']}"),
+        ("(+) Aplicações financeiras", f"={p['aplicacoes']}"),
+        ("(-) Participação de minoritários", f"=-{p['minoritarios']}"),
+        ("(-) Contingências", f"=-{p['contingencias']}"),
+        ("(-) Déficit atuarial", f"=-{p['deficit_atuarial']}"),
+        ("(+) Ativos não operacionais", f"={p['ativos_nao_op']}"),
     ]
     refs_ponte = [aba.formula(rotulo, expr, MOEDA) for rotulo, expr in itens]
     soma_ponte = "+".join(refs_ponte)
     equity = aba.total("Equity Value", f"={ev}+{soma_ponte}", MOEDA)
     aba.formula(
-        "Valor por acao",
+        "Valor por ação",
         f'=IF(N({p["acoes"]})=0,"informe as acoes em circulacao",{equity}/{p["acoes"]})',
         MOEDA,
     )

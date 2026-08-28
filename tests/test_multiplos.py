@@ -85,7 +85,7 @@ def test_multiplo_de_equity_nao_passa_pela_ponte(alvo, comparaveis):
 
 def test_valor_por_acao(alvo, comparaveis):
     linha = avaliar_por_multiplos(alvo, comparaveis).loc["EV/EBITDA"]
-    assert linha["Valor por acao"] == pytest.approx(linha["Equity Value"] / 150.0)
+    assert linha["Valor por ação"] == pytest.approx(linha["Equity Value"] / 150.0)
 
 
 def test_alvo_com_metrica_invalida_devolve_nan(comparaveis):

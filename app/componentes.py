@@ -494,6 +494,12 @@ def tabela_de_indicadores(
     colunas = list(tabela.columns)
     cabecalho = "".join(f"<th>{_texto_seguro(c)}</th>" for c in colunas)
 
+    # A traducao do nome acontece aqui, e nao em cada chamador: sao oito telas
+    # mostrando indicador, e a que alguem esquecesse voltaria a exibir a chave
+    # crua. Indice que nao e indicador atravessa sem mudar.
+    destaques = {rotulo_do_indicador(d) for d in destaques}
+    tabela = com_rotulos(tabela)
+
     corpo = []
     for rotulo, linha in tabela.iterrows():
         nivel = "n2" if rotulo in destaques else "n3"
@@ -585,3 +591,24 @@ def linha_de_premissas_anuais(
         )
         novos.append(novo / 100 if percentual else novo)
     return novos
+
+
+# ---------------------------------------------------------------------------
+# O nome do indicador na tela
+# ---------------------------------------------------------------------------
+
+# O mapa mora no **motor** (`valuation.formulas`), e nao aqui: o nome do
+# indicador tambem vai a texto que o motor escreve -- a evidencia qualitativa, o
+# relatorio, a CLI --, e uma copia na tela divergiria da outra. Aqui ficam so os
+# atalhos que a interface usa.
+from valuation.formulas import ROTULOS_DE_INDICADOR, rotulo_do_indicador  # noqa: E402,F401
+
+
+def com_rotulos(tabela):
+    """A mesma tabela com o indice traduzido para a tela.
+
+    Devolve **copia**: a tabela original alimenta contas e comparacoes por chave,
+    e renomear no lugar faria uma busca por "Divida liquida / EBITDA" falhar
+    depois de a tela ter passado por ali.
+    """
+    return tabela.rename(index=rotulo_do_indicador)

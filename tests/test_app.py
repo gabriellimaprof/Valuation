@@ -434,7 +434,9 @@ def test_linhas_em_dias_desenha_o_ciclo_e_as_pernas():
     # o rotulo muda, e ele muda (a tela acentua o que o motor guarda sem acento).
     ciclo = figura.data[-1]
     pernas = list(figura.data[:-1])
-    assert ciclo.name == "Ciclo de conversao de caixa (dias)"
+    # O nome na legenda ja vem **acentuado**: o grafico aplica o mesmo mapa de
+    # rotulos da tabela, para a legenda nao discordar da linha logo abaixo dela.
+    assert ciclo.name == "Ciclo de conversão de caixa (dias)"
     assert all(t.line.dash == "dot" for t in pernas)
     assert ciclo.line.dash == "solid"
     assert ciclo.line.width > pernas[0].line.width
@@ -475,3 +477,129 @@ def test_a_suite_roda_dos_dois_jeitos_de_invocar_o_pytest():
         "sem `pythonpath` o `pytest` puro não acha o pacote `app`, e o CI "
         "reprova o que a máquina aprova"
     )
+
+
+# ---------------------------------------------------------------------------
+# O nome do indicador na tela
+# ---------------------------------------------------------------------------
+
+# Radicais que **so existem sem acento por convencao de codigo**. Se um deles
+# aparece num rotulo que vai a tela, o nome da chave vazou para a interface.
+_RADICAIS_SEM_ACENTO = (
+    "medio",
+    "conversao",
+    "Divida",
+    "divida",
+    "Aliquota",
+    "Patrimonio",
+    "Depreciacao",
+    "liquida",
+    "liquido",
+    "Composicao",
+    "Variacao",
+    "Amortizacao",
+    "nao recorrente",
+)
+
+
+def _indicadores_de_uma_empresa():
+    """Todos os indicadores que o motor sabe produzir, numa companhia completa."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    contas = [
+        "receita_liquida", "custo_produtos_vendidos", "ebit", "depreciacao_amortizacao",
+        "lucro_liquido", "lucro_antes_impostos", "impostos", "contas_receber",
+        "estoques", "fornecedores", "ativo_total", "patrimonio_liquido",
+        "divida_curto_prazo", "divida_longo_prazo", "caixa_equivalentes", "capex",
+        "imobilizado", "despesas_financeiras", "ativo_circulante", "passivo_circulante",
+        "dividendos_pagos", "fluxo_operacional", "caixa_das_operacoes",
+        "variacao_capital_giro", "arrendamento_curto_prazo", "arrendamento_longo_prazo",
+        "aluguel_pago", "juros_pagos", "itens_nao_recorrentes", "aplicacoes_financeiras",
+        "receita_bruta",
+    ]
+    valores = pd.DataFrame(
+        {ano: {c: 100.0 * (i + 1) + j for j, c in enumerate(contas)}
+         for i, ano in enumerate([2023, 2024])}
+    )
+    return analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$")).indicadores
+
+
+def test_todo_indicador_tem_rotulo_acentuado_na_tela():
+    """A chave é identificador de código; o rótulo é texto de usuário.
+
+    As duas eram a mesma string e ela chegava crua à tela — "Prazo medio",
+    "Divida liquida", "Aliquota efetiva" —, com a convenção do código vazando
+    para a interface de um app inteiro em português acentuado.
+
+    A tradução mora na borda e não nas chaves: elas são usadas em
+    `referencias.BASE`, em `formulas.VERBETES`, em `pares.DIMENSOES` e nos
+    projetos salvos em disco. Renomeá-las quebraria valuation guardado para
+    ganhar um acento.
+
+    Este teste é o que impede um indicador novo de escapar: ele reprova na
+    chave, e não na tela, que é onde ninguém olharia.
+    """
+    from app.componentes import rotulo_do_indicador
+
+    escaparam = []
+    for chave in _indicadores_de_uma_empresa().index:
+        exibido = rotulo_do_indicador(chave)
+        if any(radical in exibido for radical in _RADICAIS_SEM_ACENTO):
+            escaparam.append(f"{chave!r} -> {exibido!r}")
+
+    assert not escaparam, (
+        "estes indicadores chegam à tela sem acento; acrescente-os a "
+        f"componentes.ROTULOS_DE_INDICADOR: {escaparam}"
+    )
+
+
+def test_o_mapa_de_rotulos_nao_guarda_chave_que_nao_existe():
+    """Entrada morta no mapa é pior que ausente: parece cobertura e não é.
+
+    Se um indicador for renomeado no motor, a entrada antiga fica traduzindo
+    nada e o teste acima continua passando — porque a chave nova não está no
+    mapa e não é pega. Este fecha o outro lado.
+    """
+    from app.componentes import ROTULOS_DE_INDICADOR
+
+    # Indicadores condicionais (ex-IFRS 16, recorrentes) só aparecem quando a
+    # companhia publica o que eles exigem, então o universo aqui é o dos nomes
+    # que o motor pode produzir, e não os de uma empresa só.
+    from valuation.historico import analisar  # noqa: F401  (documenta a origem)
+
+    possiveis = set(_indicadores_de_uma_empresa().index) | {
+        "Margem EBITDA recorrente",
+        "Margem EBIT recorrente",
+        "Itens nao recorrentes / EBIT",
+        "Margem EBITDA (ex-IFRS 16)",
+        "Margem EBIT (ex-IFRS 16)",
+        "Divida liquida / EBITDA (ex-IFRS 16)",
+        "Aluguel / EBITDA",
+    }
+    orfas = sorted(set(ROTULOS_DE_INDICADOR) - possiveis)
+    assert not orfas, f"entradas do mapa que nenhum indicador usa: {orfas}"
+
+
+def test_a_ponte_e_o_resumo_saem_acentuados():
+    """Rótulo de linha é texto de usuário em quatro consumidores ao mesmo tempo.
+
+    "(-) Divida bruta", "Valor por acao" e "Crescimento perpetuo" apareciam na
+    tela de Valor, no relatório, na planilha e na CLI — quatro lugares, a mesma
+    string sem acento. Foram corrigidos na origem, e não num mapa de tela,
+    porque não são chave de busca: são o que se lê.
+
+    A varredura do navegador é que os achou; nenhum teste os pegaria, porque a
+    string sempre foi a que o código pedia.
+    """
+    from valuation import avaliar
+    from valuation.entrada import carregar_empresa
+
+    resultado = avaliar(carregar_empresa("exemplos/empresa_exemplo.yaml"))
+
+    rotulos = list(resultado.resumo().index) + list(resultado.tabela_ponte().index)
+    escaparam = [r for r in rotulos if any(x in r for x in _RADICAIS_SEM_ACENTO)]
+    escaparam += [r for r in rotulos if "acao" in r or "perpetuo" in r or "explicitos" in r]
+    assert not escaparam, f"rótulos sem acento na ponte ou no resumo: {escaparam}"

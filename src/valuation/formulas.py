@@ -237,3 +237,64 @@ FORMULAS: dict[str, Formula] = {
 def formula(indicador: str) -> Formula | None:
     """A formula de um indicador, ou ``None`` se ele nao tem verbete."""
     return FORMULAS.get(indicador)
+
+
+# ---------------------------------------------------------------------------
+# O nome do indicador quando ele vai para os olhos de alguem
+# ---------------------------------------------------------------------------
+
+# **A chave do indicador e identificador de codigo; o rotulo e texto de usuario.**
+# As duas eram a mesma string, e ela chegava crua a tela e ao texto que o motor
+# escreve: "Prazo medio", "Divida liquida", "Aliquota efetiva", "Conversao de
+# caixa". Num app inteiro em portugues acentuado, essas linhas denunciavam a
+# convencao do codigo vazando para a interface.
+#
+# A traducao acontece aqui e **nao renomeando as chaves**: elas sao usadas em
+# `referencias.BASE`, nos verbetes acima, em `pares.DIMENSOES` e nos projetos
+# salvos em disco -- renomea-las quebraria valuation guardado, para ganhar um
+# acento.
+#
+# Mora no motor porque o nome nao vai so a tela: a evidencia qualitativa escreve
+# "Conversao de caixa de 55%" no proprio texto, e o relatorio e a CLI tambem.
+# Uma copia na camada de apresentacao divergiria desta na primeira mudanca.
+#
+# Entradas so para o que muda: indicador cujo nome ja esta certo (Margem EBITDA,
+# ROIC, Liquidez corrente) nao aparece aqui, e `rotulo_do_indicador` o devolve
+# como veio.
+ROTULOS_DE_INDICADOR = {
+    "Margem liquida": "Margem líquida",
+    "Aliquota efetiva de IR": "Alíquota efetiva de IR",
+    "Depreciacao / Receita": "Depreciação / Receita",
+    "Capex / Depreciacao": "Capex / Depreciação",
+    "Prazo medio de recebimento (dias)": "Prazo médio de recebimento (dias)",
+    "Prazo medio de estoque (dias)": "Prazo médio de estoque (dias)",
+    "Prazo medio de pagamento (dias)": "Prazo médio de pagamento (dias)",
+    "Divida liquida / EBITDA": "Dívida líquida / EBITDA",
+    "Divida liquida / EBITDA (ex-IFRS 16)": "Dívida líquida / EBITDA (ex-IFRS 16)",
+    "Divida bruta / Patrimonio liquido": "Dívida bruta / Patrimônio líquido",
+    "Custo da divida efetivo": "Custo da dívida efetivo",
+    "Custo da divida pelo caixa": "Custo da dívida pelo caixa",
+    "Divida de curto prazo / Divida bruta": "Dívida de curto prazo / Dívida bruta",
+    "Caixa / Divida de curto prazo": "Caixa / Dívida de curto prazo",
+    "Conversao operacional (CGO / EBITDA)": "Conversão operacional (CGO / EBITDA)",
+    "Conversao de caixa (FCO / EBITDA)": "Conversão de caixa (FCO / EBITDA)",
+    "Investimento em giro (DFC) / Receita": "Investimento em giro (DFC) / Receita",
+    "Arrendamento / Divida bruta": "Arrendamento / Dívida bruta",
+    "Ciclo de conversao de caixa (dias)": "Ciclo de conversão de caixa (dias)",
+    "Margem EBIT recorrente": "Margem EBIT recorrente",
+    "Itens nao recorrentes / EBIT": "Itens não recorrentes / EBIT",
+    "Margem EBITDA recorrente": "Margem EBITDA recorrente",
+    "Aluguel / EBITDA": "Aluguel / EBITDA",
+    "Margem EBITDA (ex-IFRS 16)": "Margem EBITDA (ex-IFRS 16)",
+    "Margem EBIT (ex-IFRS 16)": "Margem EBIT (ex-IFRS 16)",
+}
+
+
+def rotulo_do_indicador(chave: str) -> str:
+    """O nome do indicador como ele deve aparecer na tela."""
+    return ROTULOS_DE_INDICADOR.get(str(chave), str(chave))
+
+
+def rotulo_do_indicador(chave: str) -> str:
+    """O nome do indicador como ele deve aparecer para quem le."""
+    return ROTULOS_DE_INDICADOR.get(str(chave), str(chave))

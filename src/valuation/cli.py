@@ -110,10 +110,10 @@ def comando_dcf(args: argparse.Namespace) -> int:
     print(f"  Valor terminal (fim do ano n)..... {_dinheiro(dcf.valor_terminal, unidade)}")
     print(f"  VP do valor terminal.............. {_dinheiro(dcf.valor_presente_terminal, unidade)}")
     print(f"  Enterprise Value.................. {_dinheiro(dcf.enterprise_value, unidade)}")
-    print(f"  (-) Divida liquida................ {_dinheiro(-empresa.ponte.divida_liquida, unidade)}")
+    print(f"  (-) Dívida líquida................ {_dinheiro(-empresa.ponte.divida_liquida, unidade)}")
     print(f"  Equity Value...................... {_dinheiro(dcf.equity_value, unidade)}")
     if dcf.valor_por_acao is not None:
-        print(f"  Valor por acao.................... {dcf.valor_por_acao:,.2f}")
+        print(f"  Valor por ação.................... {dcf.valor_por_acao:,.2f}")
     print(f"  % do EV vindo da perpetuidade..... {_pct(dcf.peso_perpetuidade)}")
     if dcf.peso_perpetuidade > 0.75:
         print(

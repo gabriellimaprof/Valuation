@@ -23,6 +23,12 @@ import plotly.graph_objects as go
 
 from .tema import layout_base, paleta
 
+# O nome do indicador na legenda e texto de usuario, como o da tabela. O mapa
+# mora em `componentes` e e importado aqui de proposito: uma segunda copia dele
+# divergiria da primeira, e ai a legenda do grafico discordaria da linha da
+# tabela logo abaixo -- que e o pior lugar para uma discordancia aparecer.
+from .componentes import com_rotulos, rotulo_do_indicador
+
 LARGURA_LINHA = 2
 TAMANHO_MARCADOR = 8
 
@@ -48,6 +54,7 @@ def linhas_percentuais(
     e o unico caso em que series diferentes podem dividir uma escala sem
     enganar quem le.
     """
+    dados = com_rotulos(dados)
     p = paleta()
     figura = go.Figure()
 
@@ -591,10 +598,17 @@ def linhas_em_dias(
     Sem ``total``, a ultima linha e a soma, que e a ordem em que se monta a
     tabela.
     """
+    dados = com_rotulos(dados)
     p = paleta()
     figura = go.Figure()
-    nome_do_total = total if total is not None else (
-        str(dados.index[-1]) if len(dados) else ""
+    # `total` chega como a **chave** do indicador e o indice ja foi traduzido,
+    # entao ele passa pela mesma traducao -- sem isso o destaque do total se
+    # perderia calado, que e o modo de falha que a assinatura explicita existia
+    # para evitar.
+    nome_do_total = (
+        rotulo_do_indicador(total)
+        if total is not None
+        else (str(dados.index[-1]) if len(dados) else "")
     )
 
     for indice, (nome, serie) in enumerate(dados.iterrows()):
