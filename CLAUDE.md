@@ -1659,24 +1659,43 @@ testes os pegaria** — a mesma família do markdown cru e da unidade repetida:
 número: o `R$` no meio de um markdown fecha par de LaTeX. A regra continua sendo
 **por destino** — o que vai para markdown escapa, o que vai para célula não.
 
-## Contraste se mede no navegador, e o script tem três armadilhas próprias
+## Contraste se mede no navegador — e o placeholder, no pixel
 
 `tools/contraste_no_escuro.py` mede frente contra fundo nos componentes que a
 tela de Qualitativo estreia — expander e `text_area`, que vêm do Streamlit e não
 passam pelo CSS do app. Medido nos dois modos: **escuro 16,50 a 18,11; claro
 17,86 a 19,17**, contra o mínimo de 4,5.
 
-As três armadilhas viraram comentário no script, porque nenhuma dá erro:
+As armadilhas viraram comentário no script, porque nenhuma dá erro:
 
 - **`goto` abre sessão nova** e a tela devolve "importe primeiro", sem expander
   e sem campo — a mesma armadilha já documentada do `navegador.py`;
 - **o esquema do navegador tem de acompanhar o `--theme.base`**, senão a passada
   "clara" devolve os números da escura. Só apareceu porque os dois resultados
   saíram idênticos até o centésimo;
-- **o placeholder não foi medido de verdade**, e isso está declarado no próprio
-  script: `getComputedStyle(el, '::placeholder')` devolveu a cor herdada e
-  opacidade 1, então a atenuação que se vê na tela vem de onde essa leitura não
-  alcança. Medi-lo pede amostragem de pixel.
+- **`getComputedStyle` pode superestimar**, e o placeholder é a prova.
+
+**O placeholder é medido por pixel**, e a diferença justifica o trabalho:
+
+| | Contraste no escuro |
+|---|---|
+| `getComputedStyle` | 15,73 — cor herdada, opacidade 1 |
+| amostragem de pixel | **6,39** — (165,165,165) sobre (35,35,34) |
+
+O método: foto do `textarea` vazio, contagem de cores, fundo = a mais frequente,
+frente = a mais distante em luminância entre as que aparecem 30 vezes ou mais —
+abaixo disso é antialiasing.
+
+Medido nos dois modos, com `tools/contraste.py` percorrendo cinco telas e
+guardando o pior par de cada elemento:
+
+| | Placeholder | Demais |
+|---|---|---|
+| escuro | 6,39 | 15,73 a 18,11 |
+| claro | **4,99** | 17,86 a 19,17 |
+
+**O claro passa por 0,49 de margem** sobre o mínimo de 4,5 — é o único par do
+app que anda perto do limite, e fica registrado por isso.
 
 ## O menu colapsa a partir de 10 itens, e some com o fim do caminho
 
@@ -2109,6 +2128,15 @@ Em ordem de valor:
    (`_nao_se_aplica_ao_banco`); o módulo não, e a tela nova herdaria o defeito.
    O corte ficou em `_com_referencia` e não em cada bloco — o percentil aparece
    em **oito lugares**, e esquecer um devolveria justamente o número enganoso.
+
+   **E o problema era maior que o percentil.** Os *indicadores* também não
+   transferem: medido no Bradesco, a rivalidade sai como "margem EBITDA de 4,5%"
+   e a barreira de entrada como "capex de 3,9% da receita" — um banco não se
+   monta com capex, se monta com licença e capital regulatório. O relatório já
+   recusava a seção inteira no caminho do banco; **a tela não recusava**, e a
+   proteção existia num consumidor e não no outro.
+   `qualitativo.por_que_nao_se_aplica` põe a razão no motor, onde os dois a
+   compartilham.
 9. **O universo de pares e os percentis avisam quando ficam para trás.** Eles são
    construídos uma vez e lidos muitas, e não se atualizam sozinhos: quando sai
    DFP nova o app passava a comparar contra uma base antiga **com a mesma
