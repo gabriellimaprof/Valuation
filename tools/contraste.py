@@ -33,6 +33,11 @@ from playwright.sync_api import sync_playwright
 # WCAG AA para texto normal. As telas usam corpos de 0,74rem a 1rem, entao vale
 # este limite e nao o de texto grande.
 MINIMO = 4.5
+# Acima do minimo mas perto dele. **Nao reprova** -- reprovar aqui seria pinar um
+# numero, e o padrao e o AA. Serve para a estreiteza aparecer: medido, o
+# placeholder fica em 4,99 e a legenda em 5,12 no modo claro, e um passo mais
+# claro no tema derruba os dois sem nada acusar.
+ESTREITO = 5.5
 
 # Telas percorridas. Sao as que trazem os componentes de risco; percorrer as
 # treze custaria minutos para repetir os mesmos pares.
@@ -94,6 +99,45 @@ def _fundo_efetivo(pg, seletor: str):
         }""",
         seletor,
     )
+
+
+def _cores_do_elemento(locator):
+    """Fundo e frente de um elemento, **pela imagem**.
+
+    Vale para qualquer elemento de texto simples, e nao so para o placeholder:
+    a leitura por `getComputedStyle` devolve a cor declarada, e o que o olho ve
+    e o pixel depois de opacidade, mistura e antialiasing. No placeholder a
+    diferenca foi de 15,73 para 6,39 -- razao suficiente para desconfiar dos
+    demais em vez de supor que so ele mentia.
+
+    O **fundo** e a cor mais frequente (o elemento e quase todo fundo) e a
+    **frente** e a mais distante dele em luminancia entre as que aparecem o
+    bastante para nao ser transicao de traco.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        bruto = locator.screenshot()
+    except Exception:  # noqa: BLE001 -- elemento fora de vista ou sem caixa
+        return None
+
+    imagem = Image.open(io.BytesIO(bruto)).convert("RGB")
+    dados = imagem.tobytes()
+    cores = Counter(
+        (dados[i], dados[i + 1], dados[i + 2]) for i in range(0, len(dados), 3)
+    )
+    if len(cores) < 2:
+        return None
+    fundo = cores.most_common(1)[0][0]
+    # 30 pixels: acima do respingo de antialiasing e abaixo de qualquer traco de
+    # letra numa caixa desse tamanho.
+    candidatos = [c for c, n in cores.items() if n >= 30 and c != fundo]
+    if not candidatos:
+        return None
+    frente = max(candidatos, key=lambda c: abs(_luminancia(c) - _luminancia(fundo)))
+    return contraste(frente, fundo), frente, fundo
 
 
 def _placeholder_por_pixel(pg):
@@ -176,7 +220,20 @@ def _medir_a_tela(pg) -> list[tuple]:
             alfa = 1.0
         if alfa < 1:
             frente = tuple(f * alfa + b * (1 - alfa) for f, b in zip(frente, fundo))
-        resultados.append((nome, contraste(frente, fundo), frente, fundo))
+
+        # **O pixel manda quando os dois discordam.** Ele e o que o olho ve; o
+        # estilo e o que o CSS declara. Onde nao da para fotografar (elemento
+        # sem caixa, fora de vista), fica o estilo -- com o valor de antes, e
+        # nao com nenhum.
+        por_estilo = contraste(frente, fundo)
+        amostra = _cores_do_elemento(pg.locator(seletor).first)
+        if amostra is not None:
+            razao, frente, fundo = amostra
+            if abs(razao - por_estilo) >= 1.0:
+                nome = f"{nome} (pixel; estilo dizia {por_estilo:.2f})"
+        else:
+            razao = por_estilo
+        resultados.append((nome, razao, frente, fundo))
 
     amostra = _placeholder_por_pixel(pg)
     if amostra is not None:
@@ -237,7 +294,12 @@ def medir(porta: str, esquema: str = "dark") -> int:
         for nome, (razao, frente, fundo, tela) in sorted(
             piores.items(), key=lambda kv: kv[1][0]
         ):
-            marca = "" if razao >= MINIMO else "  <-- REPROVA"
+            if razao < MINIMO:
+                marca = "  <-- REPROVA"
+            elif razao < ESTREITO:
+                marca = "  <-- margem estreita"
+            else:
+                marca = ""
             print(
                 f"{nome:26s} {tela:14s} "
                 f"{str(tuple(int(c) for c in frente)):17s} "

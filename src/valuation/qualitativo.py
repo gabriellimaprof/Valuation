@@ -473,6 +473,124 @@ def _vrio_organizacao(analise) -> Evidencia:
     )
 
 
+def reunir_vrio_do_banco(historico, ke: float, beta_indiferenca=None) -> list[Evidencia]:
+    """VRIO com os numeros que **valem** para uma instituicao financeira.
+
+    Recusar a secao era certo -- margem EBITDA e capex nao descrevem um banco --,
+    mas deixar a pergunta do fosso sem nada e pior do que preciso: num banco ela
+    e **a** pergunta, e o app ja calcula o que a sustenta. O que faltava era usar
+    a serie certa.
+
+    As tres que trocam de indicador:
+
+    ==============  ==========================================================
+    Valor           ROE contra o Ke, que e a propria conta do lucro residual
+    Imitabilidade   por quantos exercicios o ROE resistiu acima do Ke, mais o
+                    **beta de indiferenca** -- o quanto a conclusao aguenta de
+                    erro no parametro que a decide
+    Organizacao     payout e retencao: reter com ROE abaixo do Ke destroi mais
+                    rapido, e e o par que se le
+    ==============  ==========================================================
+
+    **Raridade continua sem numero, e a ausencia e medida e nao preguica.** Nao
+    ha universo de bancos medido em `referencias.BASE` -- ele exclui instituicao
+    financeira de proposito --, entao um percentil ali compararia o banco com
+    companhias a que ele nao pertence. Sao 19 instituicoes na base de 2024, e
+    quantil sobre 19 e ruido: publicar um daria aparencia de medida a um chute.
+    """
+    if historico is None:
+        return []
+
+    roe = historico.roe_mediano
+    payout = historico.payout_mediano
+    serie = historico.roe.dropna() if historico.roe is not None else None
+
+    valor = []
+    if np.isfinite(roe) and np.isfinite(ke):
+        folga = roe - ke
+        valor.append(f"ROE mediano de {_pct(roe)} contra Ke de {_pct(ke)}.")
+        valor.append(
+            f"O lucro residual contribui **{'positivo' if folga > 0 else 'negativo'}**: "
+            + (
+                f"cada real retido rende {_pct(folga)} acima do exigido."
+                if folga > 0
+                else f"cada real retido rende {_pct(abs(folga))} **abaixo** do "
+                "exigido, e crescer assim destrói valor sobre o livro."
+            )
+        )
+
+    imitabilidade = []
+    if serie is not None and not serie.empty and np.isfinite(ke):
+        acima = int((serie > ke).sum())
+        imitabilidade.append(
+            f"O ROE superou o Ke em {acima} dos {len(serie)} exercícios apurados."
+        )
+    if beta_indiferenca is not None and np.isfinite(beta_indiferenca):
+        imitabilidade.append(
+            f"**Beta de indiferença de {_numero(beta_indiferenca)}** — é o beta em "
+            "que o Ke iguala o ROE e a vantagem zera. Quanto mais longe do beta "
+            "plausível, mais a conclusão sobrevive ao erro do parâmetro, que "
+            "aqui é valor de referência e não medido contra série de preços."
+        )
+
+    organizacao = []
+    if np.isfinite(payout):
+        organizacao.append(f"Distribui {_pct(payout)} do lucro.")
+        if np.isfinite(roe) and np.isfinite(ke):
+            organizacao.append(
+                "Reter com ROE acima do Ke amplia a vantagem; reter com ROE "
+                "abaixo a destrói mais rápido. O par é que se lê."
+                if roe > ke
+                else "**Com ROE abaixo do Ke, reter destrói mais que distribuir** "
+                "— o payout passa a ser decisão de alocação, e não sobra."
+            )
+
+    return [
+        Evidencia(
+            tema="VRIO — Valor (banco)",
+            pergunta="O banco ganha acima do custo do capital próprio?",
+            medido=valor,
+            limite=(
+                "ROE acima do Ke diz que houve valor, não de onde ele vem: "
+                "spread de crédito, tarifa, custo de funding e alavancagem "
+                "produzem o mesmo ROE e resistem de formas diferentes."
+            ),
+        ),
+        Evidencia(
+            tema="VRIO — Raridade (banco)",
+            pergunta="Quantos concorrentes têm a mesma franquia?",
+            medido=[],
+            limite=(
+                "**Sem número, e a ausência é medida.** O universo de referência "
+                "exclui instituições financeiras de propósito, e as 19 da base "
+                "de 2024 são poucas demais para um quantil — publicar um daria "
+                "aparência de medida a um chute. Raridade aqui se discute por "
+                "base de depósito, custo de funding e canal."
+            ),
+        ),
+        Evidencia(
+            tema="VRIO — Imitabilidade (banco)",
+            pergunta="O que impede um concorrente de replicar essa rentabilidade?",
+            medido=imitabilidade,
+            limite=(
+                "Licença, capital regulatório, marca e capilaridade são as "
+                "barreiras reais, e nenhuma aparece em demonstração padronizada. "
+                "Persistência de ROE é sintoma, e sintoma não é causa."
+            ),
+        ),
+        Evidencia(
+            tema="VRIO — Organização (banco)",
+            pergunta="A alocação de capital captura o que a franquia permite?",
+            medido=organizacao,
+            limite=(
+                "Payout e retenção não dizem nada sobre **capital regulatório**, "
+                "que é o que de fato limita quanto um banco pode reter e crescer. "
+                "Este app não modela índice de Basileia."
+            ),
+        ),
+    ]
+
+
 def reunir_vrio(analise, resultado=None) -> list[Evidencia]:
     """As quatro perguntas de Barney, na ordem em que se respondem.
 

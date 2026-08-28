@@ -47,11 +47,11 @@ def render() -> None:
     recusa = por_que_nao_se_aplica(analise)
     if recusa is not None:
         st.warning(recusa)
-        st.caption(
-            "As perguntas continuam suas para responder — o que falta é a "
-            "evidência, e ela pede indicadores de banco que este app não monta: "
-            "custo de funding, composição da carteira, índice de capital."
-        )
+        # **Recusar o indicador errado nao e ficar sem evidencia.** Num banco a
+        # pergunta do fosso e *a* pergunta, e o app ja calcula o que a sustenta:
+        # ROE contra Ke, persistencia e o beta de indiferenca. O que faltava era
+        # usar a serie certa em vez da industrial.
+        _vrio_de_banco(analise, estado.respostas_qualitativas())
         return
 
     resultado = estado.resultado()
@@ -82,6 +82,43 @@ def render() -> None:
         )
         _blocos(reunir_vrio(analise, resultado), respondidas)
 
+    _placar(respondidas)
+
+
+def _vrio_de_banco(analise, respondidas: dict[str, str]) -> None:
+    """O VRIO com os números que valem para instituição financeira."""
+    from valuation.bancos import beta_de_indiferenca, sugerir_premissas_do_banco
+    from valuation.qualitativo import reunir_vrio_do_banco
+
+    empresa = estado.empresa()
+    try:
+        sugestao = sugerir_premissas_do_banco(analise.demonstracoes)
+    except Exception:  # noqa: BLE001 -- balanco que o modelo do banco não lê
+        st.caption(
+            "Não consegui montar o histórico do banco a partir destas "
+            "demonstrações, então nem a evidência específica de instituição "
+            "financeira está disponível."
+        )
+        return
+
+    resultado = estado.resultado()
+    ke = resultado.custo_capital.ke_brl if resultado is not None else float("nan")
+    beta = None
+    try:
+        beta = beta_de_indiferenca(
+            empresa.custo_capital, empresa.macro, sugestao.historico.roe_mediano
+        )
+    except Exception:  # noqa: BLE001 -- sem ROE não há beta de indiferença
+        beta = None
+
+    st.divider()
+    secao("O que vale para um banco")
+    st.caption(
+        "As mesmas quatro perguntas, com ROE contra Ke no lugar de margem e "
+        "capex. **Raridade continua sem número** — são 19 instituições na base "
+        "de 2024, e quantil sobre 19 é ruído."
+    )
+    _blocos(reunir_vrio_do_banco(sugestao.historico, ke, beta), respondidas)
     _placar(respondidas)
 
 

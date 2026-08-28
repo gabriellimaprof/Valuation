@@ -52,7 +52,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -e ".[app,dev]" playwright
+      - run: pip install -e ".[app,dev]" playwright pillow
       - run: python -m playwright install --with-deps chromium
       - name: sobe o app
         run: |
@@ -64,6 +64,33 @@ jobs:
             sleep 2
           done
       - run: python tools/navegador.py 8501
+      # A varredura tambem percorre a serie trimestral: ela tem colunas
+      # propositalmente vazias, e defeito ali se le como numero errado.
+      - run: python tools/navegador.py 8501 --trimestral
+
+      # **O contraste e a unica verificacao que pega esse tipo de regressao.**
+      # `pytest` confere que as cores sao as da paleta; contraste e propriedade
+      # de **renderizacao**, e so aparece medindo frente contra fundo no
+      # navegador. Os dois pares mais apertados do app (placeholder 4,99 e
+      # legenda 5,12 no claro) passam por pouco -- sem esta guarda, um passo
+      # mais claro no tema os derruba sem nada acusar.
+      #
+      # Precisa de duas instancias porque `--theme.base` e do servidor: medir os
+      # dois modos no mesmo app mediria o mesmo tema duas vezes, que foi
+      # exatamente o erro que a primeira versao do script cometeu.
+      - name: sobe o app nos dois temas
+        run: |
+          for tema in dark light; do
+            porta=$([ "$tema" = dark ] && echo 8601 || echo 8602)
+            nohup python -m streamlit run app/main.py               --server.port "$porta" --server.headless true               --theme.base "$tema"               --browser.gatherUsageStats false > "streamlit-$tema.log" 2>&1 &
+            for _ in $(seq 1 60); do
+              curl -sf "http://localhost:$porta" > /dev/null && break
+              sleep 2
+            done
+          done
+      - run: python tools/contraste.py 8601
+      - run: python tools/contraste.py 8602 --claro
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

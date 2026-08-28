@@ -181,3 +181,64 @@ def test_raridade_marca_o_indicador_incomum(analise_rica):
     assert raridade.medido, "sem percentil nao ha o que dizer sobre raridade"
     assert any("percentil" in m or "maiores" in m or "menores" in m for m in raridade.medido)
     assert 0 < PERCENTIL_INCOMUM < 1
+
+
+def test_o_vrio_do_banco_troca_a_serie_e_nao_o_framework():
+    """Recusar o indicador errado não é ficar sem evidência.
+
+    Num banco a pergunta do fosso é *a* pergunta, e o app já calcula o que a
+    sustenta — ROE contra Ke, persistência e o beta de indiferença. O que
+    faltava era usar a série certa em vez da industrial: margem EBITDA e capex
+    sobre receita não descrevem uma instituição financeira.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from valuation.qualitativo import reunir_vrio_do_banco
+
+    class _Historico:
+        roe = pd.Series([0.18, 0.19, 0.17], index=[2022, 2023, 2024])
+        payout = pd.Series([0.4, 0.4, 0.4], index=[2022, 2023, 2024])
+        roe_mediano = 0.18
+        payout_mediano = 0.40
+
+    blocos = reunir_vrio_do_banco(_Historico(), ke=0.1335, beta_indiferenca=2.01)
+    temas = [b.tema for b in blocos]
+    assert temas == [
+        "VRIO — Valor (banco)",
+        "VRIO — Raridade (banco)",
+        "VRIO — Imitabilidade (banco)",
+        "VRIO — Organização (banco)",
+    ]
+
+    valor = blocos[0]
+    assert "ROE" in " ".join(valor.medido) and "Ke" in " ".join(valor.medido)
+    # Nenhum bloco pode citar indicador industrial.
+    texto = " ".join(m for b in blocos for m in b.medido)
+    for industrial in ("EBITDA", "Capex", "capex"):
+        assert industrial not in texto, texto
+
+    # Raridade fica **sem numero**, e a ausencia e declarada com o motivo.
+    raridade = blocos[1]
+    assert raridade.medido == []
+    assert "19" in raridade.limite, "o motivo tem de trazer o tamanho da base"
+
+    # O beta de indiferenca entra na imitabilidade: e o quanto a conclusao
+    # aguenta de erro no parametro que a decide.
+    assert "indiferença" in " ".join(blocos[2].medido)
+
+
+def test_o_vrio_do_banco_le_o_par_roe_payout():
+    """Reter com ROE abaixo do Ke destrói mais rápido — e o texto muda."""
+    import pandas as pd
+
+    from valuation.qualitativo import reunir_vrio_do_banco
+
+    class _Fraco:
+        roe = pd.Series([0.11, 0.12], index=[2023, 2024])
+        payout = pd.Series([0.4, 0.4], index=[2023, 2024])
+        roe_mediano = 0.115
+        payout_mediano = 0.40
+
+    organizacao = reunir_vrio_do_banco(_Fraco(), ke=0.1335)[3]
+    assert "destrói mais que distribuir" in " ".join(organizacao.medido)
