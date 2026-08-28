@@ -133,11 +133,26 @@ def test_a_tela_diz_a_idade_dos_percentis_que_cita(weg):
 
     Sem este aviso o app cita percentis de uma safra antiga com a mesma aparência
     de atual — o pior tipo de número desatualizado é o que não se anuncia.
+
+    **O aviso depende de haver DFP no cache**, e a dependência é deliberada:
+    `referencias.safra` devolve `None` sem base local, porque sem ela não há
+    como afirmar que a medição envelheceu — afirmar assim mesmo seria inventar.
+
+    Este teste passava na máquina do desenvolvedor e **falhava no CI**, onde não
+    há cache: ele afirmava a mensagem sem checar a condição que a produz. As
+    duas pontas agora são verificadas, e é a segunda que faltava.
     """
+    from valuation.referencias import safra
+
     teste = _rodar(weg)
     texto = " ".join(
         [c.value for c in teste.caption] + [w.value for w in teste.warning]
     )
+    if safra() is None:
+        assert "Percentis medidos" not in texto, (
+            "sem DFP no cache o app não pode afirmar a idade da safra"
+        )
+        return
     assert "Percentis medidos" in texto or "percentis estão" in texto, texto
 
 
