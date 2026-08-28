@@ -1659,6 +1659,25 @@ testes os pegaria** — a mesma família do markdown cru e da unidade repetida:
 número: o `R$` no meio de um markdown fecha par de LaTeX. A regra continua sendo
 **por destino** — o que vai para markdown escapa, o que vai para célula não.
 
+## Contraste se mede no navegador, e o script tem três armadilhas próprias
+
+`tools/contraste_no_escuro.py` mede frente contra fundo nos componentes que a
+tela de Qualitativo estreia — expander e `text_area`, que vêm do Streamlit e não
+passam pelo CSS do app. Medido nos dois modos: **escuro 16,50 a 18,11; claro
+17,86 a 19,17**, contra o mínimo de 4,5.
+
+As três armadilhas viraram comentário no script, porque nenhuma dá erro:
+
+- **`goto` abre sessão nova** e a tela devolve "importe primeiro", sem expander
+  e sem campo — a mesma armadilha já documentada do `navegador.py`;
+- **o esquema do navegador tem de acompanhar o `--theme.base`**, senão a passada
+  "clara" devolve os números da escura. Só apareceu porque os dois resultados
+  saíram idênticos até o centésimo;
+- **o placeholder não foi medido de verdade**, e isso está declarado no próprio
+  script: `getComputedStyle(el, '::placeholder')` devolveu a cor herdada e
+  opacidade 1, então a atenuação que se vê na tela vem de onde essa leitura não
+  alcança. Medi-lo pede amostragem de pixel.
+
 ## O menu colapsa a partir de 10 itens, e some com o fim do caminho
 
 Com a tela de Qualitativo o app passou de 12 para 13 passos, e o Streamlit
@@ -2079,7 +2098,17 @@ Em ordem de valor:
    erode, e o achado `fosso_perpetuo` converte a hipótese em preço, do jeito do
    DCF reverso — recalcula o terminal com `ROIC = WACC`, o mundo em que a
    vantagem se dissipa. Na empresa de partida, ROIC perpétuo de 20% vale **11,7%
-   do equity**; de 30%, **18,6%**.
+   do equity**; de 30%, **18,6%**. A evidência do fosso aparece **ao lado do
+   campo**, em Premissas: quem escolhe o ROIC perpétuo escolhe antes de ver
+   Qualitativo, e o balizador ali responde "é muito para esta empresa?" mas não
+   "por que ela conseguiria manter?".
+
+   **E o percentil recusa banco.** O universo de referência exclui bancos e
+   seguradoras de propósito, então compará-los contra ele produz um número com
+   aparência de informação. O relatório já tinha essa consciência
+   (`_nao_se_aplica_ao_banco`); o módulo não, e a tela nova herdaria o defeito.
+   O corte ficou em `_com_referencia` e não em cada bloco — o percentil aparece
+   em **oito lugares**, e esquecer um devolveria justamente o número enganoso.
 9. **O universo de pares e os percentis avisam quando ficam para trás.** Eles são
    construídos uma vez e lidos muitas, e não se atualizam sozinhos: quando sai
    DFP nova o app passava a comparar contra uma base antiga **com a mesma
