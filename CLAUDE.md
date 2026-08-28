@@ -6,7 +6,7 @@ em qualquer coisa.
 
 ## O que é
 
-Um app Streamlit em dez telas, por cima de um motor de valuation em Python.
+Um app Streamlit em treze telas, por cima de um motor de valuation em Python.
 Importa demonstrações financeiras, analisa o histórico, projeta o futuro, monta
 o custo de capital, desconta os fluxos, decompõe o retorno esperado, testa
 sensibilidade, critica o próprio modelo e exporta uma planilha Excel com
@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1067 testes
+pytest                        # 1073 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.067 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.073 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1659,6 +1659,22 @@ testes os pegaria** — a mesma família do markdown cru e da unidade repetida:
 número: o `R$` no meio de um markdown fecha par de LaTeX. A regra continua sendo
 **por destino** — o que vai para markdown escapa, o que vai para célula não.
 
+## O menu colapsa a partir de 10 itens, e some com o fim do caminho
+
+Com a tela de Qualitativo o app passou de 12 para 13 passos, e o Streamlit
+escondeu **Diagnóstico, Qualitativo e Exportar** atrás de um `View 3 more` — em
+inglês, num app em português, e justamente as três telas que fecham o trabalho.
+
+**Nenhum teste pegaria**: o menu monta, as páginas existem e o `AppTest` não
+renderiza a barra lateral. Foi a varredura no navegador que achou, contando 10
+telas onde deviam ser 13. `st.navigation(..., expanded=True)` resolve.
+
+Junto, o teste do caminho deixou de pinar `len(PASSOS) == 12` — que virava falha
+sozinho ao acrescentar tela legítima, o mesmo defeito dos testes que pinavam a
+safra — e passou a exigir a **propriedade**: as chaves de `main.TELAS` e as de
+`navegacao.PASSOS` são o mesmo conjunto. Tela sem passo fica inalcançável, passo
+sem tela quebra o menu, e nenhum dos dois aparece como erro até alguém clicar.
+
 ## O balizador: o número que você digita, contra duas âncoras
 
 A queixa que originou isto: *"é muita opção, pouca explicação, e muita info que
@@ -2029,11 +2045,41 @@ Em ordem de valor:
    quinto do EBIT" é limiar com significado próprio e a distância para o P75 é
    pequena. O que não podia ficar era o comentário citando "47%", que media outra
    coisa: só as companhias que tinham item, e num ano só.
-8. **A seção qualitativa reúne evidência, não responde.** `qualitativo.py` traz
-   as cinco forças mais a pergunta do fosso, cada uma com o que foi medido, o
-   que os dados não alcançam e o campo do analista em branco. Ameaça de
-   substitutos aparece **sem nenhum número** — omiti-la faria parecer que a
-   pergunta não existe.
+8. **A seção qualitativa reúne evidência, não responde — e agora tem tela.**
+   `qualitativo.py` traz as cinco forças mais o fosso, e desde agora **VRIO**:
+   cada bloco com o que foi medido, o que os dados não alcançam e o campo do
+   analista. Ameaça de substitutos aparece **sem nenhum número** — omiti-la faria
+   parecer que a pergunta não existe.
+
+   As quatro perguntas de Barney não se distribuem igualmente entre medível e
+   opinável, e o módulo não finge que sim:
+
+   | | O que o app mede |
+   |---|---|
+   | **Valor** | o excedente sobre o custo de capital |
+   | **Raridade** | o percentil contra as companhias brasileiras medidas |
+   | **Imitabilidade** | quase nada — patente, contrato e marca não estão na CVM |
+   | **Organização** | conversão de caixa e reinvestimento, proxies fracos |
+
+   **Não há nota nem veredito**, e a ausência é a decisão: pontuar de 1 a 5
+   converte julgamento em número e daria ao chute aparência de medida. Há teste
+   que reprova o dia em que alguém acrescentar `nota`.
+
+   Até aqui isso existia **só no relatório exportado** — a parte que mais pede
+   julgamento era a única que não se via antes de gerar o arquivo, e não tinha
+   onde escrever. As respostas entram em `config` e **viajam no projeto salvo**,
+   pela mesma razão do preço, mas aqui a razão pesa mais: é a única parte do
+   valuation que o app não sabe recalcular. No relatório, resposta ausente sai
+   como *(não respondida)* em vez de parágrafo vazio — quem lê precisa
+   distinguir "considerou e dispensou" de "não leu".
+
+   **E o fosso passou a conversar com a perpetuidade.** O app perguntava "por
+   quanto tempo o retorno excedente resiste?" e o modelo já tinha respondido:
+   para sempre. `roic_perpetuidade` acima do WACC é afirmar que a vantagem nunca
+   erode, e o achado `fosso_perpetuo` converte a hipótese em preço, do jeito do
+   DCF reverso — recalcula o terminal com `ROIC = WACC`, o mundo em que a
+   vantagem se dissipa. Na empresa de partida, ROIC perpétuo de 20% vale **11,7%
+   do equity**; de 30%, **18,6%**.
 9. **O universo de pares e os percentis avisam quando ficam para trás.** Eles são
    construídos uma vez e lidos muitas, e não se atualizam sozinhos: quando sai
    DFP nova o app passava a comparar contra uma base antiga **com a mesma
