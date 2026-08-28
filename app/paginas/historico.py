@@ -824,21 +824,8 @@ def _composicao_do_investimento(analise) -> None:
 
     composicao = compor_investimento(analise.demonstracoes)
     if composicao is None:
-        # **Ausência declarada, e não bloco que some.** Na série trimestral a
-        # árvore publicada colapsa no ano — a coluna dela é `2026` enquanto o
-        # período é `2T26` —, então a decomposição não tem de onde sair. Sumir
-        # com o bloco faria parecer que a companhia não tem seção de
-        # investimento.
-        from valuation.importacao.series import periodo_do_rotulo
-
-        ultima = list(analise.demonstracoes.valores.columns)[-1:]
-        if ultima and periodo_do_rotulo(ultima[0]) is not None:
-            st.caption(
-                "**A abertura do fluxo de investimento não existe na série "
-                "trimestral.** A árvore publicada que o ITR traz é anual, e "
-                "abrir a seção por natureza exige as linhas do próprio período. "
-                "Importe a visão **Anual** em Dados para ver esta decomposição."
-            )
+        # Sem arvore publicada nao ha abertura: a decomposicao sai das linhas
+        # que a companhia publicou, e nao de conta canonica.
         return
 
     with st.expander(f"O fluxo de investimento, por natureza — {composicao.ano}"):

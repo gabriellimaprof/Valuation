@@ -14,6 +14,7 @@ import pytest
 from valuation import avaliar, substituir, substituir_varios
 from valuation.diagnostico import diagnosticar
 from valuation.margem import expectativas_implicitas, margem_de_seguranca
+from valuation.investimento import compor_investimento
 from valuation.relatorio import montar, sumario
 
 
@@ -201,9 +202,16 @@ def test_relatorio_completo_de_uma_companhia_de_verdade():
         diagnostico=diagnosticar(resultado, analise=analise),
         margem=margem_de_seguranca(resultado.equity_value, preco),
         expectativas=expectativas_implicitas(empresa, preco),
+        # A abertura do investimento sai da arvore publicada, e nao de conta
+        # canonica: sem passa-la o relatorio diz "nao avaliado", que e a
+        # resposta certa e nao serve para este teste, que confere o completo.
+        investimento=compor_investimento(analise.demonstracoes),
     )
 
     assert "WEG S.A." in texto
+    # A secao nova, ponta a ponta: ela existe e traz o capex separado do resto.
+    assert "Onde foi o dinheiro do investimento" in texto
+    assert "Δ TVM" in texto
     assert "Período apurado: 2023 a 2024" in texto
     assert "Veredito:" in texto
     # Nenhuma secao pode ter ficado sem conteudo.

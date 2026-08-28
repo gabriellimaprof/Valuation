@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation.diagnostico import ALERTA
 from valuation.importacao.series import ano_do_rotulo
 
 from valuation import substituir_varios
@@ -24,6 +25,31 @@ from ..componentes import (
     tabela_formatada,
 )
 from ..graficos import cascata_ponte, composicao_do_valor, fluxos_projetados
+
+
+def _holding_avisa_antes_do_numero() -> None:
+    """Equivalência pesada no EBIT: o aviso vai **onde o número aparece**.
+
+    Não há desvio como o do banco, e a diferença é deliberada: para instituição
+    financeira existe modelo alternativo pronto — o lucro residual —, e desviar
+    entrega outro número. Para uma holding o caminho certo é **soma das partes**,
+    que este app não faz; desviar deixaria o usuário sem número nenhum, o que é
+    pior que um número com a ressalva ao lado.
+
+    O achado já existe em Diagnóstico. Ele aparece aqui também porque é aqui que
+    o Equity Value é lido, e ressalva que mora duas telas adiante não alcança
+    quem só abre esta.
+    """
+    diagnostico = estado.diagnostico()
+    if diagnostico is None:
+        return
+    achado = next(
+        (a for a in diagnostico.achados if a.codigo == "equivalencia_no_ebit"), None
+    )
+    if achado is None or achado.severidade != ALERTA:
+        return
+    st.warning(f"**{achado.titulo}.** {achado.detalhe}")
+    st.caption(achado.acao)
 
 
 def render() -> None:
@@ -50,6 +76,7 @@ def render() -> None:
     unidade = empresa.unidade
     dcf = resultado.dcf
 
+    _holding_avisa_antes_do_numero()
     _cartoes(resultado, unidade)
 
     # O que o modelo assumiu e o numero sozinho nao conta. Hoje so o multiplo de

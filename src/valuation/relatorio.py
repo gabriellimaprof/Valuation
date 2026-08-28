@@ -267,6 +267,54 @@ def _ponte_do_caixa(analise) -> list[str]:
     return linhas
 
 
+def _investimento(composicao) -> list[str]:
+    """A secao de investimento aberta, com o que e capex e o que so passa ali.
+
+    Sem isto o relatorio dizia "capex de X" e o leitor nao tinha como saber se o
+    fluxo de investimento daquele ano foi ativo fixo, compra de empresa ou
+    resgate de aplicacao. Medido no DFP consolidado de 2024, **53,5% das
+    companhias movimentam TVM** dentro da secao e em **28 delas o TVM inverte o
+    sinal do fluxo** -- ler o FCI como "investimento" erra a direcao.
+    """
+    if composicao is None:
+        return [
+            "## Onde foi o dinheiro do investimento",
+            "",
+            "**Não avaliado** — depende da árvore publicada pela companhia, que "
+            "não veio nesta importação.",
+        ]
+
+    linhas = [
+        "## Onde foi o dinheiro do investimento",
+        "",
+        f"A seção de investimento do exercício {composicao.ano}, aberta por "
+        "natureza. **Nem tudo que passa por ela é capex**: aplicação e resgate "
+        "de título entram aqui e não são investimento na operação, e aquisição "
+        "de participação consome o mesmo caixa sem repor ativo.",
+        "",
+    ]
+    quadro = pd.DataFrame(
+        {"Valor": [_num(v) for _, v in composicao.linhas()]},
+        index=[rotulo for rotulo, _ in composicao.linhas()],
+    )
+    quadro.index.name = "Componente"
+    linhas.append(_tabela_markdown(quadro))
+    linhas.append("")
+    linhas.append(
+        f"**Capex** (imobilizado + intangível + outros): {_num(composicao.capex)}. "
+        f"**Entradas** (venda de ativo, de investimentos e proventos): "
+        f"{_num(composicao.entradas)}."
+    )
+    if not composicao.fecha:
+        linhas.append("")
+        linhas.append(
+            "> **O não classificado passa de 1% do total.** A leitura não "
+            "entendeu esta companhia; confira as linhas publicadas antes de usar "
+            "o número por natureza."
+        )
+    return linhas
+
+
 def _ifrs16(visao) -> list[str]:
     """As duas leituras do resultado, quando o aluguel pesa o bastante.
 
@@ -879,6 +927,7 @@ def montar(
     expectativas: pd.DataFrame | None = None,
     evidencias=None,
     vrio=None,
+    investimento=None,
     respostas_qualitativas=None,
     ifrs16=None,
     lucro_residual=None,
@@ -919,6 +968,7 @@ def montar(
         _resumo(resultado, margem),
         _historico(analise),
         _qualidade(qualidade, analise),
+        _investimento(investimento),
         _ifrs16(ifrs16),
         _premissas(resultado),
         _ponte(resultado),

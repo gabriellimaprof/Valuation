@@ -821,3 +821,45 @@ def test_trimestre_todo_zerado_nao_vira_coluna():
     assert len(tri.valores.columns) >= 3
     for coluna in tri.valores.columns:
         assert (tri.valores[coluna].fillna(0) != 0).any(), coluna
+
+
+def test_a_arvore_da_serie_carrega_todos_os_periodos():
+    """A série levava a árvore de **um período só**, com o rótulo errado.
+
+    `montar_serie` fazia `detalhe=partes[-1][1].detalhe`: numa série trimestral a
+    árvore vinha com a coluna `2026` enquanto o período era `2T26`. Quem
+    procurava a coluna do período não a achava, e a decomposição do fluxo de
+    investimento sumia — sem que nada dissesse que a árvore é que estava
+    rotulada errado.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert tri.detalhe is not None and not tri.detalhe.empty
+
+    metadados = {"codigo", "rotulo", "demonstracao", "nivel", "ordem"}
+    periodos = [c for c in tri.detalhe.columns if c not in metadados]
+    assert periodos == list(tri.valores.columns), (
+        "a árvore precisa ter uma coluna por período, com os mesmos rótulos"
+    )
+
+
+def test_a_escala_alcanca_a_arvore_trimestral():
+    """`isinstance(c, int)` deixava a coluna `"2T25"` fora da divisão.
+
+    A árvore ficava em reais ao lado de valores em R$ milhões, e a decomposição
+    do investimento saía com resíduo de seis ordens de grandeza. É o mesmo
+    defeito de sempre: **o rótulo do período não é um ano**.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    em_milhoes = tri.escalar(1e6, "R$ milhões")
+
+    metadados = {"codigo", "rotulo", "demonstracao", "nivel", "ordem"}
+    periodos = [c for c in em_milhoes.detalhe.columns if c not in metadados]
+    antes = tri.detalhe[periodos[-1]].abs().max()
+    depois = em_milhoes.detalhe[periodos[-1]].abs().max()
+    assert depois == pytest.approx(antes / 1e6, rel=1e-9), (
+        "a árvore precisa acompanhar a escala dos valores"
+    )

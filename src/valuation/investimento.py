@@ -61,18 +61,29 @@ CATEGORIAS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.I,
         ),
     ),
-    # **Imovel de renda vem antes de participacao**, e a ordem e a decisao:
-    # "Aquisicao e construcao de propriedades para investimento" contem
-    # "investimento" e e capex de shopping, nao compra de participacao. Sem esta
-    # linha, alargar participacoes para o "investimento" solto jogaria o capex
-    # de toda companhia de imovel no balde errado.
+    # **Ativo fixo vem antes de participacao**, e a ordem e a decisao. Alargar
+    # participacoes para o "investimento" solto -- necessario, porque "Alienacao
+    # de investimentos" e "Baixa de investimentos" enchiam o balde generico --
+    # capturou linhas que sao capex e citam a palavra de passagem:
+    #
+    #   Rumo    "Adicoes ao imobilizado, intangivel e **investimento**"  -5.492,7
+    #   Movida  "Adicoes ao ativo imobilizado para **investimento**"       -227,6
+    #
+    # As duas saiam como compra de participacao, e o capex delas ia a zero.
+    # Rotulo que cita ativo fixo **e** ativo fixo, mesmo dizendo "investimento";
+    # so quando nao cita nenhum e que a palavra solta significa participacao.
     (
         "imobilizado",
         re.compile(
+            r"imobiliz|ativo fixo|permanente|"
+            # Shopping e incorporadora nao escrevem "imobilizado": escrevem
+            # "propriedades para investimento", e ate a correcao o capex delas
+            # ficava fora da conta somada -- Multiplan com 37,8 no lugar de 891,0.
             r"propriedade[s]?\s+(para|de)\s+investiment|im[óo]ve[li]s?\s+para\s+renda",
             re.I,
         ),
     ),
+    ("intangivel", re.compile(r"intang[íi]|software|[áa]gio|goodwill", re.I)),
     (
         "participacoes",
         re.compile(
@@ -87,8 +98,6 @@ CATEGORIAS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.I,
         ),
     ),
-    ("imobilizado", re.compile(r"imobiliz|ativo fixo|permanente", re.I)),
-    ("intangivel", re.compile(r"intang[íi]|software|[áa]gio|goodwill", re.I)),
 )
 
 # **Direcao e um eixo proprio, e nao um detalhe de imobilizado.** A primeira

@@ -266,3 +266,44 @@ def test_recorrencia_separa_reciclagem_de_evento():
 
     # Natureza que nunca apareceu nao vira linha vazia.
     assert "Venda de investimentos (participações)" not in por_natureza
+
+
+def test_rotulo_que_cita_ativo_fixo_e_capex_mesmo_dizendo_investimento():
+    """A palavra "investimento" atravessa as duas naturezas, e a ordem decide.
+
+    Alargar participações para o "investimento" solto foi necessário -- "Alienação
+    de investimentos" e "Baixa de investimentos" enchiam o balde genérico --, mas
+    capturou linhas que **são** capex e citam a palavra de passagem. Medido contra
+    a base: a concordância com a conta somada caiu justamente nas duas abaixo, e
+    o capex delas foi a zero.
+
+    Rótulo que cita ativo fixo **é** ativo fixo; só quando não cita nenhum é que
+    "investimento" sozinho significa participação.
+    """
+    dem = _com_arvore(
+        [
+            ("6.02", "Caixa das atividades de investimento", -5_720.3),
+            ("6.02.08", "Adições ao imobilizado, intangível e investimento", -5_492.7),
+            ("6.02.03", "Adições ao ativo imobilizado para investimento", -227.6),
+        ],
+        total=-5_720.3,
+    )
+    composicao = compor_investimento(dem, 2024)
+
+    assert composicao.capex == pytest.approx(-5_720.3)
+    assert composicao.participacoes == 0.0
+
+
+def test_investimento_sozinho_continua_sendo_participacao():
+    """O contrapeso do teste acima: sem ativo fixo no rótulo, a palavra vale."""
+    dem = _com_arvore(
+        [
+            ("6.02", "Caixa das atividades de investimento", 300.0),
+            ("6.02.01", "Alienação de investimentos", 300.0),
+        ],
+        total=300.0,
+    )
+    composicao = compor_investimento(dem, 2024)
+
+    assert composicao.capex == 0.0
+    assert composicao.venda_de_investimentos == pytest.approx(300.0)

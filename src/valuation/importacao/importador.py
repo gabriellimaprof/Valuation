@@ -116,7 +116,17 @@ def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFra
     from .cvm import e_conta_por_acao
 
     copia = detalhe.copy()
-    anos = [c for c in copia.columns if isinstance(c, int)]
+    # **Coluna de periodo nao e so `int`.** Numa serie trimestral ela e `"2T26"`,
+    # e `isinstance(c, int)` a deixava de fora: a arvore ficava em reais ao lado
+    # de valores em R$ milhoes, e a decomposicao do investimento saia com um
+    # residuo de seis ordens de grandeza. Quinto sitio da mesma familia -- o
+    # rotulo do periodo nao e um ano.
+    #
+    # O criterio passa a ser pela negativa: coluna que **nao** descreve a linha
+    # e valor. Assim uma coluna nova de metadado exige ser declarada, em vez de
+    # ser dividida por engano.
+    metadados = {"codigo", "rotulo", "demonstracao", "nivel", "ordem"}
+    anos = [c for c in copia.columns if c not in metadados]
     if "codigo" not in copia.columns:
         copia[anos] = copia[anos] / divisor
         return copia

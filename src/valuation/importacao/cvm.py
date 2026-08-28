@@ -1343,7 +1343,23 @@ REGRAS_SOMADAS: tuple[RegraSomada, ...] = (
     RegraSomada(
         chave="capex",
         prefixo="6.02.",
-        inclui=re.compile(r"imobiliz|intang[ií]|ativo fixo|capex|permanente", re.I),
+        # **"Propriedade para investimento" e capex, e faltava.** A regra exigia
+        # que o rotulo citasse imobilizado ou intangivel, e shopping e
+        # incorporadora nao usam essas palavras: elas escrevem "Aquisicao e
+        # construcao de propriedades para investimento". Comparada a
+        # decomposicao por natureza em 415 companhias de 2024, a conta somada
+        # concordava em 384 (92,5%) e **as 31 que divergiam eram quase todas
+        # imobiliaria e shopping** -- Multiplan com 37,8 contra 891,0 (23x),
+        # MRV com 267,2 contra 1.248,7, Allos com 137,1 contra 512,1.
+        #
+        # O efeito ia alem da leitura: `sugerir_premissas` projeta capex pela
+        # mediana de `Capex / Receita`, entao a projecao dessas companhias
+        # nascia com uma fracao do desembolso que elas de fato fazem.
+        inclui=re.compile(
+            r"imobiliz|intang[ií]|ativo fixo|capex|permanente|"
+            r"propriedade[s]?\s+(para|de)\s+investiment",
+            re.I,
+        ),
         exclui=re.compile(
             r"venda|aliena|baixa|recebiment|resgate|receb\.|desinvestiment|"
             # Aporte em controlada nao e capex: e investimento em participacao,

@@ -156,5 +156,61 @@ def montar_serie(
         unidade=unidade,
         mapeamento=mapeamento,
         avisos=list(avisos or []),
-        detalhe=partes[-1][1].detalhe,
+        detalhe=_arvore_da_serie(partes),
     )
+
+
+# As colunas da arvore que descrevem a linha, e nao um periodo. Tudo o que nao
+# esta aqui e valor, e vira uma coluna por periodo na serie.
+_METADADOS_DA_ARVORE = ("codigo", "rotulo", "demonstracao", "nivel", "ordem")
+
+
+def _arvore_da_serie(partes) -> pd.DataFrame | None:
+    """A arvore publicada com **uma coluna por periodo**, e nao a do ultimo.
+
+    Antes a serie levava ``partes[-1][1].detalhe`` -- a arvore de um periodo so,
+    ainda rotulada com o ano daquele periodo. O efeito era silencioso e custava
+    uma tela: numa serie trimestral a arvore vinha com a coluna ``2026``
+    enquanto o periodo era ``2T26``, e quem procurava a coluna do periodo nao a
+    achava. A decomposicao do fluxo de investimento simplesmente sumia, sem que
+    nada dissesse que a arvore e que estava com o rotulo errado.
+
+    Junta pelo **codigo**, que e a identidade da linha no plano de contas. Linha
+    que so existe em alguns periodos fica com ``NaN`` nos outros -- que e a
+    resposta certa: a companhia nao publicou aquela conta ali.
+    """
+    arvores = [
+        (rotulo, dfs.detalhe)
+        for rotulo, dfs in partes
+        if getattr(dfs, "detalhe", None) is not None and not dfs.detalhe.empty
+    ]
+    if not arvores:
+        return None
+    if len(arvores) == 1:
+        return arvores[0][1]
+
+    metadados: dict[str, dict] = {}
+    valores: dict[str, dict[str, float]] = {}
+    for rotulo, arvore in arvores:
+        periodo = [c for c in arvore.columns if c not in _METADADOS_DA_ARVORE]
+        if not periodo:
+            continue
+        # Cada parte tem uma coluna de valor so -- a do proprio periodo.
+        coluna = periodo[-1]
+        for _, linha in arvore.iterrows():
+            codigo = str(linha["codigo"])
+            metadados.setdefault(
+                codigo,
+                {c: linha.get(c) for c in _METADADOS_DA_ARVORE if c in arvore.columns},
+            )
+            valores.setdefault(codigo, {})[rotulo] = linha.get(coluna)
+
+    registros = []
+    for codigo, meta in metadados.items():
+        registro = dict(meta)
+        registro.update(valores.get(codigo, {}))
+        registros.append(registro)
+    combinada = pd.DataFrame(registros)
+    if "ordem" in combinada.columns:
+        combinada = combinada.sort_values("ordem").reset_index(drop=True)
+    return combinada
