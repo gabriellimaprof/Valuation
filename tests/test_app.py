@@ -421,3 +421,28 @@ def test_nenhum_grafico_usa_eixo_secundario(serie_anual):
     ]
     for figura in figuras:
         assert not hasattr(figura.layout, "yaxis2") or figura.layout.yaxis2.title.text is None
+
+
+def test_a_suite_roda_dos_dois_jeitos_de_invocar_o_pytest():
+    """`pytest` puro e `python -m pytest` precisam achar as telas.
+
+    `app` **não é empacotado** — só `src/` entra em `packages.find` —, então os
+    sete arquivos de teste que importam telas dependiam do diretório do projeto
+    estar no `sys.path`. `python -m pytest` o põe ali; `pytest` puro, não.
+
+    Rodando de um jeito na máquina e de outro no CI, a suíte ficou **verde aqui
+    e vermelha lá**, com `ModuleNotFoundError: No module named 'app'` — e o erro
+    não era do código, era de como se invoca o pytest. O `pythonpath` no
+    `pyproject.toml` é o que faz "passou" querer dizer a mesma coisa nos dois
+    lugares, e este teste é o que impede que ele seja removido por limpeza.
+    """
+    import tomllib
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    config = tomllib.loads((raiz / "pyproject.toml").read_text(encoding="utf-8"))
+    opcoes = config["tool"]["pytest"]["ini_options"]
+    assert "." in opcoes.get("pythonpath", []), (
+        "sem `pythonpath` o `pytest` puro não acha o pacote `app`, e o CI "
+        "reprova o que a máquina aprova"
+    )

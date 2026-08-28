@@ -27,3 +27,13 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# **`app` nao e empacotado** -- so `src/` entra em `packages.find` --, entao os
+# sete arquivos de teste que importam telas dependiam do diretorio do projeto
+# estar no `sys.path`. `python -m pytest` o poe ali; `pytest` puro, nao.
+#
+# Rodando de um jeito na maquina e de outro no CI, a suite ficou verde aqui e
+# vermelha la, com `ModuleNotFoundError: No module named 'app'` -- e o erro nao
+# era do codigo, era de como se invoca o pytest. Declarar o caminho aqui faz os
+# dois jeitos valerem, que e o unico desfecho em que "passou" quer dizer a mesma
+# coisa nos dois lugares.
+pythonpath = ["."]
