@@ -1686,11 +1686,23 @@ O método: foto do `textarea` vazio, contagem de cores, fundo = a mais frequente
 frente = a mais distante em luminância entre as que aparecem 30 vezes ou mais —
 abaixo disso é antialiasing.
 
-**E a amostragem foi estendida a todos os alvos**, o que achou mais um número
-errado meu: a legenda não era 18,11 — é **7,09** no escuro e **5,12** no claro.
-Captions são atenuadas, e o `getComputedStyle` no `p` devolvia a cor herdada,
-do mesmo jeito que fazia com o placeholder. Onde os dois discordam por mais de
-1,0 o script mostra os dois números, para a diferença não sumir.
+**A amostragem achou mais um número errado meu**: a legenda não era 18,11 — é
+**6,90** no escuro e **5,20** no claro. Captions são atenuadas, e o
+`getComputedStyle` no `p` devolvia a cor herdada, do mesmo jeito que fazia com o
+placeholder. A coluna `estilo` mostra a discordância quando ela passa de 1,0.
+
+**Mas generalizá-la para qualquer elemento produziu falso positivo duas vezes**,
+e as duas ficaram registradas no código: num elemento com borda a cor "mais
+distante do fundo" é a **borda** (o cabeçalho do expander saiu em 1,40, como se
+o texto tivesse sumido), e tornar o limiar proporcional à área **piorou** —
+num elemento grande, meio por cento da área é mais do que o miolo da letra
+ocupa. `ALVOS` passa a declarar onde o pixel vale: texto simples, sem borda,
+fundo chapado. No resto vale o estilo, que erra para o lado de superestimar.
+Ferramenta que grita lobo é pior que uma que mede menos.
+
+**A tabela publicada entrou nos alvos**, e o script reproduz **exatamente** os
+pares que este arquivo documenta — validação cruzada independente: no claro,
+negativo 5,09, cabeçalho 5,39 e nível 5 7,73.
 
 Medido nos dois modos, com `tools/contraste.py` percorrendo cinco telas e
 guardando o pior par de cada elemento:
@@ -2065,6 +2077,30 @@ Em ordem de valor:
    incerteza do parâmetro. Já Bradesco e Santander viram com beta de 0,72-0,78,
    que é **plausível para banco grande**: ali o app não deve afirmar destruição
    de valor, e a tela diz isso em vez de mostrar só o P/VP.
+
+   **E aí a medição corrigiu esta ressalva.** Os betas foram medidos contra o
+   IBOV, 60 retornos mensais (5 anos):
+
+   | Banco | Beta medido | Beta de indiferença |
+   |---|---|---|
+   | BTG | 1,52 | 2,15 |
+   | **Bradesco** | **1,44** | **0,72** |
+   | Itaú | 1,32 | 2,01 |
+   | Banrisul | 1,19 | — |
+   | **Santander** | **1,02** | **0,78** |
+   | Banco do Brasil | 0,90 | 1,97 |
+   | ABC Brasil | 0,86 | — |
+
+   Mediana **1,19**, contra os 0,95–1,00 embarcados. Para Bradesco e Santander o
+   beta medido fica **bem acima** do de indiferença — o cenário que os viraria
+   exigiria beta abaixo de 0,72/0,78, e a medição diz que a realidade está longe
+   disso. **A conclusão de destruição de valor neles é robusta, e não frágil**
+   como este arquivo registrava.
+
+   **Não verificado, e é o que impede mexer no padrão:** é uma medição, de uma
+   data, com beta bruto (sem ajuste de Blume) contra um índice só; Daycoval não
+   tem série no provedor. Trocar o beta embarcado move o valuation de toda
+   instituição, e o número acima é evidência para a decisão — não a decisão.
 
    Um erro que a tela cometeu e que valeu a lição: "beta em uso" mostrava o campo
    bruto da premissa (1,00) e não o que entrou no Ke (0,77, desalavancado pelo
