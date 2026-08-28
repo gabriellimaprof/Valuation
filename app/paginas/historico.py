@@ -805,6 +805,57 @@ def _conversao_em_dois_degraus(analise, qualidade) -> None:
             )
         )
 
+    _composicao_do_investimento(analise)
+
+
+def _composicao_do_investimento(analise) -> None:
+    """A seção de investimento aberta: o que é capex e o que só passa por ali.
+
+    O fluxo de investimento é lido como "quanto a empresa investiu", e em metade
+    da base ele não é isso. Medido no DFP consolidado de 2024: **53,5% das
+    companhias movimentam TVM** dentro da seção, e em **28 delas o TVM inverte o
+    sinal do fluxo** — a EZ Tec publica investimento positivo de 30,4 e teria
+    −1.535,6 sem os resgates; a Guararapes, +461,5 contra −418,6.
+
+    Aplicar em título é mover caixa de bolso, não investir. Aparecer aqui, com o
+    delta separado, é o que impede ler resgate como desinvestimento.
+    """
+    from valuation.investimento import compor_investimento
+
+    composicao = compor_investimento(analise.demonstracoes)
+    if composicao is None:
+        return
+
+    with st.expander(f"O fluxo de investimento, por natureza — {composicao.ano}"):
+        st.caption(
+            "**Nem tudo que passa pela seção de investimento é capex.** "
+            "Aplicação e resgate de TVM entram aqui e não são investimento na "
+            "operação; aquisição de participação consome o mesmo caixa e não "
+            "repõe ativo — projetar capex de manutenção a partir de um ano com "
+            "aquisição o superestima para sempre."
+        )
+        rotulos = [r for r, _ in composicao.linhas()]
+        valores = [v for _, v in composicao.linhas()]
+        st.html(
+            tabela_financeira(
+                pd.DataFrame({composicao.ano: valores}, index=rotulos),
+                {"= Fluxo de investimento publicado"},
+                "moeda",
+                analise.demonstracoes.unidade,
+            )
+        )
+        st.caption(
+            f"**Capex** (imobilizado + intangível + outros): "
+            f"{formatar(composicao.capex, 'moeda', analise.demonstracoes.unidade)}."
+            + (
+                ""
+                if composicao.fecha
+                else " **O não classificado passa de 1% do total** — a leitura "
+                "não entendeu esta companhia, e o número por natureza pede uma "
+                "olhada nas linhas publicadas antes de ser usado."
+            )
+        )
+
 
 def _retorno(analise) -> None:
     conceito("roic", "O indicador mais importante do valuation")
