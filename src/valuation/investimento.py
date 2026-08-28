@@ -61,12 +61,29 @@ CATEGORIAS: tuple[tuple[str, re.Pattern[str]], ...] = (
             re.I,
         ),
     ),
+    # **Imovel de renda vem antes de participacao**, e a ordem e a decisao:
+    # "Aquisicao e construcao de propriedades para investimento" contem
+    # "investimento" e e capex de shopping, nao compra de participacao. Sem esta
+    # linha, alargar participacoes para o "investimento" solto jogaria o capex
+    # de toda companhia de imovel no balde errado.
+    (
+        "imobilizado",
+        re.compile(
+            r"propriedade[s]?\s+(para|de)\s+investiment|im[óo]ve[li]s?\s+para\s+renda",
+            re.I,
+        ),
+    ),
     (
         "participacoes",
         re.compile(
             r"participa[çc][ãa]o|controlada|coligada|combina[çc][ãa]o de neg|"
             r"aquisi[çc][ãa]o de empresa|incorpora[çc][ãa]o|societ[áa]ri|"
-            r"investiment[oa]s? em|jv\b|joint",
+            r"jv\b|joint|redu[çc][ãa]o de capital|"
+            # "investimento" solto: medido em 2024, **320 linhas** caiam em
+            # "outras entradas" e a maioria era isto -- "Alienacao de
+            # investimentos", "Baixa de investimentos", "Recebimento pela venda
+            # de investimentos". O padrao antigo exigia "investimentos **em**".
+            r"investiment",
             re.I,
         ),
     ),
@@ -83,12 +100,18 @@ CATEGORIAS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # capital em controlada. Nada disso e capex, e tudo isso entra no caixa.
 _ENTRADA = re.compile(
     r"venda|aliena[çc]|baixa|recebiment|recebid|desinvestiment|"
-    r"redu[çc][ãa]o de capital|caixa gerado|dividendos?|juros sobre capital|jcp|"
+    r"redu[çc][ãa]o de capital|caixa gerado|dividendos?|juros sobre capital|\bjcp\b|"
     r"resgate de investiment",
     re.I,
 )
 # Proventos de investida: entram no caixa e nao sao venda de nada.
-_PROVENTOS = re.compile(r"dividendos?|juros sobre capital|jcp|rendiment", re.I)
+_PROVENTOS = re.compile(
+    r"dividendos?|juros sobre capital|\bjcp\b|rendiment|"
+    # "Juros recebidos" sozinho -- sem "sobre capital" -- e provento de
+    # investida tanto quanto o resto, e ficava em "outras entradas".
+    r"juros recebid|recebimento de juros",
+    re.I,
+)
 
 
 @dataclass(frozen=True)

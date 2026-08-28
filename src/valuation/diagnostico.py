@@ -274,6 +274,8 @@ def diagnosticar(
     achados += _checar_perpetuidade_do_arrendamento(resultado)
     achados += _checar_fosso_perpetuo(resultado, analise)
     if analise is not None:
+        achados += _checar_equivalencia_no_ebit(analise)
+    if analise is not None:
         achados += _checar_contra_historico(resultado, analise)
     if retorno is not None:
         achados += _checar_retorno(resultado, retorno)
@@ -1104,6 +1106,94 @@ def _checar_fosso_perpetuo(
                 "ROIC de perpetuidade em direção ao WACC e veja o valor que sobra."
             ),
             referencia="Damodaran, Investment Valuation, cap. 12",
+        )
+    ]
+
+
+# Peso da equivalencia sobre o EBIT a partir do qual o descasamento entre lucro
+# e caixa deixa de ser detalhe. Medido no DFP consolidado de 2024: das 226
+# companhias com equivalencia diferente de zero, **56 passam de 10% do EBIT** e
+# **20 passam de 50%**.
+EQUIVALENCIA_RELEVANTE = 0.10
+
+
+def _checar_equivalencia_no_ebit(analise: AnaliseHistorica) -> list[Achado]:
+    """Equivalencia patrimonial esta no EBIT **por competencia**, e nao e caixa.
+
+    O FCFF projetado sai de ``NOPAT + D&A - capex - giro``, e o NOPAT vem do
+    EBIT. Onde a equivalencia pesa, o modelo desconta um lucro que **nao virou
+    dinheiro**: o que entra no caixa e o dividendo que a investida distribui, e
+    ele costuma ser menor.
+
+    Na Itausa de 2024 a equivalencia e de R$ 15.369,0 mi sobre um EBIT de
+    R$ 16.388,0 mi -- o EBIT dela e quase so equivalencia --, e os proventos
+    recebidos foram R$ 8.250,0 mi. Descontar o primeiro ao WACC avalia um lucro
+    que a companhia nao recebeu.
+
+    **O app avisa e nao corrige**, pela mesma razao de sempre: trocar
+    equivalencia por dividendo mudaria o valuation de 56 companhias em silencio,
+    e ha caso em que a retencao na investida e reinvestimento legitimo que vale
+    o que vale. O que nao pode e a diferenca ficar invisivel.
+
+    Tambem nao se soma o dividendo ao FCFF: ele e a **realizacao em caixa da
+    mesma equivalencia** que ja esta no EBIT, e somar os dois conta o lucro duas
+    vezes -- que era a correcao ingenua que este achado existe para evitar.
+    """
+    demonstracoes = analise.demonstracoes
+    ano = demonstracoes.ano_base
+    if ano is None:
+        return []
+
+    equivalencia = demonstracoes.valor("equivalencia_patrimonial", ano)
+    ebit = demonstracoes.valor("ebit", ano)
+    if not (np.isfinite(equivalencia) and np.isfinite(ebit)) or not ebit:
+        return []
+    peso = equivalencia / ebit
+    if abs(peso) < EQUIVALENCIA_RELEVANTE:
+        return []
+
+    from .investimento import compor_investimento
+
+    composicao = compor_investimento(demonstracoes, ano)
+    proventos = composicao.proventos_recebidos if composicao is not None else 0.0
+    virou_caixa = (
+        f"No mesmo exercício entraram {_num(proventos)} de dividendos e juros "
+        "recebidos das investidas — "
+        + (
+            f"**{_pct(proventos / equivalencia)} do que o resultado reconheceu**."
+            if equivalencia
+            else "a diferença é o que ficou retido nelas."
+        )
+        if proventos
+        else "**Nenhum dividendo de investida apareceu no caixa deste "
+        "exercício** — o resultado das investidas foi reconhecido e ficou lá."
+    )
+
+    return [
+        Achado(
+            codigo="equivalencia_no_ebit",
+            severidade=ALERTA if abs(peso) >= 0.50 else INFORMACAO,
+            titulo=(
+                f"A equivalência patrimonial vale {_pct(peso, 0)} do EBIT — e "
+                "ela não é caixa"
+            ),
+            detalhe=(
+                f"O EBIT de {_num(ebit)} inclui {_num(equivalencia)} de resultado "
+                "de investidas, reconhecido por **competência**. O FCFF desconta "
+                "esse lucro como se fosse caixa da operação, e ele não é: o que "
+                f"chega ao caixa é o dividendo que a investida distribui. "
+                f"{virou_caixa}"
+            ),
+            acao=(
+                "Se a companhia é uma holding, o caminho é avaliar as investidas "
+                "separadamente e somar — um FCFF ao WACC sobre lucro de "
+                "equivalência mistura duas entidades. Se são coligadas "
+                "acessórias, considere projetar a margem **sem** a equivalência e "
+                "tratar a participação como ativo não operacional na ponte. "
+                "**Não some o dividendo recebido ao FCFF**: ele é a realização da "
+                "mesma equivalência que já está no EBIT."
+            ),
+            referencia="Damodaran, Investment Valuation, cap. 16 (cross holdings)",
         )
     ]
 
