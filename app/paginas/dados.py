@@ -866,7 +866,9 @@ def _conferir_a_igualdade(ativo, passivo, unidade: str) -> None:
     é a identidade mais básica da base —, então quando não fechar o problema é
     de leitura e merece aparecer com o número.
     """
-    anos = [c for c in ativo.columns if isinstance(c, int)]
+    from valuation.importacao.importador import colunas_de_periodo
+
+    anos = colunas_de_periodo(ativo)
     if ativo.empty or not anos:
         return
 

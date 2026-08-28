@@ -360,8 +360,9 @@ def tabela_de_demonstracao(
     lado numa tela so.
     """
     from valuation.importacao.cvm import e_conta_por_acao
+    from valuation.importacao.importador import colunas_de_periodo
 
-    anos = [c for c in linhas.columns if isinstance(c, int)]
+    anos = colunas_de_periodo(linhas)
     cabecalho = "".join(f"<th>{ano}</th>" for ano in anos)
     corpo = []
     for _, linha in linhas.iterrows():

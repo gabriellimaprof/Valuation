@@ -42,6 +42,25 @@ HOLDING_SEM_RECEITA = 0.10
 RECUO = "\u2007" * 3
 
 
+# **Coluna de periodo nao e so `int`.** Numa serie trimestral ela e "2T26", e
+# `isinstance(c, int)` a deixava de fora -- defeito que ja apareceu em cinco
+# sitios: o projeto salvo gravava a arvore vazia, a escala nao alcancava a
+# arvore, e `arvore()` devolvia 34 linhas com **zero colunas** numa serie
+# trimestral, ou seja, a demonstracao publicada em branco na tela.
+#
+# O criterio e pela negativa -- coluna que **nao** descreve a linha e periodo --
+# e mora aqui, numa peca so: quatro copias da mesma regra divergem no dia em que
+# uma delas muda, e essa e a regra que este projeto ja pagou cinco vezes para
+# aprender. Coluna de metadado nova exige ser declarada, em vez de virar valor
+# por engano.
+COLUNAS_DE_METADADO = frozenset({"codigo", "rotulo", "demonstracao", "nivel", "ordem"})
+
+
+def colunas_de_periodo(tabela) -> list:
+    """As colunas de valor da arvore publicada, na ordem: ano ou trimestre."""
+    return [c for c in tabela.columns if c not in COLUNAS_DE_METADADO]
+
+
 def linhas_vazias(tabela: pd.DataFrame, anos: list) -> np.ndarray:
     """Quais linhas sao zero em todo ano **e nao escondem filha com valor**.
 
@@ -125,8 +144,7 @@ def _escalar_detalhe(detalhe: pd.DataFrame | None, divisor: float) -> pd.DataFra
     # O criterio passa a ser pela negativa: coluna que **nao** descreve a linha
     # e valor. Assim uma coluna nova de metadado exige ser declarada, em vez de
     # ser dividida por engano.
-    metadados = {"codigo", "rotulo", "demonstracao", "nivel", "ordem"}
-    anos = [c for c in copia.columns if c not in metadados]
+    anos = colunas_de_periodo(copia)
     if "codigo" not in copia.columns:
         copia[anos] = copia[anos] / divisor
         return copia
@@ -196,7 +214,7 @@ class Demonstracoes:
 
         tabela = tabela.sort_values("ordem")
         if ocultar_vazias:
-            anos = [c for c in tabela.columns if isinstance(c, int)]
+            anos = colunas_de_periodo(tabela)
             tabela = tabela[~linhas_vazias(tabela, anos)]
         return tabela
 
@@ -212,7 +230,7 @@ class Demonstracoes:
         if tabela.empty:
             return pd.DataFrame()
 
-        anos = [c for c in tabela.columns if isinstance(c, int)]
+        anos = colunas_de_periodo(tabela)
         rotulos = [
             RECUO * (int(nivel) - 1) + str(rotulo)
             for nivel, rotulo in zip(tabela["nivel"], tabela["rotulo"])

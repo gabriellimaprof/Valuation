@@ -863,3 +863,44 @@ def test_a_escala_alcanca_a_arvore_trimestral():
     assert depois == pytest.approx(antes / 1e6, rel=1e-9), (
         "a árvore precisa acompanhar a escala dos valores"
     )
+
+
+def test_a_arvore_publicada_tem_coluna_na_serie_trimestral():
+    """Sexto sítio de `isinstance(c, int)`, e este saía **em branco na tela**.
+
+    A árvore publicada é montada e depois filtrada por "quais colunas são ano".
+    Numa série trimestral a coluna é `"2T26"`, e o filtro a descartava: medido na
+    WEG, `arvore("dre")` devolvia **34 linhas e zero colunas** — a demonstração
+    publicada inteira, sem um número.
+
+    O critério passou a ser pela negativa (`colunas_de_periodo`), numa peça só,
+    porque quatro cópias da mesma regra divergem no dia em que uma delas muda.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    arvore = tri.arvore("dre")
+
+    assert not arvore.empty
+    assert list(arvore.columns) == ["1T24", "2T24", "3T24", "1T25", "2T25", "3T25"]
+    assert arvore.notna().to_numpy().any(), "árvore com coluna e sem número nenhum"
+
+
+def test_coluna_de_metadado_nova_precisa_ser_declarada():
+    """O critério pela negativa tem um custo, e ele fica travado aqui.
+
+    Decidir por "não é metadado" faz uma coluna nova virar período por padrão —
+    o que é seguro para rótulo de trimestre e perigoso para metadado esquecido.
+    A contrapartida é esta: as cinco colunas que descrevem a linha estão
+    declaradas, e acrescentar uma sexta sem declará-la reprova aqui.
+    """
+    import pandas as pd
+
+    from valuation.importacao.importador import COLUNAS_DE_METADADO, colunas_de_periodo
+
+    assert COLUNAS_DE_METADADO == {"codigo", "rotulo", "demonstracao", "nivel", "ordem"}
+
+    tabela = pd.DataFrame(
+        columns=["codigo", "rotulo", "demonstracao", "nivel", "ordem", 2024, "1T25"]
+    )
+    assert colunas_de_periodo(tabela) == [2024, "1T25"]

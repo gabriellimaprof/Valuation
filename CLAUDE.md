@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1075 testes
+pytest                        # 1090 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -841,7 +841,7 @@ As regras que valem:
   serve o mesmo recorte real do Olinda que os testes do módulo já usam.
 - **O app é verificado no navegador**, com Playwright, percorrendo o fluxo real:
   `python tools/navegador.py <porta>`, com o app rodando. Ele importa a WEG pela
-  própria interface, percorre as doze telas e todas as abas de cada uma, e acusa
+  própria interface, percorre as treze telas e todas as abas de cada uma, e acusa
   exceção desenhada na página, markdown cru e rolagem horizontal.
 
   **Isso não é redundante com o `AppTest`.** O `AppTest` executa a tela em
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.075 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.090 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1529,6 +1529,99 @@ exclui.
 E o aviso traz o efeito em **pontos de margem**, porque o valor bruto engana: os
 R$ 1.045,0 mi da CBD valem 5,6 pontos e os R$ 75,4 mi da Inbrands valem 16,8 —
 a ordem se inverte.
+
+## A seção de investimento aberta, e o que ela achou no capex
+
+`capex` era conta única e o resto do `6.02` sumia — e o resto é metade da seção.
+Medido no DFP consolidado de 2024, o investimento tem **3.530 linhas** e a regra
+de capex aceita 673. As outras 2.857 nunca desapareciam do fluxo
+(`fluxo_investimento` é o total publicado), mas ninguém via **do que** eram
+feitas. A pergunta que originou isto: *"existem coisas lançadas no FCI que não
+são capex, como resgates e aplicações em TVM"*. São 381 linhas em 2024, e a
+regra de capex já as recusava corretamente — **zero delas entrava** —, mas
+ficavam num balde sem nome.
+
+`investimento.py` abre a seção por **natureza × direção**, e as duas são eixos
+independentes: "imobilizado" diz o assunto, o verbo diz se o caixa entrou ou
+saiu. A composição fecha contra o total publicado em **443 de 447 companhias
+(99,1%)**, e resíduo acima de 1% do total é declarado em vez de diluído.
+
+| Balde | O que responde |
+|---|---|
+| imobilizado, intangível, outros capex | quanto foi para ativo fixo |
+| participações | comprou empresa, e não máquina — não repõe ativo operacional |
+| **delta TVM** | aplicação menos resgate: mover caixa de bolso não é investir |
+| venda de ativos, venda de investimentos, proventos recebidos | entrou caixa |
+| não classificado | o que a leitura não entendeu, com tamanho |
+
+**O TVM inverte o sinal da seção em 28 companhias**: o FCI aparece positivo
+porque houve mais resgate que aplicação, e lido como "investiu pouco" é o
+contrário do que aconteceu.
+
+**Venda de ativo não abate o capex, mas o dinheiro entrou.** As duas coisas são
+verdade ao mesmo tempo, e o app precisa das duas: capex líquido de
+desinvestimento subestima o desembolso de manutenção, e ignorar a entrada
+subestima o caixa gerado. `caixa_livre` devolve **as duas leituras**, sem
+escolher. Medido de 2021 a 2024: 180 companhias têm venda de ativo no FCI, e em
+34 de 161 ela passa de 10% do fluxo livre — na Ultrapar, R$ 1.386,3 mi contra
+R$ 682,8 mi de FCL (203%).
+
+**E não é só venda de imobilizado.** Venda de investimentos, proventos
+recebidos, resgate de aplicação: nada disso é capex e tudo entra na geração de
+caixa. Medido: **245 companhias têm entrada no FCI**, 116 acima de 10% do FCL.
+Alargar o reconhecimento tirou **320 linhas** do balde genérico.
+
+**A separação que o dono do projeto pediu é entre recorrente e não recorrente**,
+e ela se mede pela frequência e não pelo rótulo: das 180 com venda de ativo,
+**114 (63%) a repetem em três dos quatro exercícios** — na maioria não é evento
+pontual. `FRACAO_QUE_RECORRE = 0.60` é o corte, e a frase diz o número
+("aparece em 3 dos 4 exercícios") em vez de só o veredito.
+
+**Dividendo recebido de coligada não se soma à equivalência patrimonial.** Ele é
+a realização em caixa do resultado que a equivalência já reconheceu por
+competência dentro do EBIT — contar os dois conta a mesma coisa duas vezes. O
+diagnóstico avisa quando a equivalência passa de 10% do EBIT: **56 companhias**
+em 2024, e 20 acima de 50%.
+
+### A conta somada e a decomposição discordavam, e as duas estavam erradas
+
+Medir uma contra a outra é o que achou os dois defeitos — nenhum deles quebrava
+identidade nenhuma. Concordância inicial: **384 de 415 (92,5%)**.
+
+**Shopping e incorporadora não escrevem "imobilizado".** Escrevem "propriedades
+para investimento", e o `inclui` do capex não alcançava: Multiplan com R$ 37,8
+mi de capex contra R$ 891,0 mi (23x), MRV com 267,2 contra 1.248,7, Allos com
+137,1 contra 512,1. Com a frase no padrão, a concordância vai a **398 de 417
+(95,4%)**.
+
+**E aí as 19 restantes inverteram de direção**, o que denunciou um defeito meu do
+passo anterior: alargar participações para o "investimento" solto — necessário,
+porque "Alienação de investimentos" enchia o balde genérico — capturou linhas
+que **são** capex e citam a palavra de passagem.
+
+```
+Rumo    "Adições ao imobilizado, intangível e investimento"   −5.492,7
+Movida  "Adições ao ativo imobilizado para investimento"        −227,6
+```
+
+A ordem de `CATEGORIAS` **é** a decisão: ativo fixo é testado antes de
+participação, então rótulo que cita imobilizado ou intangível é capex mesmo
+dizendo "investimento", e só quando não cita nenhum é que a palavra sozinha
+significa participação. Concordância final: **405 de 417 (97,1%)**, e as 12 que
+sobram diferem por margem pequena — duas leituras independentes convergindo.
+
+Efeito na projeção, que é onde isso decide valor:
+
+| Companhia | Capex / receita mediano |
+|---|---|
+| Multiplan | **29,9%** |
+| MRV | **26,3%** |
+| Allos | **23,2%** |
+| BR Malls | **19,4%** |
+| WEG (controle) | 4,4% |
+
+Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
+uma companhia que constrói shopping projetada como se não construísse.
 
 ## Escopo: linha existir não é o mesmo que ter dado
 

@@ -602,3 +602,115 @@ def conferir_contas_somadas(demonstracoes, ano: int | None = None) -> list[Conta
             )
         )
     return saida
+
+
+# ---------------------------------------------------------------------------
+# Linha de comando
+# ---------------------------------------------------------------------------
+
+# `python -m valuation.auditoria` estava documentado como a forma de rodar isto,
+# e o modulo nao tinha entrada nenhuma: o comando importava, saia com codigo 0 e
+# **nao imprimia nada**. Falha silenciosa em ferramenta de verificacao e o pior
+# caso possivel -- quem roda le "sem achados" onde deveria ler "nao rodou".
+
+
+# Zip vazio nao conta -- a guarda de `pares.safra()` ja separa isso --, mas o
+# exercicio **aberto** e outro caso e passa por ela. Contagem por exercicio no
+# cache, medida em agosto de 2026:
+#
+#     2023: 474    2024: 467    2025: 437    2026: **7**
+#
+# O arquivo de 2026 existe e tem conteudo de verdade: sao as companhias cujo
+# exercicio social fecha no meio do ano. Auditar essas 7 anunciando ter varrido
+# a base e o modo de falha que esta ferramenta existe para nao ter, entao o
+# padrao recua para o ultimo exercicio fechado. `--anos 2026` continua valendo
+# para quem quiser exatamente aquelas 7.
+FRACAO_DE_EXERCICIO_FECHADO = 0.5
+
+
+def _ultimo_exercicio_fechado(baixados: list[int], cache) -> int:
+    """O ultimo exercicio com base publicada, e nao o ultimo arquivo baixado."""
+    from .importacao.cvm import listar_companhias_do_ano
+
+    if len(baixados) < 2:
+        return baixados[-1]
+    # So os dois ultimos sao abertos: ler todos custaria um zip por exercicio.
+    ultimo, anterior = baixados[-1], baixados[-2]
+    quantas = len(listar_companhias_do_ano(ultimo, cache=cache))
+    antes = len(listar_companhias_do_ano(anterior, cache=cache))
+    if antes and quantas < antes * FRACAO_DE_EXERCICIO_FECHADO:
+        return anterior
+    return ultimo
+
+
+def _cli(argv: list[str] | None = None) -> int:
+    import argparse
+    from pathlib import Path
+
+    from .importacao.cvm import carregar_cadastro, listar_companhias_do_ano
+
+    analisador = argparse.ArgumentParser(
+        prog="python -m valuation.auditoria",
+        description="Varre a base da CVM e reporta achados, cobertura e o de-para de origens.",
+    )
+    analisador.add_argument(
+        "--anos",
+        default="",
+        help="Exercícios separados por vírgula (padrão: o último baixado no cache).",
+    )
+    analisador.add_argument(
+        "--cache",
+        default=str(Path.home() / ".cache" / "valuation" / "cvm"),
+        help="Pasta com os zips da CVM já baixados.",
+    )
+    analisador.add_argument(
+        "--limite", type=int, default=0, help="Audita só as N primeiras companhias."
+    )
+    analisador.add_argument(
+        "--csv", default="", help="Grava a tabela de achados neste arquivo."
+    )
+    args = analisador.parse_args(argv)
+
+    cache = Path(args.cache)
+    if args.anos:
+        anos = [int(a) for a in args.anos.split(",") if a.strip()]
+    else:
+        from .pares import _anos_de_dfp_no_cache
+
+        baixados = _anos_de_dfp_no_cache(cache)
+        if not baixados:
+            print(f"Nenhum zip de DFP com conteúdo em {cache}. Importe uma companhia primeiro.")
+            return 1
+        anos = [_ultimo_exercicio_fechado(baixados, cache)]
+
+    catalogo = carregar_cadastro(cache / "cad_cia_aberta.csv")
+    codigos = listar_companhias_do_ano(anos[-1], cache=cache)
+    if args.limite:
+        codigos = codigos[: args.limite]
+
+    print(f"Auditando {len(codigos)} companhias em {', '.join(str(a) for a in anos)}…")
+
+    def progresso(i: int, total: int) -> None:
+        if i % 50 == 0 or i == total:
+            print(f"  {i}/{total}", flush=True)
+
+    resultado = auditar_base(
+        codigos, anos, cache=cache, catalogo=catalogo, progresso=progresso
+    )
+
+    tabela = resultado.tabela()
+    print(f"\n{len(tabela)} achados em {resultado.companhias} companhias lidas.")
+    if not tabela.empty:
+        print()
+        print(tabela.to_string(index=False, max_colwidth=60))
+    if args.csv:
+        tabela.to_csv(args.csv, index=False, encoding="utf-8")
+        print(f"\nTabela gravada em {args.csv}")
+
+    # Achado nao e falha de execucao: a base tem inconsistencia publicada, e
+    # sair com codigo diferente de zero faria a ferramenta parecer quebrada.
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_cli())
