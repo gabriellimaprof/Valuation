@@ -32,6 +32,7 @@ from app.paginas import (  # noqa: E402
     inicio,
     margem,
     multiplos,
+    qualitativo,
     premissas,
     retorno,
     sensibilidade,
@@ -202,34 +203,42 @@ def _o_que_falta() -> None:
         st.page_link(alvo, label="Importar em Dados", icon=":material/database:")
 
 
+# Toda tela expoe uma funcao `render`, entao o caminho de URL precisa ser
+# declarado: sem isso o Streamlit o infere do nome da funcao e as paginas colidem
+# no mesmo endereco.
+#
+# A ordem, os titulos e os icones vivem em `navegacao.PASSOS`, e nao aqui: o
+# Inicio desenha o mesmo caminho e o rodape de cada tela linka para o proximo, e
+# tres copias da mesma lista divergem na primeira mudanca.
+#
+# Mora no modulo, e nao dentro de `main`, para que o teste possa exigir que **as
+# chaves daqui e as de `PASSOS` sejam o mesmo conjunto** -- tela sem passo fica
+# inalcancavel, passo sem tela quebra o menu, e nenhum dos dois aparece como erro
+# ate alguem clicar.
+TELAS = {
+    "inicio": inicio.render,
+    "dados": dados.render,
+    "historico": historico.render,
+    "premissas": premissas.render,
+    "custo_capital": custo_capital.render,
+    "valor": valor.render,
+    "retorno": retorno.render,
+    "margem": margem.render,
+    "sensibilidade": sensibilidade.render,
+    "multiplos": multiplos.render,
+    "diagnostico": diagnostico.render,
+    "qualitativo": qualitativo.render,
+    "exportar": exportar.render,
+}
+
+
 def main() -> None:
     estado.iniciar()
     aplicar_css()
 
-    # Toda tela expoe uma funcao `render`, entao o caminho de URL precisa ser
-    # declarado: sem isso o Streamlit o infere do nome da funcao e as doze
-    # paginas colidem no mesmo endereco.
-    #
-    # A ordem, os titulos e os icones vivem em `navegacao.PASSOS`, e nao aqui:
-    # o Inicio desenha o mesmo caminho e o rodape de cada tela linka para o
-    # proximo, e tres copias da mesma lista divergem na primeira mudanca.
-    telas = {
-        "inicio": inicio.render,
-        "dados": dados.render,
-        "historico": historico.render,
-        "premissas": premissas.render,
-        "custo_capital": custo_capital.render,
-        "valor": valor.render,
-        "retorno": retorno.render,
-        "margem": margem.render,
-        "sensibilidade": sensibilidade.render,
-        "multiplos": multiplos.render,
-        "diagnostico": diagnostico.render,
-        "exportar": exportar.render,
-    }
     paginas = {
         passo.chave: st.Page(
-            telas[passo.chave],
+            TELAS[passo.chave],
             title=passo.titulo,
             icon=passo.icone_material,
             url_path=passo.url,
@@ -239,7 +248,14 @@ def main() -> None:
     }
     navegacao.registrar(paginas)
 
-    menu = st.navigation(list(paginas.values()), position="sidebar")
+    # **`expanded=True` porque o menu colapsa sozinho a partir de 10 itens.**
+    # Com a tela de Qualitativo o app passou de 12 para 13 passos, e o Streamlit
+    # escondeu Diagnostico, Qualitativo e Exportar atras de um "View 3 more" --
+    # em ingles, num app em portugues, e justamente as tres telas do fim do
+    # caminho. Nenhum teste pegaria: o menu monta, as paginas existem, e o
+    # `AppTest` nao renderiza a barra. Foi a varredura no navegador que achou,
+    # contando 10 telas onde deviam ser 13.
+    menu = st.navigation(list(paginas.values()), position="sidebar", expanded=True)
     _barra_lateral()
     menu.run()
 

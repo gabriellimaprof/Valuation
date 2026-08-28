@@ -272,6 +272,7 @@ def diagnosticar(
     # Nao exige historico: a hipotese esta nas premissas e no resultado, e
     # vale igual para quem modelou a mao sem importar demonstracao nenhuma.
     achados += _checar_perpetuidade_do_arrendamento(resultado)
+    achados += _checar_fosso_perpetuo(resultado, analise)
     if analise is not None:
         achados += _checar_contra_historico(resultado, analise)
     if retorno is not None:
@@ -1004,6 +1005,107 @@ def _checar_arrendamento_projetado(
 # terminal e passa a ser premissa de valor. Medido: a Raia Drogasil consome 13,1%
 # do FCFF terminal com adicao de arrendamento, e o Grupo SBF, 39,2%.
 ADICAO_PERPETUA_RELEVANTE = 0.10
+
+
+# Folga do ROIC perpetuo sobre o WACC a partir da qual a hipotese deixa de ser
+# detalhe e passa a ser a afirmacao central do modelo. Faixa de leitura: o que
+# importa nao e o corte, e o **preco** da hipotese, que o achado calcula.
+FOSSO_PERPETUO_RELEVANTE = 0.02
+
+
+def _checar_fosso_perpetuo(
+    resultado: ResultadoValuation, analise: AnaliseHistorica | None
+) -> list[Achado]:
+    """ROIC perpetuo acima do WACC e dizer que o fosso nunca erode.
+
+    **A tela de Qualitativo pergunta "por quanto tempo o retorno excedente
+    resiste?", e o modelo ja respondeu: para sempre.** Ela so nao dizia isso, e
+    o analista respondia a pergunta qualitativa sem ver que a premissa dele ja
+    tinha uma resposta embutida -- e uma resposta forte.
+
+    O achado converte a hipotese em preco, do jeito que o DCF reverso faz:
+    recalcula o valor terminal com ``ROIC = WACC`` -- o mundo em que a vantagem
+    se dissipa e a empresa passa a apenas remunerar o capital -- e mostra quanto
+    do equity depende da diferenca. Nao diz que a hipotese esta errada: diz
+    quanto ela vale, que e o que permite defende-la ou baixa-la.
+
+    Quando ha historico, confronta com o que a companhia **de fato** entregou:
+    supor excedente perpetuo tendo batido o WACC em 2 de 6 anos e uma afirmacao
+    sobre mudanca, e ela precisa de motivo.
+    """
+    perpetuidade = resultado.empresa.perpetuidade
+    if perpetuidade.metodo != "gordon":
+        return []
+    roic_perp = perpetuidade.roic_perpetuidade
+    if roic_perp is None:
+        return []
+
+    dcf = resultado.dcf
+    wacc = dcf.taxa_desconto
+    folga = roic_perp - wacc
+    if not np.isfinite(folga) or folga < FOSSO_PERPETUO_RELEVANTE:
+        return []
+
+    projecao = resultado.projecao
+    try:
+        vt_sem_fosso = valor_terminal_gordon(
+            fluxo_final=float(dcf.fluxos[-1]),
+            taxa=wacc,
+            crescimento=perpetuidade.crescimento_perpetuo,
+            base_normalizada=float(projecao.nopat[-1]),
+            retorno=wacc,
+        )
+    except ValueError:  # inclui CombinacaoInviavel
+        return []
+
+    fator = 1 / (1 + wacc) ** projecao.horizonte
+    perda = dcf.valor_presente_terminal - vt_sem_fosso * fator
+    if not resultado.equity_value:
+        return []
+    peso = perda / abs(resultado.equity_value)
+
+    historico = ""
+    if analise is not None:
+        roics = analise.linha("ROIC").replace([np.inf, -np.inf], np.nan).dropna()
+        if not roics.empty:
+            acima = int((roics > wacc).sum())
+            historico = (
+                f" No período importado a empresa superou o WACC em **{acima} de "
+                f"{len(roics)}** exercícios"
+                + (
+                    ", o que sustenta a hipótese — mas sustentar o passado não é "
+                    "o mesmo que projetá-lo para sempre."
+                    if acima == len(roics)
+                    else ", então supor excedente perpétuo é uma afirmação sobre "
+                    "mudança, e ela precisa de motivo."
+                )
+            )
+
+    return [
+        Achado(
+            codigo="fosso_perpetuo",
+            severidade=INFORMACAO,
+            titulo=(
+                f"O modelo supõe fosso permanente: ROIC perpétuo de "
+                f"{_pct(roic_perp, 1)} contra WACC de {_pct(wacc, 1)}"
+            ),
+            detalhe=(
+                f"Um ROIC perpétuo {_pct(folga, 1)} acima do custo de capital diz "
+                "que a vantagem competitiva **nunca erode** — nem por entrante, "
+                "nem por substituto, nem por regulação. É a hipótese mais forte "
+                f"do modelo, e ela vale **{_pct(peso, 1)} do equity value**: é "
+                "quanto o valor cairia se o retorno convergisse ao custo de "
+                "capital, que é o que a teoria de competição prevê no longo "
+                f"prazo.{historico}"
+            ),
+            acao=(
+                "Responda em **Qualitativo** de onde vem o retorno excedente e o "
+                "que impede a cópia — se a resposta não convencer você, baixe o "
+                "ROIC de perpetuidade em direção ao WACC e veja o valor que sobra."
+            ),
+            referencia="Damodaran, Investment Valuation, cap. 12",
+        )
+    ]
 
 
 def _checar_perpetuidade_do_arrendamento(

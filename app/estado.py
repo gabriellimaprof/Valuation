@@ -118,6 +118,9 @@ def iniciar() -> None:
             "ticker": None,
             # O preco pedido, com a data e a origem. Ver `definir_preco`.
             "preco_pedido": None,
+            # As respostas do analista as perguntas de framework, por tema.
+            # Viajam no projeto salvo: e a unica parte que o app nao recalcula.
+            "respostas_qualitativas": {},
         },
     )
 
@@ -351,6 +354,39 @@ def definir_preco(
             "em": em or date.today().isoformat(),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Respostas as perguntas de framework
+# ---------------------------------------------------------------------------
+
+
+def respostas_qualitativas() -> dict[str, str]:
+    """O que o analista escreveu em cada pergunta de Porter e do VRIO."""
+    guardadas = config().get("respostas_qualitativas")
+    return dict(guardadas) if isinstance(guardadas, dict) else {}
+
+
+def definir_resposta_qualitativa(tema: str, texto: str) -> None:
+    """Guarda -- ou apaga -- a resposta de um tema.
+
+    Mora no `config` pela mesma razao do preco: o `config` viaja no projeto
+    salvo. E aqui a razao pesa mais, porque **esta e a unica parte do valuation
+    que o app nao sabe recalcular**: uma premissa perdida se redigita em
+    segundos; o paragrafo sobre de onde vem a vantagem competitiva foi pensado
+    uma vez.
+
+    Texto vazio **remove** a chave em vez de guardar string vazia -- assim
+    `respostas_qualitativas()` responde "quantas foram respondidas" sem que quem
+    pergunta precise filtrar em branco.
+    """
+    guardadas = respostas_qualitativas()
+    limpo = (texto or "").strip()
+    if limpo:
+        guardadas[tema] = limpo
+    else:
+        guardadas.pop(tema, None)
+    definir_config("respostas_qualitativas", guardadas)
 
 
 # ---------------------------------------------------------------------------

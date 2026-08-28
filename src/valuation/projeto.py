@@ -49,6 +49,12 @@ CHAVES_CONFIG = (
     # margem de seguranca, o retorno esperado e os multiplos de mercado -- tres
     # telas em branco por um numero de uma linha.
     "preco_pedido",
+    # As respostas do analista as perguntas de framework (Porter, VRIO), como
+    # ``{tema: texto}``. **E a unica parte do projeto que o app nao consegue
+    # recalcular**: premissa perdida se redigita em segundos, mas o paragrafo
+    # sobre de onde vem a vantagem competitiva foi pensado uma vez. Sem persistir
+    # isso, a secao qualitativa seria leitura, e nao trabalho.
+    "respostas_qualitativas",
 )
 
 

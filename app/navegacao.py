@@ -97,6 +97,16 @@ PASSOS: tuple[Passo, ...] = (
         "O modelo criticado por dentro, antes de você defendê-lo.",
         acao="Deixe o app criticar seu modelo",
     ),
+    # Entra **depois** do diagnostico e antes de exportar: as perguntas de
+    # framework se respondem melhor com o valor na mesa e o modelo ja criticado
+    # -- "de onde vem o retorno excedente" e outra pergunta quando se sabe que o
+    # excedente existe. Antes disto, a secao so existia no relatorio exportado.
+    Passo(
+        "qualitativo", "Qualitativo", "qualitativo", "psychology",
+        "Porter e VRIO com a evidência medida, e a resposta é sua.",
+        exige="demonstracoes",
+        acao="Responda o que os números não respondem",
+    ),
     Passo(
         "exportar", "Exportar", "exportar", "download",
         "Planilha com fórmulas vivas e o relatório em markdown.",

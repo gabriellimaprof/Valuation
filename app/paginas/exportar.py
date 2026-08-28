@@ -104,7 +104,7 @@ def _relatorio(resultado) -> None:
     from valuation.margem import expectativas_implicitas, margem_de_seguranca, valor_de_referencia
     from valuation.casos_especiais import ver_ex_ifrs16
     from valuation.qualidade import avaliar_qualidade
-    from valuation.qualitativo import reunir_evidencias
+    from valuation.qualitativo import reunir_evidencias, reunir_vrio
     from valuation.relatorio import montar, sumario
 
     st.subheader("Relatório estruturado")
@@ -169,6 +169,8 @@ def _relatorio(resultado) -> None:
             margem=margem,
             expectativas=expectativas,
             evidencias=reunir_evidencias(analise, resultado),
+            vrio=reunir_vrio(analise, resultado),
+            respostas_qualitativas=estado.respostas_qualitativas(),
             ifrs16=ver_ex_ifrs16(analise) if analise is not None else None,
             lucro_residual=banco[0] if banco else None,
             historico_do_banco=banco[1] if banco else None,

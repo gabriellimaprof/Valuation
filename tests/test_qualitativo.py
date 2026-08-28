@@ -122,3 +122,62 @@ def test_sem_evidencias_o_relatorio_diz_que_faltou(empresa_exemplo):
     texto = montar(avaliar(empresa_exemplo))
     assert "Sem histórico importado" in texto
     assert "nenhuma das perguntas de framework" in texto
+
+
+# ---------------------------------------------------------------------------
+# VRIO
+# ---------------------------------------------------------------------------
+
+
+def test_vrio_traz_as_quatro_perguntas_na_ordem_em_que_se_respondem(analise_rica):
+    """Sem valor as outras três não têm objeto; sem raridade, imitabilidade é
+    discussão sobre um recurso que todo mundo já tem."""
+    from valuation.qualitativo import reunir_vrio
+
+    temas = [e.tema for e in reunir_vrio(analise_rica)]
+    assert temas == [
+        "VRIO — Valor",
+        "VRIO — Raridade",
+        "VRIO — Imitabilidade",
+        "VRIO — Organização",
+    ]
+
+
+def test_vrio_nao_pontua_nem_da_veredito(analise_rica):
+    """Pontuar de 1 a 5 converte julgamento em número.
+
+    É a mesma decisão das cinco forças: o módulo reúne evidência e diz onde o
+    julgamento começa. Nota daria ao chute a aparência de medida.
+    """
+    from valuation.qualitativo import reunir_vrio
+
+    for evidencia in reunir_vrio(analise_rica):
+        assert not hasattr(evidencia, "nota")
+        assert not hasattr(evidencia, "veredito")
+        texto = " ".join(evidencia.medido) + evidencia.limite
+        for palavra in ("nota ", "pontuação", "score"):
+            assert palavra not in texto.lower(), texto
+
+
+def test_todo_bloco_do_vrio_declara_o_que_nao_alcanca(analise_rica):
+    """Especialmente imitabilidade, que é a que os dados menos alcançam."""
+    from valuation.qualitativo import reunir_vrio
+
+    for evidencia in reunir_vrio(analise_rica):
+        assert evidencia.limite, evidencia.tema
+
+    imitabilidade = next(
+        e for e in reunir_vrio(analise_rica) if "Imitabilidade" in e.tema
+    )
+    # A ausencia e declarada com todas as letras, e nao so implicita.
+    assert "menos alcança" in imitabilidade.limite
+
+
+def test_raridade_marca_o_indicador_incomum(analise_rica):
+    """O percentil é a única das quatro perguntas com número defensável."""
+    from valuation.qualitativo import PERCENTIL_INCOMUM, reunir_vrio
+
+    raridade = next(e for e in reunir_vrio(analise_rica) if "Raridade" in e.tema)
+    assert raridade.medido, "sem percentil nao ha o que dizer sobre raridade"
+    assert any("percentil" in m or "maiores" in m or "menores" in m for m in raridade.medido)
+    assert 0 < PERCENTIL_INCOMUM < 1

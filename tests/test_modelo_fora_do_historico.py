@@ -159,3 +159,64 @@ def test_o_aviso_sobrevive_ao_projeto_salvo(weg, de_partida, tmp_path):
             de_volta.empresa.operacionais.receita_base
             == empresa.operacionais.receita_base
         )
+
+
+def test_as_respostas_qualitativas_sobrevivem_ao_projeto_salvo(weg, de_partida, tmp_path):
+    """É a única parte do valuation que o app não sabe recalcular.
+
+    Premissa perdida se redigita em segundos; o parágrafo sobre de onde vem a
+    vantagem competitiva foi pensado uma vez. Sem persistir, a seção qualitativa
+    seria leitura e não trabalho.
+    """
+    from valuation.projeto import Projeto, carregar, salvar
+
+    respostas = {
+        "VRIO — Raridade": "ROIC no percentil 93 vem da marca e da rede.",
+        "Fosso (vantagem competitiva)": "Assistência técnica capilarizada.",
+    }
+    caminho = salvar(
+        Projeto(
+            empresa=de_partida,
+            demonstracoes=weg,
+            config={"respostas_qualitativas": respostas},
+        ),
+        tmp_path / "p.json",
+    )
+    de_volta = carregar(caminho)
+    assert de_volta.config.get("respostas_qualitativas") == respostas
+
+
+def test_o_diagnostico_precifica_o_fosso_perpetuo():
+    """ROIC perpétuo acima do WACC diz que a vantagem nunca erode.
+
+    A tela de Qualitativo pergunta "por quanto tempo o retorno excedente
+    resiste?" e o modelo já respondeu: para sempre. O achado converte a hipótese
+    em preço — recalcula o terminal com `ROIC = WACC`, o mundo em que a vantagem
+    se dissipa, e mostra quanto do equity depende da diferença.
+    """
+    import sys
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent.parent
+    if str(raiz) not in sys.path:
+        sys.path.insert(0, str(raiz))
+    from app.estado import _empresa_inicial
+
+    from valuation.diagnostico import _checar_fosso_perpetuo
+    from valuation.modelo import avaliar, substituir_varios
+
+    base = _empresa_inicial()
+
+    # Folga pequena nao acusa: o corte existe para o achado nao virar ruido.
+    perto = substituir_varios(base, {"perpetuidade.roic_perpetuidade": 0.14})
+    assert _checar_fosso_perpetuo(avaliar(perto), None) == []
+
+    # Folga grande acusa, e o detalhe traz o preco da hipotese.
+    longe = avaliar(substituir_varios(base, {"perpetuidade.roic_perpetuidade": 0.30}))
+    achados = _checar_fosso_perpetuo(longe, None)
+    assert len(achados) == 1
+    achado = achados[0]
+    assert achado.codigo == "fosso_perpetuo"
+    assert "do equity value" in achado.detalhe
+    # E manda para a tela onde a pergunta se responde.
+    assert "Qualitativo" in achado.acao

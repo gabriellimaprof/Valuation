@@ -232,6 +232,185 @@ def _fosso(analise, resultado) -> Evidencia:
     )
 
 
+# ---------------------------------------------------------------------------
+# VRIO
+# ---------------------------------------------------------------------------
+#
+# As quatro perguntas de Barney -- Valor, Raridade, Imitabilidade, Organizacao --
+# nao se distribuem igualmente entre "da para medir" e "so o analista sabe", e o
+# app nao finge que sim:
+#
+#   Valor          o excedente sobre o custo de capital, que o app calcula
+#   Raridade       o percentil contra as companhias brasileiras medidas
+#   Imitabilidade  quase nada: patente, contrato e marca nao estao na CVM
+#   Organizacao    conversao de caixa e reinvestimento, que sao proxies fracos
+#
+# **Nao ha nota nem veredito**, e a ausencia e a decisao: pontuar de 1 a 5
+# converte julgamento em numero e daria ao chute a aparencia de medida -- que e
+# exatamente o que este modulo existe para nao fazer. Cada bloco entrega o que
+# mediu e diz onde o julgamento comeca, como as cinco forcas.
+
+# Percentil a partir do qual o indicador deixa de ser comum na base. Nao e
+# raridade no sentido de Barney -- e o que faz a pergunta valer a pena.
+PERCENTIL_INCOMUM = 0.80
+
+
+def _vrio_valor(analise, resultado) -> Evidencia:
+    """A vantagem gera valor? E a unica das quatro que o app mede de frente."""
+    medido = []
+    roics = _serie(analise, "ROIC")
+    wacc = resultado.custo_capital.wacc_brl if resultado is not None else float("nan")
+    if not roics.empty and np.isfinite(wacc):
+        folga = float(roics.median() - wacc)
+        medido.append(
+            f"ROIC mediano de {_pct(float(roics.median()))} contra WACC de "
+            f"{_pct(wacc)} — folga de {_pct(folga)}."
+        )
+        medido.append(
+            "Valor, aqui, é o excedente sobre o custo de capital: sem ele as "
+            "outras três perguntas não têm objeto."
+            if folga > 0
+            else "Sem excedente sobre o custo de capital não há vantagem a "
+            "qualificar — as outras três perguntas ficam sem objeto."
+        )
+    return Evidencia(
+        tema="VRIO — Valor",
+        pergunta="O recurso permite explorar oportunidade ou neutralizar ameaça?",
+        medido=medido,
+        limite=(
+            "O excedente diz que houve valor, não de qual recurso ele veio. "
+            "Marca, rede de distribuição e contrato de longo prazo produzem o "
+            "mesmo ROIC e pedem defesas diferentes."
+        ),
+    )
+
+
+def _vrio_raridade(analise) -> Evidencia:
+    """Quantos concorrentes tem o mesmo? E a que o percentil de fato responde."""
+    medido = []
+    for indicador in ("ROIC", "Margem EBITDA", "Conversao de caixa (FCO / EBITDA)"):
+        valor = analise.mediana(indicador)
+        if not np.isfinite(valor):
+            continue
+        onde = _com_referencia(indicador, valor)
+        if not onde:
+            continue
+        posicao = referencias.posicao(indicador, valor)
+        marca = (
+            " — **incomum**"
+            if np.isfinite(posicao) and posicao >= PERCENTIL_INCOMUM
+            else ""
+        )
+        medido.append(f"{indicador} de {_pct(valor)}{onde}{marca}.")
+    if medido:
+        medido.append(
+            "Percentil alto em vários indicadores ao mesmo tempo é o que separa "
+            "**raro** de **bom ano**: um indicador sozinho oscila com o ciclo."
+        )
+    return Evidencia(
+        tema="VRIO — Raridade",
+        pergunta="Quantos concorrentes já controlam o mesmo recurso?",
+        medido=medido,
+        limite=(
+            "O percentil compara com as companhias **abertas brasileiras** que o "
+            "app mediu, e o concorrente relevante pode ser fechado, estrangeiro "
+            "ou de outro setor. Ser incomum na base não é ser raro no mercado."
+        ),
+    )
+
+
+def _vrio_imitabilidade(analise, resultado) -> Evidencia:
+    """Custa caro copiar? Aqui o app quase nao tem o que dizer, e diz isso."""
+    medido = []
+    roics = _serie(analise, "ROIC")
+    wacc = resultado.custo_capital.wacc_brl if resultado is not None else float("nan")
+    if not roics.empty and np.isfinite(wacc) and len(roics) >= ANOS_DE_RETORNO_EXCEDENTE:
+        acima = int((roics > wacc).sum())
+        medido.append(
+            f"O excedente resistiu em {acima} dos {len(roics)} anos apurados. "
+            + (
+                "Vantagem que sobrevive a vários exercícios é evidência "
+                "**indireta** de que copiar custa caro — indireta porque o "
+                "período pode simplesmente não ter tido entrante."
+                if acima >= ANOS_DE_RETORNO_EXCEDENTE
+                else "Excedente que não persiste é, na leitura mais simples, "
+                "vantagem imitável — ou que nunca existiu."
+            )
+        )
+    capex = analise.mediana("Capex / Receita")
+    if np.isfinite(capex):
+        medido.append(
+            f"Capex mediano de {_pct(capex)} da receita"
+            f"{_com_referencia('Capex / Receita', capex)} — é o capital que um "
+            "concorrente precisaria pôr para montar a mesma operação."
+        )
+    return Evidencia(
+        tema="VRIO — Imitabilidade",
+        pergunta="Quanto custa, para um concorrente, obter o mesmo recurso?",
+        medido=medido,
+        limite=(
+            "**Esta é a pergunta que os dados menos alcançam.** Patente, marca, "
+            "contrato de concessão, custo de troca e efeito de rede não aparecem "
+            "em demonstração padronizada. Persistência de ROIC é sintoma, e "
+            "sintoma não é causa: o que impede a cópia só a pesquisa diz."
+        ),
+    )
+
+
+def _vrio_organizacao(analise) -> Evidencia:
+    """A empresa esta organizada para capturar o que a vantagem permite?"""
+    medido = []
+    conversao = analise.mediana("Conversao de caixa (FCO / EBITDA)")
+    if np.isfinite(conversao):
+        medido.append(
+            f"Converte {_pct(conversao)} do EBITDA em caixa operacional"
+            f"{_com_referencia('Conversao de caixa (FCO / EBITDA)', conversao)} — "
+            "vantagem que não vira caixa não foi capturada."
+        )
+    reinvestimento = analise.mediana("Taxa de reinvestimento")
+    if np.isfinite(reinvestimento):
+        medido.append(
+            f"Reinveste {_pct(reinvestimento)} do NOPAT"
+            f"{_com_referencia('Taxa de reinvestimento', reinvestimento)}."
+        )
+    payout = analise.mediana("Payout (dividendos / lucro)")
+    if np.isfinite(payout):
+        medido.append(f"Distribui {_pct(payout)} do lucro.")
+    if medido:
+        medido.append(
+            "Reinvestir muito com ROIC alto amplia a vantagem; reinvestir muito "
+            "com ROIC baixo a destrói mais rápido. O par é que se lê, e não cada "
+            "número sozinho."
+        )
+    return Evidencia(
+        tema="VRIO — Organização",
+        pergunta="A empresa está organizada para capturar o que o recurso permite?",
+        medido=medido,
+        limite=(
+            "Conversão de caixa e reinvestimento são proxies fracos de execução. "
+            "Governança, incentivo de gestão, disciplina de alocação e cultura "
+            "não têm linha contábil."
+        ),
+    )
+
+
+def reunir_vrio(analise, resultado=None) -> list[Evidencia]:
+    """As quatro perguntas de Barney, na ordem em que se respondem.
+
+    A ordem importa: sem **valor** as outras tres nao tem objeto, e sem
+    **raridade** a discussao de imitabilidade e sobre um recurso que todo mundo
+    ja tem.
+    """
+    if analise is None:
+        return []
+    return [
+        _vrio_valor(analise, resultado),
+        _vrio_raridade(analise),
+        _vrio_imitabilidade(analise, resultado),
+        _vrio_organizacao(analise),
+    ]
+
+
 def reunir_evidencias(analise, resultado=None) -> list[Evidencia]:
     """As seis perguntas, na ordem em que se discutem, com o que os dados dizem.
 

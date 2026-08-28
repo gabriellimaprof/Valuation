@@ -647,7 +647,7 @@ def _expectativas(
     return linhas
 
 
-def _qualitativo(evidencias) -> list[str]:
+def _qualitativo(evidencias, respostas=None) -> list[str]:
     """As perguntas de framework, com a evidencia medida e o campo em branco.
 
     A secao existe para nao fazer o oposto do que o projeto se propoe. Escrever
@@ -671,6 +671,14 @@ def _qualitativo(evidencias) -> list[str]:
         "que exige julgamento, e nenhuma conta deste relatório a substitui.",
         "",
     ]
+    return linhas + _blocos_de_evidencia(evidencias, respostas)
+
+
+def _blocos_de_evidencia(evidencias, respostas=None) -> list[str]:
+    """Um bloco por pergunta. Compartilhado por Porter e VRIO -- as duas secoes
+    tem cabecalho proprio e o mesmo corpo, e fatiar a lista da outra por indice
+    quebraria no dia em que o cabecalho mudasse de tamanho."""
+    linhas: list[str] = []
     for evidencia in evidencias:
         linhas.append(f"### {evidencia.tema}")
         linhas.append("")
@@ -685,9 +693,38 @@ def _qualitativo(evidencias) -> list[str]:
             linhas.append("")
         linhas.append("**Leitura do analista:**")
         linhas.append("")
-        linhas.append("> ")
+        # A resposta escrita na tela de Qualitativo entra aqui. Quando nao ha,
+        # o campo continua em branco e **diz que esta em branco**: um relatorio
+        # em que a ausencia se parece com um paragrafo vazio deixa o leitor sem
+        # saber se a pergunta foi considerada e dispensada, ou nao foi lida.
+        resposta = (respostas or {}).get(evidencia.tema, "").strip()
+        if resposta:
+            for paragrafo in resposta.splitlines():
+                linhas.append(f"> {paragrafo}" if paragrafo.strip() else ">")
+        else:
+            linhas.append("> *(não respondida)*")
         linhas.append("")
     return linhas
+
+
+def _qualitativo_vrio(vrio, respostas=None) -> list[str]:
+    """As quatro de Barney, reusando a mesma peca das cinco forcas.
+
+    Secao propria porque a pergunta e outra -- Porter olha a **estrutura do
+    setor**, VRIO olha o **recurso da empresa** --, e misturar as dez num bloco
+    so faria o leitor tratar as duas leituras como uma lista de dez itens.
+    """
+    if not vrio:
+        return []
+    linhas = [
+        "## VRIO — o recurso, e não o setor",
+        "",
+        "As quatro perguntas de Barney. **Não há nota**: pontuar de 1 a 5 "
+        "converteria julgamento em medida. Imitabilidade é a que os dados menos "
+        "alcançam, e o bloco dela diz isso.",
+        "",
+    ]
+    return linhas + _blocos_de_evidencia(vrio, respostas)
 
 
 def _riscos(diagnostico: Diagnostico | None) -> list[str]:
@@ -789,6 +826,8 @@ def montar(
     margem: MargemDeSeguranca | None = None,
     expectativas: pd.DataFrame | None = None,
     evidencias=None,
+    vrio=None,
+    respostas_qualitativas=None,
     ifrs16=None,
     lucro_residual=None,
     historico_do_banco=None,
@@ -830,7 +869,8 @@ def montar(
         _premissas(resultado),
         _ponte(resultado),
         _expectativas(expectativas, margem),
-        _qualitativo(evidencias),
+        _qualitativo(evidencias, respostas_qualitativas),
+        _qualitativo_vrio(vrio, respostas_qualitativas),
         _riscos(diagnostico),
         _limites(resultado, analise, qualidade),
     ]

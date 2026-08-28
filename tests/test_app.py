@@ -224,7 +224,18 @@ def test_passos_cobrem_o_fluxo():
     titulos = [passo.titulo for passo in PASSOS]
     assert "Retorno esperado" in titulos
     assert titulos[0] == "Início", "o caminho comeca no Inicio"
-    assert len(PASSOS) == 12
+
+    # **A propriedade, e nao a contagem.** `len(PASSOS) == 12` virava falha
+    # sozinho ao acrescentar uma tela legitima, sem nada estar errado -- o mesmo
+    # defeito dos testes que pinavam a safra. O que precisa valer e que todo
+    # passo tem tela e toda tela esta no caminho.
+    from app.main import TELAS
+
+    assert set(TELAS) == {passo.chave for passo in PASSOS}, (
+        "todo passo precisa de uma tela, e toda tela precisa estar no caminho"
+    )
+    assert len({p.chave for p in PASSOS}) == len(PASSOS), "chave repetida"
+    assert len({p.url for p in PASSOS}) == len(PASSOS), "url repetida"
 
 
 # ---------------------------------------------------------------------------
