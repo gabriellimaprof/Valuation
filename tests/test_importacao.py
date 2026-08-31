@@ -499,3 +499,60 @@ def test_operacao_de_verdade_nao_dispara_o_sinal():
 def test_sem_lucro_nao_ha_o_que_afirmar():
     """Companhia sem receita e sem lucro não é holding — é papel em branco."""
     assert not any("holding" in a for a in _conferido(receita_liquida=0.0, lucro_liquido=0.0))
+
+
+# ---------------------------------------------------------------------------
+# Ativo e passivo nao se confundem
+# ---------------------------------------------------------------------------
+
+
+def test_o_rotulo_nao_move_uma_linha_de_ativo_para_conta_de_passivo():
+    """O rótulo tem prioridade sobre o código — mas não atravessa o balanço.
+
+    Foi a prioridade do rótulo que corrigiu o patrimônio líquido dos bancos,
+    onde `2.07` quer dizer outra coisa. O limite que faltava: no BPA, `1.03.02`
+    se chama "Imposto de Renda e Contribuição Social - Diferidos", **o mesmo
+    rótulo** do passivo `2.02.03`, e o casamento por rótulo punha o ativo fiscal
+    diferido na conta de passivo.
+
+    Medido no DFP consolidado de 2025: **12 companhias, R$ 275,0 bilhões** — o
+    Bradesco com R$ 111,2 bi, o Banco do Brasil com R$ 89,3 bi. Todas bancos,
+    porque `1.03` só existe no plano financeiro. Nenhuma identidade denunciava:
+    os dois lados continuam fechando, porque a linha some de um total e aparece
+    noutro que ninguém soma de volta.
+    """
+    from valuation.importacao.esquema import reconhecer
+
+    rotulo = "Imposto de Renda e Contribuição Social - Diferidos"
+
+    # Sem saber o lado, o rótulo casa com a conta de passivo — é o caso da
+    # planilha colada à mão, onde não há código.
+    assert reconhecer(rotulo, demonstracao="bp").chave == "tributos_diferidos_passivo"
+
+    # Sabendo que a linha está no ativo, a conta de passivo é recusada.
+    no_ativo = reconhecer(rotulo, demonstracao="bp", codigo_da_linha="1.03.02")
+    assert no_ativo.chave != "tributos_diferidos_passivo"
+
+    # E o lado certo continua passando.
+    no_passivo = reconhecer(rotulo, demonstracao="bp", codigo_da_linha="2.02.03")
+    assert no_passivo.chave == "tributos_diferidos_passivo"
+
+
+def test_a_guarda_de_lado_so_recusa_quando_os_dois_lados_sao_conhecidos():
+    """Ausência de evidência não é evidência de erro.
+
+    A guarda tem de ser inerte fora do balanço e quando o código não diz o lado
+    — senão ela derrubaria reconhecimento legítimo, que é pior que o defeito:
+    conta vazia some da tela sem explicação. Medido na base de 2025, a cobertura
+    não se moveu (mediana de 82 contas por companhia antes e depois); só o
+    mínimo caiu de 32 para 31, que é a linha corretamente recusada.
+    """
+    from valuation.importacao.esquema import _lado_confere
+
+    # Conta de DRE: a raiz `3` nao separa lados, e `demonstracao=` ja resolve.
+    assert _lado_confere("receita_liquida", "3.01")
+    # Sem codigo nao ha o que conferir.
+    assert _lado_confere("tributos_diferidos_passivo", None)
+    assert _lado_confere("tributos_diferidos_passivo", "")
+    # Conta que nao declara lado unico tambem passa.
+    assert _lado_confere(None, "1.03.02")

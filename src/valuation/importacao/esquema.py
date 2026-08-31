@@ -1415,8 +1415,65 @@ for _conta in CONTAS:
 # reprovou. Fica registrado para nao ser "descoberto" de novo.
 
 
+# **Ativo e passivo nao se confundem, e o rotulo sozinho os confunde.** A regra
+# deste projeto e que o rotulo tem prioridade sobre o codigo -- foi ela que
+# corrigiu o patrimonio liquido dos bancos, onde `2.07` quer dizer outra coisa.
+# Mas ela tem um limite que faltava: no BPA, `1.03.02` se chama "Imposto de Renda
+# e Contribuicao Social - Diferidos", **o mesmo rotulo** do passivo `2.02.03`, e
+# o casamento por rotulo colocava o ativo fiscal diferido na conta de passivo.
+#
+# Medido no DFP consolidado de 2025: **12 companhias, R$ 275,0 bilhoes** -- todas
+# bancos, porque `1.03` so existe no plano financeiro. Bradesco com R$ 111,2 bi,
+# Banco do Brasil com R$ 89,3 bi, Santander com R$ 50,9 bi. Nenhuma identidade
+# denunciava: os dois lados do balanco continuam fechando, porque a linha some de
+# um total e aparece noutro que ninguem soma de volta.
+#
+# A guarda usa a numeracao da propria CVM -- `1` = ativo, `2` = passivo e PL --,
+# que e a mesma que `separar_o_balanco` ja usa para desenhar a tela em T. Ela vale
+# **so no balanco**: em `3.` e `6.` a raiz nao separa lados, separa demonstracoes,
+# e isso `demonstracao=` ja resolve.
+_LADOS_DO_BALANCO = ("1", "2")
+
+
+def _lado_do_balanco(codigo: str | None) -> str | None:
+    """Ativo (`1`), passivo e PL (`2`), ou ``None`` se nao for conta de balanco."""
+    if not codigo:
+        return None
+    raiz = str(codigo).strip().split(".")[0]
+    return raiz if raiz in _LADOS_DO_BALANCO else None
+
+
+def _lado_da_conta(chave: str) -> str | None:
+    """O lado que a conta canonica declara, pelos codigos dela."""
+    conta = POR_CHAVE.get(chave)
+    if conta is None or conta.demonstracao != "bp":
+        return None
+    lados = {_lado_do_balanco(c) for c in (conta.codigos_cvm or ())}
+    lados.discard(None)
+    return lados.pop() if len(lados) == 1 else None
+
+
+def _lado_confere(chave: str | None, codigo: str | None) -> bool:
+    """A linha esta no mesmo lado do balanco que a conta que a receberia?
+
+    Sem codigo, ou fora do balanco, nao ha o que conferir -- e ausencia de
+    evidencia nao e evidencia de erro. A guarda so recusa quando os dois lados
+    sao conhecidos e **discordam**.
+    """
+    if chave is None:
+        return True
+    da_linha = _lado_do_balanco(codigo)
+    da_conta = _lado_da_conta(chave)
+    if da_linha is None or da_conta is None:
+        return True
+    return da_linha == da_conta
+
+
 def reconhecer(
-    rotulo: str, codigo: str | None = None, demonstracao: str | None = None
+    rotulo: str,
+    codigo: str | None = None,
+    demonstracao: str | None = None,
+    codigo_da_linha: str | None = None,
 ) -> Reconhecimento:
     """Identifica a conta canonica de um rotulo de planilha.
 
@@ -1425,8 +1482,16 @@ def reconhecer(
     confianca devolvida alimenta a tela de conferencia do app -- o que foi
     reconhecido com folga passa direto, o resto e mostrado para o usuario
     confirmar.
+
+    ``codigo_da_linha`` e o codigo que a linha **tem**, e nao um candidato a
+    casamento: ele nao participa do reconhecimento, so da conferencia de lado do
+    balanco. A distincao existe porque o plano financeiro precisa das duas
+    coisas ao mesmo tempo -- o codigo nao pode escolher a conta (o rotulo tem
+    veto, e foi isso que corrigiu o patrimonio liquido dos bancos), mas ele
+    ainda sabe se a linha esta no ativo ou no passivo.
     """
     codigo = codigo or extrair_codigo_cvm(rotulo)
+    lado = codigo or codigo_da_linha
     if codigo and codigo in _CODIGOS:
         candidata = _CODIGOS[codigo]
         if demonstracao is None or POR_CHAVE[candidata].demonstracao == demonstracao:
@@ -1437,7 +1502,7 @@ def reconhecer(
         return Reconhecimento(None, 0.0, "rotulo vazio")
 
     exatos = _POR_DEMONSTRACAO.get(demonstracao, _SINONIMOS_EXATOS) if demonstracao else _SINONIMOS_EXATOS
-    if normalizado in exatos:
+    if normalizado in exatos and _lado_confere(exatos[normalizado], lado):
         return Reconhecimento(exatos[normalizado], 0.95, "sinonimo exato")
 
     # Plural e singular sao a mesma conta. Vem antes do casamento parcial porque
@@ -1448,7 +1513,7 @@ def reconhecer(
         else _SINONIMOS_SINGULARES
     )
     singular = singularizar(normalizado)
-    if singular in singulares:
+    if singular in singulares and _lado_confere(singulares[singular], lado):
         return Reconhecimento(singulares[singular], 0.90, "sinonimo exato (plural)")
 
     # Casamento parcial: exige que o sinonimo ocupe boa parte do rotulo, para
@@ -1458,6 +1523,8 @@ def reconhecer(
         if demonstracao and POR_CHAVE[chave].demonstracao != demonstracao:
             continue
         if len(sinonimo) < 5 or sinonimo not in normalizado:
+            continue
+        if not _lado_confere(chave, lado):
             continue
         proporcao = len(sinonimo) / len(normalizado)
         if proporcao > melhor.confianca:

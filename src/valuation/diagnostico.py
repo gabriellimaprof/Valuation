@@ -268,6 +268,8 @@ def diagnosticar(
     achados += _checar_perpetuidade(resultado, g, wacc, crescimento_nominal_economia)
     achados += _checar_reinvestimento(resultado, g, wacc)
     achados += _checar_capex_perpetuo(resultado)
+    if analise is not None:
+        achados += _checar_ciclo_de_caixa(analise)
     achados += _checar_custo_de_capital(resultado, wacc)
     achados += _checar_estrutura_do_valor(resultado)
     # Nao exige historico: a hipotese esta nas premissas e no resultado, e
@@ -1476,5 +1478,111 @@ def _checar_capex_perpetuo(resultado: ResultadoValuation) -> list[Achado]:
                 "creditar a receita que ela geraria."
             ),
             referencia="Koller, Goedhart & Wessels, Valuation, cap. 10",
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# O ciclo de caixa alongando com a receita parada
+# ---------------------------------------------------------------------------
+
+# **Ciclo que cresce nao e sinal sozinho.** Empresa que cresce prende mais caixa
+# no giro porque vende mais -- recebivel maior e consequencia da venda maior, e
+# nao de o cliente ter parado de pagar. O sinal e o **cruzamento**: o ciclo
+# alonga e a receita nao acompanha.
+#
+# Medido na safra 2021-2025, 392 companhias com ciclo em tres exercicios ou mais.
+# A variacao do ciclo por ano:
+#
+#   P10 -13,4   P25 -4,0   mediana +0,6   P75 +7,9   P90 +21,5
+#
+#   alongando >  5 d/ano: 28,1% da base
+#   alongando > 10 d/ano: 18,4%
+#   alongando > 20 d/ano: **10,5%**
+#
+# O corte fica em 20 d/ano, que e o P90 arredondado. Sozinho ele acusaria 10,5%;
+# **cruzado com receita abaixo da inflacao, 12 companhias de 392 -- 3,1%**, que e
+# a raridade de um sinal que pede acao. E as 12 sao o caso classico: FICA
+# Empreendimentos com o ciclo indo de 205 para 5.855 dias e a receita caindo 20%
+# ao ano, Recrusul de 122 para 2.254, Viver Incorporadora de 431 para 919.
+#
+# A unidade e **dia absoluto e nao percentual do ciclo** de proposito: o custo em
+# caixa de alongar 21 dias e o mesmo -- 21 dias de venda diaria -- venha de um
+# ciclo de 30 ou de 500.
+CICLO_ALONGANDO = 20.0
+CRESCIMENTO_PARADO = 0.04
+
+
+def _checar_ciclo_de_caixa(analise: AnaliseHistorica) -> list[Achado]:
+    """Caixa preso no giro enquanto a receita nao cresce."""
+    from .historico import NOME_DO_CICLO, caixa_preso_no_ciclo, ponte_do_ciclo
+
+    ponte = ponte_do_ciclo(analise)
+    if ponte is None or not ponte.fecha:
+        return []
+
+    ciclo = analise.indicadores.loc[NOME_DO_CICLO].dropna()
+    periodos = len(ciclo) - 1
+    if periodos < 2:
+        # Dois pontos descrevem uma reta, nao uma tendencia. Com um exercicio de
+        # diferenca, uma entrega concentrada em dezembro basta para disparar.
+        return []
+
+    por_ano = ponte.variacao / periodos
+    if por_ano < CICLO_ALONGANDO:
+        return []
+
+    receita = analise.demonstracoes.serie("receita_liquida").reindex(ciclo.index).dropna()
+    if len(receita) < 2 or float(receita.iloc[0]) <= 0:
+        return []
+    crescimento = float(receita.iloc[-1] / receita.iloc[0]) ** (1 / periodos) - 1
+    if not np.isfinite(crescimento) or crescimento >= CRESCIMENTO_PARADO:
+        # Empresa crescendo prende mais caixa no giro porque vende mais, e isso
+        # e outro assunto -- `Capital de giro / Receita` ja o descreve.
+        return []
+
+    maior = max(ponte.pernas, key=lambda p: abs(p.contribuicao))
+    curto = {
+        "Prazo medio de recebimento (dias)": "o prazo de recebimento",
+        "Prazo medio de estoque (dias)": "o giro do estoque",
+        "Prazo medio de pagamento (dias)": "o prazo de pagamento a fornecedores",
+    }
+    preso = caixa_preso_no_ciclo(analise).dropna()
+    tamanho = ""
+    if np.isfinite(ponte.caixa):
+        tamanho = (
+            f" Aos preços de venda de {ponte.para}, o alongamento prendeu "
+            f"{_num(abs(ponte.caixa), 0)} {ponte.unidade}"
+        )
+        if not preso.empty:
+            tamanho += f", num total de {_num(float(preso.iloc[-1]), 0)} {ponte.unidade} presos"
+        tamanho += "."
+
+    return [
+        Achado(
+            codigo="ciclo_alonga_com_receita_parada",
+            severidade=ALERTA,
+            titulo=(
+                f"O ciclo de caixa alongou {_num(ponte.variacao, 0)} dias "
+                f"com a receita crescendo {_pct(crescimento, 1)} ao ano"
+            ),
+            detalhe=(
+                f"De {ponte.de} a {ponte.para} o ciclo foi de "
+                f"{_num(ponte.ciclo_de, 0)} para {_num(ponte.ciclo_para, 0)} dias, e "
+                f"quem mais pesou foi **{curto.get(maior.nome, maior.nome)}** "
+                f"({_num(maior.contribuicao, 0)} dias).{tamanho} Empresa que cresce "
+                "prende mais caixa no giro porque vende mais; aqui a receita não "
+                "acompanhou, então o caixa está sendo retido sem venda que o "
+                "justifique. Medido na base, alongar mais de "
+                f"{_num(CICLO_ALONGANDO, 0)} dias por ano com a receita abaixo da "
+                "inflação acontece em 3% das companhias."
+            ),
+            acao=(
+                "Olhe a perna que puxou. Estoque subindo com receita parada é "
+                "produto que não vende; recebível subindo é cliente que não paga ou "
+                "prazo alongado para sustentar a venda. As duas coisas antecedem "
+                "baixa contábil, e nenhuma aparece na margem antes de acontecer."
+            ),
+            referencia="Damodaran, Investment Valuation, cap. 3 (working capital)",
         )
     ]

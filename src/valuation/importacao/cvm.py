@@ -1671,7 +1671,9 @@ def _reconhecer_na_demonstracao(
         # reconhece outra conta, e o rotulo que ganha. Codigo e convencao de
         # arquivo; rotulo e o que a companhia diz que a linha e.
         chave = CODIGOS_PLANO_FINANCEIRO[linha.codigo]
-        por_rotulo = reconhecer(linha.descricao, None, linha.demonstracao)
+        por_rotulo = reconhecer(
+            linha.descricao, None, linha.demonstracao, codigo_da_linha=linha.codigo
+        )
         if por_rotulo.chave == chave:
             resultado = Reconhecimento(
                 chave, 1.0, f"codigo {linha.codigo} do plano financeiro"
@@ -1689,7 +1691,9 @@ def _reconhecer_na_demonstracao(
             # de nao reconhecidas em vez de preencher a conta errada calada.
             resultado = por_rotulo
     else:
-        resultado = reconhecer(linha.descricao, None, linha.demonstracao)
+        resultado = reconhecer(
+            linha.descricao, None, linha.demonstracao, codigo_da_linha=linha.codigo
+        )
 
     if resultado.chave is None:
         return resultado

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1107 testes
+pytest                        # 1114 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.107 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.114 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1508,10 +1508,31 @@ banco, onde o código canônico industrial não se aplica — `2.03` vale zero e
 está em `2.08`, que é o caso do plano financeiro já documentado. O conferidor é
 que era ingênuo, não a leitura.
 
-**Uma lacuna ficou declarada:** o `mapeamento` da série trimestral guarda a
-**origem** ("CVM ITR — trimestres isolados de…") no lugar do código da conta, e
-com isso a série trimestral **não tem de-para utilizável**. A auditoria de origem
-— a que pega o erro que nenhuma soma denuncia — só alcança o caminho anual.
+**A lacuna do de-para foi fechada.** O `mapeamento` da série trimestral guardava
+a **origem** ("CVM ITR — trimestres isolados de…") em todas as chaves, no lugar
+onde o caminho anual guarda `"3.01 - Receita de Venda de Bens e/ou Serviços"` —
+e a auditoria de origem é justamente a família que pega o erro que nenhuma soma
+denuncia. Cada parte da série já trazia o de-para do próprio período, porque
+todas são lidas pelo mesmo leitor do caminho anual; o conserto foi juntá-los.
+Medido na WEG: **80 das 81 contas passaram a ter código**, e a que sobra é regra
+somada — que no caminho anual também não tem.
+
+**Divergência entre períodos é informação, e não ruído a esconder.** Quando a
+mesma conta é alimentada por códigos diferentes em trimestres diferentes, a
+companhia trocou a linha no meio do exercício, e o de-para diz os dois com os
+períodos em vez de escolher um e calar o outro. Na WEG apareceu uma:
+
+```
+lucro_liquido: 3.11 - Lucro/Prejuízo Consolidado (1T25, 1T26);
+               3.09 - Resultado Líquido das Operações Continuadas (2T25, 2T26)
+```
+
+A primeira versão desta peça comparava a **frase inteira** e inventava uma
+segunda divergência que não existia: a CVM escreve o mesmo rótulo com grafias
+diferentes entre trimestres — "Depreciação, amortização e exaustão" num e
+"Depreciação, Amortização e Exaustão" noutro, ambos em `6.01.01.02`. A comparação
+passou a ser **pelo código**, porque divergência falsa treina quem lê a ignorar a
+verdadeira.
 
 ## A D&A da DVA, e o que sobrou sem EBITDA
 
@@ -1668,6 +1689,88 @@ Efeito na projeção, que é onde isso decide valor:
 
 Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
 uma companhia que constrói shopping projetada como se não construísse.
+
+## R$ 275 bilhões de ativo lidos como passivo, e o de-para do ITR que os achou
+
+Fechar a lacuna do de-para trimestral habilitou a auditoria de **origem** no
+caminho do ITR — a família que pega o erro que nenhuma soma denuncia. Rodada na
+base, ela apontou `tributos_diferidos_passivo` sendo alimentado por **`1.03.02`**,
+que no BPA é um código de **ativo**.
+
+E era isso mesmo. No BPA, `1.03.02` se chama "Imposto de Renda e Contribuição
+Social - Diferidos" — **o mesmo rótulo** do passivo `2.02.03` —, e a regra deste
+projeto é que o rótulo tem prioridade sobre o código. Foi ela que corrigiu o
+patrimônio líquido dos bancos, onde `2.07` quer dizer outra coisa; o limite que
+faltava é que ela **não pode atravessar o balanço**.
+
+Medido no DFP consolidado de 2025:
+
+| | |
+|---|---|
+| Companhias afetadas | **12** |
+| Valor lido do lado errado | **R$ 275,0 bilhões** |
+| Bradesco | R$ 111,2 bi |
+| Banco do Brasil | R$ 89,3 bi |
+| Santander | R$ 50,9 bi |
+
+Todas são bancos, porque `1.03` só existe no plano financeiro. **Nenhuma
+identidade denunciava**: os dois lados do balanço continuam fechando, porque a
+linha some de um total e aparece noutro que ninguém soma de volta. É exatamente
+o defeito que a auditoria de origem existe para achar, e ele estava fora do
+alcance dela enquanto o ITR não tinha de-para.
+
+A guarda usa a numeração da própria CVM — `1` = ativo, `2` = passivo e PL —, a
+mesma que `separar_o_balanco` já usa para desenhar a tela em T, e vale **só no
+balanço**: em `3.` e `6.` a raiz separa demonstrações e não lados, e isso
+`demonstracao=` já resolve.
+
+**O código volta a ser passado, mas só para conferir o lado.** Nos caminhos do
+plano financeiro ele era descartado de propósito, para o rótulo ter direito de
+veto — e sem ele não havia como saber o lado. `codigo_da_linha` é o código que a
+linha **tem**, e não um candidato a casamento: não participa do reconhecimento,
+só da conferência. As duas coisas ao mesmo tempo é o que o plano financeiro
+exige.
+
+**Custo medido: zero.** A cobertura não se moveu — mediana de 82 contas por
+companhia antes e depois, média 80,2 nas duas —, e só o mínimo caiu de 32 para
+31, que é a linha corretamente recusada. A auditoria da base sai **byte a byte
+idêntica**.
+
+## O ciclo alongando com a receita parada virou sinal
+
+O ciclo informava e não alertava. **Ciclo que cresce não é sinal sozinho**:
+empresa que cresce prende mais caixa no giro porque vende mais — recebível maior
+é consequência da venda maior, e não de o cliente ter parado de pagar. O sinal é
+o **cruzamento**.
+
+Medido na safra 2021-2025, em 392 companhias com ciclo em três exercícios ou
+mais — variação do ciclo por ano:
+
+| P10 | P25 | Mediana | P75 | P90 |
+|---|---|---|---|---|
+| −13,4 d | −4,0 d | **+0,6 d** | +7,9 d | **+21,5 d** |
+
+Alongar mais de 20 dias por ano acontece em **10,5%** da base; cruzado com
+receita abaixo da inflação, em **12 companhias de 392 — 3,1%**, que é a raridade
+de um sinal que pede ação. E as 12 são o caso clássico: FICA Empreendimentos com
+o ciclo indo de 205 para 5.855 dias e a receita caindo 20% ao ano, Recrusul de
+122 para 2.254, Viver Incorporadora de 431 para 919.
+
+O achado **nomeia a perna que puxou e traz o tamanho em caixa**, porque "o ciclo
+alongou" sem dizer onde manda o analista procurar em três lugares:
+
+| Companhia | Ciclo | Perna | Caixa preso pelo alongamento |
+|---|---|---|---|
+| Taurus | 158 → 313 d | estoque (+168 d) | **R$ 622 mi** (de R$ 1,26 bi presos) |
+| Tegra | 523 → 828 d | estoque (+374 d) | R$ 1,01 bi |
+| Romi | 262 → 362 d | estoque (+57 d) | R$ 364 mi |
+| WEG (controle) | — | — | não dispara |
+
+A unidade é **dia absoluto e não percentual do ciclo**, de propósito: o custo em
+caixa de alongar 21 dias é o mesmo — 21 dias de venda diária — venha de um ciclo
+de 30 ou de 500. E exige **três períodos**: dois pontos descrevem uma reta, não
+uma tendência, e com um exercício de diferença uma entrega concentrada em
+dezembro basta para disparar.
 
 ## O capex de imóvel corrigido custou 60% do valor, e o modelo não avisava
 

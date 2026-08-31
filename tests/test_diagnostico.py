@@ -529,3 +529,101 @@ def test_capex_no_estado_estacionario_nao_acusa(empresa_exemplo):
     assert "capex_perpetuo_acima_da_depreciacao" not in _codigos(
         diagnosticar(avaliar(empresa))
     )
+
+
+def _com_ciclo(receitas: list[float], recebiveis: list[float], estoques: list[float]):
+    """Empresa com giro legível em quatro exercícios."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    anos = [2022, 2023, 2024, 2025]
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": receitas[i],
+                "custo_produtos_vendidos": receitas[i] * 0.6,
+                "ebit": receitas[i] * 0.15,
+                "contas_receber": recebiveis[i],
+                "estoques": estoques[i],
+                "fornecedores": 100.0,
+            }
+            for i, ano in enumerate(anos)
+        }
+    )
+    return analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$"))
+
+
+def test_ciclo_alongando_com_receita_parada(empresa_exemplo):
+    """O sinal é o cruzamento, e não o ciclo crescendo sozinho.
+
+    Medido na safra 2021-2025 (n=392): alongar mais de 20 dias por ano acontece
+    em 10,5% da base, e **cruzado com receita abaixo da inflação, em 3,1%** — a
+    raridade de um sinal que pede ação. As companhias que ele pega são o caso
+    clássico: Taurus com o ciclo indo de 158 para 313 dias e a receita caindo
+    14,5% ao ano, Tegra de 523 para 828.
+    """
+    from valuation.diagnostico import CICLO_ALONGANDO
+
+    # Receita parada e estoque inchando: o ciclo alonga bem acima do corte.
+    analise = _com_ciclo(
+        receitas=[1000.0, 1000.0, 1000.0, 1000.0],
+        recebiveis=[200.0, 210.0, 220.0, 230.0],
+        estoques=[150.0, 300.0, 450.0, 600.0],
+    )
+    diagnostico = diagnosticar(avaliar(empresa_exemplo), analise=analise)
+    assert "ciclo_alonga_com_receita_parada" in _codigos(diagnostico)
+
+    achado = next(
+        a for a in diagnostico.achados if a.codigo == "ciclo_alonga_com_receita_parada"
+    )
+    # O achado nomeia **qual perna** puxou: "o ciclo alongou" sem dizer onde
+    # manda o analista procurar nos três lugares.
+    assert "estoque" in achado.detalhe
+    # E traz o tamanho em caixa, porque dias não decidem nada sozinhos.
+    assert "prendeu" in achado.detalhe
+    assert str(int(CICLO_ALONGANDO)) in achado.detalhe
+
+
+def test_ciclo_alongando_com_a_empresa_crescendo_nao_acusa(empresa_exemplo):
+    """Crescer prende caixa no giro, e isso é consequência da venda maior.
+
+    O contrapeso: sem esta condição o sinal acusaria toda empresa em expansão, e
+    alarme que dispara no saudável treina quem lê a ignorá-lo — o defeito que
+    `DESCOLAMENTO_DO_JURO` já custou duas recalibrações a este projeto.
+    """
+    analise = _com_ciclo(
+        receitas=[1000.0, 1300.0, 1700.0, 2200.0],
+        recebiveis=[200.0, 280.0, 380.0, 500.0],
+        estoques=[150.0, 300.0, 450.0, 600.0],
+    )
+    assert "ciclo_alonga_com_receita_parada" not in _codigos(
+        diagnosticar(avaliar(empresa_exemplo), analise=analise)
+    )
+
+
+def test_dois_pontos_nao_fazem_tendencia(empresa_exemplo):
+    """Com um exercício de diferença, uma entrega concentrada basta para disparar."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 150.0,
+                "contas_receber": 200.0,
+                "estoques": 150.0 + i * 900.0,
+                "fornecedores": 100.0,
+            }
+            for i, ano in enumerate([2024, 2025])
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$"))
+    assert "ciclo_alonga_com_receita_parada" not in _codigos(
+        diagnosticar(avaliar(empresa_exemplo), analise=analise)
+    )
