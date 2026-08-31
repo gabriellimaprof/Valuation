@@ -148,7 +148,7 @@ def montar_serie(
         colunas[rotulo] = coluna
 
     tabela = pd.DataFrame(colunas, index=chaves)
-    mapeamento = {chave: origem for chave in chaves}
+    mapeamento = _mapeamento_da_serie(partes, chaves, origem)
     return Demonstracoes(
         empresa=empresa,
         valores=tabela,
@@ -158,6 +158,56 @@ def montar_serie(
         avisos=list(avisos or []),
         detalhe=_arvore_da_serie(partes),
     )
+
+
+def _mapeamento_da_serie(partes, chaves: list[str], origem: str) -> dict[str, str]:
+    """O de-para da serie: **o codigo CVM**, e nao a frase de origem.
+
+    Ate aqui a serie guardava ``origem`` -- "CVM ITR - trimestres isolados de
+    2026" -- em todas as chaves, no lugar onde o caminho anual guarda
+    ``"3.01 - Receita de Venda de Bens e/ou Servicos"``. Com isso a **auditoria
+    de origem nao alcancava o ITR**, e ela e a familia que pega o erro que soma
+    nenhuma denuncia: conta alimentada por `3.01` em 400 companhias e por outro
+    codigo em duas nao quebra identidade alguma, e esta errada.
+
+    Cada parte ja traz o de-para do proprio periodo, porque cada uma foi lida
+    pelo mesmo leitor do caminho anual. Aqui eles se juntam.
+
+    **Divergencia entre periodos e informacao, e nao ruido a esconder**: a mesma
+    conta alimentada por codigos diferentes em trimestres diferentes significa
+    que a companhia mudou a linha no meio do exercicio. Nesse caso o de-para diz
+    os dois, com os periodos, em vez de escolher um e calar o outro.
+    """
+    saida: dict[str, str] = {}
+    for chave in chaves:
+        # Ordem de aparicao, e nao um `set`: o de-para se le, e ler "3.01" antes
+        # de "3.11" ajuda quando eles sao a mesma conta em periodos diferentes.
+        #
+        # A comparacao e **pelo codigo e nao pelo texto inteiro**: a CVM escreve
+        # o mesmo rotulo com grafias diferentes entre trimestres -- na WEG,
+        # "Depreciacao, amortizacao e exaustao" num e "Depreciacao, Amortizacao
+        # e Exaustao" noutro, ambos em `6.01.01.02`. Comparar a frase inteira
+        # inventaria divergencia onde nao ha, e divergencia falsa treina quem le
+        # a ignorar a verdadeira.
+        por_codigo: dict[str, tuple[str, list[str]]] = {}
+        for rotulo, dfs in partes:
+            texto = (dfs.mapeamento or {}).get(chave, "")
+            if not texto:
+                continue
+            codigo = texto.split(" - ")[0].strip()
+            if codigo in por_codigo:
+                por_codigo[codigo][1].append(rotulo)
+            else:
+                por_codigo[codigo] = (texto, [rotulo])
+        if not por_codigo:
+            saida[chave] = origem
+        elif len(por_codigo) == 1:
+            saida[chave] = next(iter(por_codigo.values()))[0]
+        else:
+            saida[chave] = "; ".join(
+                f"{texto} ({', '.join(quando)})" for texto, quando in por_codigo.values()
+            )
+    return saida
 
 
 # As colunas da arvore que descrevem a linha, e nao um periodo. Tudo o que nao

@@ -925,3 +925,67 @@ def test_as_series_declaram_a_mesma_unidade_que_a_anual():
 
     assert trimestral.unidade == anual.unidade
     assert rolante.unidade == anual.unidade
+
+
+def test_a_serie_trimestral_tem_de_para_com_codigo_da_cvm():
+    """A lacuna declarada mais antiga: a auditoria de origem não alcançava o ITR.
+
+    A série guardava `origem` — "CVM ITR — trimestres isolados de 2026" — em
+    todas as chaves, no lugar onde o caminho anual guarda `"3.01 - Receita de
+    Venda de Bens e/ou Serviços"`. E a auditoria de origem é justamente a
+    família que pega o erro que soma nenhuma denuncia: conta alimentada por
+    `3.01` em 400 companhias e por outro código em duas não quebra identidade
+    alguma, e está errada.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+
+    assert tri.mapeamento["receita_liquida"].startswith("3.01")
+    assert tri.mapeamento["lucro_bruto"].startswith("3.03")
+
+    com_codigo = [v for v in tri.mapeamento.values() if not v.startswith("CVM ITR")]
+    assert len(com_codigo) > len(tri.mapeamento) * 0.9, (
+        "quase toda conta tem de trazer o código; sobram as somadas e derivadas"
+    )
+
+
+def test_o_de_para_da_serie_compara_codigo_e_nao_a_frase_inteira():
+    """Divergência falsa treina quem lê a ignorar a verdadeira.
+
+    A CVM escreve o mesmo rótulo com grafias diferentes entre trimestres — na
+    WEG, "Depreciação, amortização e exaustão" num e "Depreciação, Amortização e
+    Exaustão" noutro, ambos em `6.01.01.02`. A primeira versão desta peça
+    comparava a frase inteira e inventava divergência onde não havia.
+    """
+    from valuation.importacao import Demonstracoes
+    from valuation.importacao.series import _mapeamento_da_serie
+
+    def _parte(rotulo, texto):
+        import pandas as pd
+
+        return (
+            rotulo,
+            Demonstracoes(
+                empresa="T",
+                valores=pd.DataFrame({rotulo: {"conta": 1.0}}),
+                mapeamento={"conta": texto},
+            ),
+        )
+
+    mesma_conta = [
+        _parte("1T25", "6.01.01.02 - Depreciação, amortização e exaustão"),
+        _parte("2T25", "6.01.01.02 - Depreciação, Amortização e Exaustão"),
+    ]
+    saida = _mapeamento_da_serie(mesma_conta, ["conta"], "origem")
+    assert ";" not in saida["conta"], "mesmo código com outra grafia não é divergência"
+
+    # E o outro lado: codigo mesmo diferente **tem** de aparecer, com o periodo,
+    # porque a companhia trocou a linha que alimenta a conta no meio do exercicio.
+    contas_diferentes = [
+        _parte("1T25", "3.11 - Lucro/Prejuízo Consolidado do Período"),
+        _parte("2T25", "3.09 - Resultado Líquido das Operações Continuadas"),
+    ]
+    saida = _mapeamento_da_serie(contas_diferentes, ["conta"], "origem")
+    assert "3.11" in saida["conta"] and "3.09" in saida["conta"]
+    assert "1T25" in saida["conta"] and "2T25" in saida["conta"]
