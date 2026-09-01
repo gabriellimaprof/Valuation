@@ -154,3 +154,85 @@ def test_a_pagina_escapa_o_que_vem_de_fora(empresa_exemplo):
 
     assert "<script>alert" not in pagina
     assert "&lt;script&gt;" in pagina
+
+
+def _lucro_residual_de_teste():
+    from valuation.lucro_residual import PremissasLucroResidual, avaliar_lucro_residual
+
+    premissas = PremissasLucroResidual(
+        patrimonio_inicial=178_900.0,
+        roe=[0.121] * 5,
+        payout=[0.35] * 5,
+        roe_perpetuo=0.1335,
+    )
+    return avaliar_lucro_residual(premissas, ke=0.1335, ano_base=2025)
+
+
+def test_o_material_do_banco_nao_monta_um_dcf(empresa_exemplo):
+    """Instituição financeira não tem DCF, e o material não pode inventar um.
+
+    Para uma indústria a dívida financia o ativo; para um banco ela **é o
+    insumo**. A tela de Valor desvia antes de qualquer número aparecer e o
+    relatório markdown também — faltava a página do comitê, que montaria
+    Enterprise Value, ponte e WACC que ninguém calculou.
+
+    Contradizer no papel o número que a tela mostrou é o pior lugar possível
+    para uma divergência: o material é o que sobra depois que a tela fecha.
+    """
+    from dataclasses import replace
+
+    pagina = montar_html(
+        None,
+        lucro_residual=_lucro_residual_de_teste(),
+        empresa=replace(empresa_exemplo, nome="Banco Teste"),
+        data="01/09/2026",
+    )
+
+    assert "Enterprise Value" not in pagina
+    assert "Dívida líquida" not in pagina
+    assert "perpétuo" not in pagina
+    # O que ele traz no lugar.
+    assert "P/VP" in pagina
+    assert "lucro residual" in pagina.lower()
+    # E diz **por que** não é um DCF, em vez de só omiti-lo.
+    assert "Por que este modelo, e não um DCF" in pagina
+
+
+def test_o_material_do_banco_declara_o_que_nao_avaliou(empresa_exemplo):
+    """"Não foi verificado" e "verificado e está bem" não são a mesma coisa.
+
+    O universo de comparáveis exclui bancos de propósito, e o diagnóstico roda
+    sobre um DCF que não foi usado. Sumir com as duas seções faria o comitê supor
+    que elas passaram.
+    """
+    from dataclasses import replace
+
+    pagina = montar_html(
+        None,
+        lucro_residual=_lucro_residual_de_teste(),
+        empresa=replace(empresa_exemplo, nome="Banco Teste"),
+    )
+    assert "O que não foi avaliado aqui" in pagina
+    assert "exclui bancos e seguradoras" in pagina
+    assert "capital regulatório" in pagina
+
+
+def test_sem_resultado_e_sem_banco_a_pagina_recusa(empresa_exemplo):
+    """Página sem DCF e sem lucro residual não tem o que descrever.
+
+    Levantar aqui é melhor que devolver uma página vazia com cara de pronta.
+    """
+    with pytest.raises(ValueError, match="lucro_residual"):
+        montar_html(None)
+
+
+def test_a_tabela_repete_o_cabecalho_quando_atravessa_a_pagina():
+    """Metade de tabela sem cabeçalho chega como coluna de números sem nome.
+
+    Conferido no PDF de verdade: uma tabela de 40 linhas ocupa duas páginas A4 e
+    o cabeçalho aparece nas duas.
+    """
+    from valuation.apresentacao import CSS
+
+    assert "display: table-header-group" in CSS
+    assert "page-break-inside: avoid" in CSS

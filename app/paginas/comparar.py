@@ -16,9 +16,16 @@ import pandas as pd
 import streamlit as st
 
 from valuation import biblioteca
+from valuation.apresentacao import escala_do_documento
 from valuation.carteira import montar_da_biblioteca
 
-from ..componentes import escapar_cifrao, etapa, secao, unidade_curta
+from ..componentes import (
+    escapar_cifrao,
+    etapa,
+    pintar_por_intensidade,
+    secao,
+    unidade_curta,
+)
 
 
 def render() -> None:
@@ -90,9 +97,7 @@ def render() -> None:
                 "próximos da WEG ficam entre 0,28 e 0,41."
             )
             st.dataframe(
-                proximidade.style.format("{:.2f}", na_rep="—").background_gradient(
-                    cmap="Reds", axis=None
-                ),
+                pintar_por_intensidade(proximidade).format("{:.2f}", na_rep="—"),
                 width="stretch",
             )
 
@@ -103,9 +108,7 @@ def render() -> None:
     )
     distancias = carteira.distancias()
     st.dataframe(
-        distancias.style.format("{:+.1%}", na_rep="—").background_gradient(
-            cmap="RdYlGn_r", axis=None
-        ),
+        pintar_por_intensidade(distancias).format("{:+.1%}", na_rep="—"),
         width="stretch",
     )
 
@@ -121,38 +124,51 @@ def render() -> None:
 
     secao("O que cada modelo diz que a companhia vale")
     resumo = carteira.resumo()
+
+    # **A escala e uma so para a tabela**, pelo maior equity que ela mostra, e
+    # declarada no cabecalho -- "17.686.979.396,2" e um numero que ninguem
+    # processa, e trocar de escala entre linhas faria comparar bilhao com milhao
+    # sem perceber. E a mesma decisao do material do comite.
+    divisor, sufixo = escala_do_documento(resumo.get("Equity value", pd.Series(dtype=float)))
     unidades = carteira.unidades
-    rotulo_unidade = unidade_curta(next(iter(unidades))) if len(unidades) == 1 else ""
-    if rotulo_unidade:
-        resumo = resumo.rename(
-            columns={
-                "Equity value": f"Equity value ({rotulo_unidade})",
-                "Valor por acao": "Valor por ação (R$)",
-                "Preco": "Preço (R$)",
-                "g perpetuo": "g perpétuo",
-                "Margem de seguranca": "Margem de segurança",
-                "Conversao de caixa": "Conversão de caixa",
-            }
-        )
+    base = unidade_curta(next(iter(unidades))) if len(unidades) == 1 else ""
+    rotulo_valor = " ".join(x for x in (base, sufixo) if x) or "valor"
+    if "Equity value" in resumo.columns:
+        resumo["Equity value"] = resumo["Equity value"] / divisor
+
+    resumo = resumo.rename(
+        columns={
+            "Equity value": f"Equity value ({rotulo_valor})",
+            "Valor por acao": "Valor por ação (R$)",
+            "Preco": "Preço (R$)",
+            "g perpetuo": "g perpétuo",
+            "Margem de seguranca": "Margem de segurança",
+            "Conversao de caixa": "Conversão de caixa",
+        }
+    )
+    # **Coluna inteiramente vazia nao vira coluna.** O `st.dataframe` mostra o
+    # nulo bruto do Arrow -- "None" em toda linha --, e mesmo com travessao uma
+    # coluna sem nenhum numero nao informa nada. A ausencia fica na legenda, que
+    # diz **por que** ela nao esta la.
+    vazias = [c for c in resumo.columns if resumo[c].isna().all()]
+    resumo = resumo.drop(columns=vazias)
+
+    percentuais = [
+        c
+        for c in resumo.columns
+        if c in ("WACC", "g perpétuo", "Margem de segurança", "Conversão de caixa")
+    ]
+    monetarias = [
+        c for c in resumo.columns if "Equity" in c or "Valor por" in c or "Preço" in c
+    ]
     st.dataframe(
         resumo.style.format(
-            {
-                c: "{:.1%}"
-                for c in resumo.columns
-                if c
-                in (
-                    "WACC",
-                    "g perpétuo",
-                    "Margem de segurança",
-                    "Conversão de caixa",
-                )
-            }
-            | {
-                c: "{:,.1f}"
-                for c in resumo.columns
-                if "Equity" in c or "Valor por" in c or "Preço" in c
-            },
+            {c: "{:.1%}" for c in percentuais} | {c: "{:,.1f}" for c in monetarias},
+            # `None` numa coluna vazia se le como um valor; o travessao diz que
+            # nao ha numero. O `subset` e o que faz o `na_rep` alcancar tambem as
+            # colunas de texto, onde o Styler nao o aplicaria sozinho.
             na_rep="—",
+            subset=percentuais + monetarias,
         ),
         width="stretch",
     )

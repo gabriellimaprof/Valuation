@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1137 testes
+pytest                        # 1144 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1203,7 +1203,7 @@ não é verificação.
 
 ## Estado atual
 
-1.137 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.144 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1721,6 +1721,74 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## A tela de Comparar percorrida com modelo dentro, e o que ela escondia
+
+A varredura sempre a encontrou **desligada** -- 881 caracteres, que era o aviso
+de biblioteca desligada e nada mais. Semeada com tres valuations reais (WEG,
+Multiplan, Allos) e percorrida, ela devolveu **uma excecao e quatro defeitos**,
+e nenhum teste os pegaria:
+
+| O que quebrava | Por que |
+|---|---|
+| `ImportError: Styler.background_gradient requires matplotlib` | **matplotlib nao e dependencia deste projeto** |
+| `Depreciacao / Receita` sem acento | a mesa escrevia o rotulo em string local, e nao pelo mapa unico |
+| `Atencao` como veredito | codigo de motor indo cru para a tela |
+| `None` em toda linha de duas colunas | `st.dataframe` mostra o nulo do Arrow, mesmo com `na_rep` |
+| `17.686.979.396,2` de equity | doze digitos onde se le uma grandeza |
+
+**A excecao e a mais grave, e o `AppTest` nao a alcanca**: ele monta a tela, e o
+Styler so e computado no render. Era um `ImportError` para todo usuario sem
+matplotlib.
+
+E o mapa de cores do matplotlib tambem nao serviria -- a paleta daqui foi
+validada para daltonismo e contraste nos dois modos. Entrou
+`componentes.pintar_por_intensidade`, que usa `bom` e `grave` da propria paleta
+com alpha proporcional (0,08 a 0,45: forte o bastante para ordenar a leitura,
+fraco o bastante para o numero continuar legivel por cima).
+
+**Coluna inteiramente vazia deixou de virar coluna.** Um traco em toda linha nao
+informa nada, e a ausencia ja esta na legenda, que diz **por que** ela nao esta
+la. E o equity ganhou a escala do documento -- a mesma decisao do material do
+comite.
+
+## O material do comite no caminho do banco
+
+Instituicao financeira **nao tem DCF**, e a pagina montaria Enterprise Value,
+ponte e WACC que ninguem calculou. A tela de Valor ja desviava antes de qualquer
+numero aparecer, e o relatorio markdown tambem; faltava esta.
+
+Contradizer no papel o numero que a tela mostrou e o pior lugar possivel para
+uma divergencia: **o material e o que sobra depois que a tela fecha**.
+
+`lucro_residual` desvia a pagina inteira, e nela `resultado` pode vir vazio --
+exigi-lo seria pedir justamente o numero que a pagina recusa. No lugar do DCF
+entram patrimonio de partida, P/VP, Ke e a cascata do lucro residual, mais uma
+secao que **diz por que nao e um DCF** em vez de so omiti-lo. Conferido no
+Bradesco: R$ 170,1 bi de equity, P/VP 0,95x, lucro residual negativo ano a ano --
+os mesmos numeros do modelo, sem uma linha de DCF.
+
+E ela declara o que nao avaliou: o universo de comparaveis exclui bancos de
+proposito, o diagnostico roda sobre um DCF que nao foi usado, e o modelo nao
+considera capital regulatorio.
+
+## A impressao foi conferida no PDF, e nao so na tela
+
+`@page` e `page-break-inside` estavam declarados e nao tinham sido vistos em
+papel. Gerado o PDF de verdade (Chromium headless) e lido com `pypdf`: **3
+paginas A4**, cada secao comecando limpa e cada aviso inteiro -- as regras de
+quebra funcionam.
+
+Faltava uma: **tabela que atravessa a pagina nao repetia o cabecalho**. Meia
+tabela sem cabecalho chega ao leitor como uma coluna de numeros sem nome.
+`thead { display: table-header-group }` resolve, e `tbody tr { page-break-inside:
+avoid }` impede linha partida ao meio. Conferido com uma tabela de 40 linhas: duas
+paginas, cabecalho nas duas.
+
+**Uma armadilha do proprio metodo:** a primeira conferencia foi por captura de
+tela rolando de 1123 em 1123 px, e ela **nao e paginacao** -- corta em altura
+fixa e ignora as regras de quebra. Ela acusou um cabecalho cortado que o PDF real
+nao tem. Instrumento que nao simula o que mede acusa o certo.
 
 ## A mesa qualifica a si mesma: estes modelos sao comparaveis?
 

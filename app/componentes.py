@@ -612,3 +612,36 @@ def com_rotulos(tabela):
     depois de a tela ter passado por ali.
     """
     return tabela.rename(index=rotulo_do_indicador)
+
+
+def tinta_por_intensidade(valor, maximo: float, cor: str | None = None) -> str:
+    """Fundo proporcional ao módulo do valor, na paleta do app.
+
+    Existe porque `Styler.background_gradient` **exige matplotlib**, que não é
+    dependência deste projeto — a tela de Comparar estourava com
+    `ImportError` para qualquer usuário sem ele, e nenhum teste pegou: o
+    `AppTest` monta a tela e o erro só aparece quando o Styler é computado, no
+    render.
+
+    E o mapa de cores do matplotlib também não serviria: a paleta daqui foi
+    validada para daltonismo e contraste nos dois modos, e trocar cor por
+    conveniência é exatamente o que este projeto não faz.
+    """
+    from .tema import paleta
+
+    if valor is None or not np.isfinite(valor) or not maximo:
+        return ""
+    p = paleta()
+    base = cor or (p.grave if valor > 0 else p.bom)
+    # Alpha entre 0,08 e 0,45: forte o bastante para ordenar a leitura, fraco o
+    # bastante para o numero continuar legivel por cima.
+    alpha = 0.08 + 0.37 * min(abs(float(valor)) / maximo, 1.0)
+    return f"background-color: {base}{int(alpha * 255):02x}"
+
+
+def pintar_por_intensidade(tabela, cor: str | None = None):
+    """`Styler` com o fundo proporcional, sem depender de matplotlib."""
+    valores = tabela.to_numpy(dtype="float64", na_value=np.nan)
+    finitos = valores[np.isfinite(valores)]
+    maximo = float(np.max(np.abs(finitos))) if finitos.size else 0.0
+    return tabela.style.map(lambda v: tinta_por_intensidade(v, maximo, cor))

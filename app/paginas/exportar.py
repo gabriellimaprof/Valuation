@@ -196,10 +196,12 @@ def _relatorio(resultado) -> None:
     with st.expander("Ver o relatório"):
         st.markdown(texto)
 
-    _material_do_comite(resultado, analise, qualidade, diagnostico, investimento)
+    _material_do_comite(resultado, analise, qualidade, diagnostico, investimento, banco)
 
 
-def _material_do_comite(resultado, analise, qualidade, diagnostico, investimento) -> None:
+def _material_do_comite(
+    resultado, analise, qualidade, diagnostico, investimento, banco=None
+) -> None:
     """A outra forma do mesmo valuation: uma pagina para levar a uma sala.
 
     O markdown existe para **diffar** -- rodar de novo em tres meses e ver o que
@@ -217,12 +219,18 @@ def _material_do_comite(resultado, analise, qualidade, diagnostico, investimento
         "Material para comitê",
         "Uma página com os gráficos e as tabelas, feita para imprimir.",
     )
+    # **Instituicao financeira desvia a pagina inteira.** Montar aqui um
+    # Enterprise Value, uma ponte e um WACC que a tela de Valor recusou seria
+    # contradizer no papel o numero que o usuario viu -- e o material e o que
+    # sobra depois que a tela fecha.
     pagina = montar_html(
-        resultado,
+        None if banco else resultado,
         analise=analise,
         qualidade=qualidade,
-        diagnostico=diagnostico,
-        investimento=investimento,
+        diagnostico=None if banco else diagnostico,
+        investimento=None if banco else investimento,
+        lucro_residual=banco[0] if banco else None,
+        empresa=estado.empresa() if banco else None,
         data=date.today().strftime("%d/%m/%Y"),
     )
     st.download_button(

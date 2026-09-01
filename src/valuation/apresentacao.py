@@ -252,6 +252,11 @@ thead th {{
   background: {AZUL}; color: #fff; border-bottom: none;
   font-weight: 600; font-size: 11.5px;
 }}
+/* Tabela que atravessa a pagina **repete o cabecalho**: sem isto, a segunda
+   metade chega ao leitor como uma coluna de numeros sem nome. E linha nao se
+   parte no meio -- meia linha nos dois lados da folha nao se le em nenhum. */
+thead {{ display: table-header-group; }}
+tbody tr {{ page-break-inside: avoid; }}
 tbody tr:nth-child(even) {{ background: {AREIA}; }}
 td.negativo {{ color: {VERMELHO}; }}
 figure {{ margin: 16px 0; page-break-inside: avoid; }}
@@ -341,13 +346,124 @@ def _avisos(diagnostico) -> str:
     return "".join(blocos)
 
 
+def _pagina_do_banco(empresa, lucro_residual, analise, qualidade, diagnostico, data):
+    """O material de uma instituicao financeira, que **nao tem DCF**.
+
+    Para uma industria a divida financia o ativo; para um banco ela **e o
+    insumo**, e descontar um "fluxo para a firma" ao WACC soma o que ele ganha
+    por tomar dinheiro e depois desconta por ele tomar dinheiro. A tela de Valor
+    ja desvia antes de qualquer numero aparecer, e o relatorio markdown tambem --
+    faltava a pagina do comite, que montaria Enterprise Value, ponte e WACC que
+    ninguem calculou.
+
+    Contradizer no papel o numero que a tela mostrou e o pior lugar possivel para
+    uma divergencia: o material e o que sobra depois que a tela fecha.
+    """
+    unidade = empresa.unidade or ""
+    v = lucro_residual
+    divisor, sufixo = escala_do_documento(
+        [v.equity_value, v.patrimonio_inicial, v.valor_presente_terminal]
+    )
+    unidade_escala = " ".join(x for x in (unidade, sufixo) if x)
+    pvp = v.equity_value / v.patrimonio_inicial if v.patrimonio_inicial else float("nan")
+
+    cartoes = [
+        Cartao(f"Equity value ({unidade_escala})", _num(v.equity_value / divisor)),
+        Cartao("P/VP", _num(pvp, 2) + "x"),
+        Cartao("Ke", _pct(v.ke)),
+        Cartao(
+            f"Patrimônio de partida ({unidade_escala})",
+            _num(v.patrimonio_inicial / divisor),
+        ),
+    ]
+
+    partes = [
+        f"<h1>{_e(empresa.nome)}</h1>",
+        f'<p class="subtitulo">Material de apoio à decisão · instituição '
+        f'financeira · gerado em {_e(data or "—")}</p>',
+        _cartoes(cartoes),
+        "<h2>Por que este modelo, e não um DCF</h2>",
+        "<p>Para uma indústria a dívida financia o ativo; para um banco ela "
+        "<strong>é o insumo</strong>. Descontar um fluxo para a firma ao WACC "
+        "somaria o que a instituição ganha por tomar dinheiro e depois "
+        "descontaria por ela tomar dinheiro. O valor aqui sai do "
+        "<strong>lucro residual</strong>: patrimônio contábil mais o valor "
+        "presente do lucro que excede o custo do capital sobre esse patrimônio.</p>",
+        "<h2>De onde vem o valor</h2>",
+        "<figure>"
+        + barras_horizontais(
+            [
+                ("Patrimônio de partida", v.patrimonio_inicial),
+                ("VP do lucro residual", v.valor_presente_residual),
+                ("VP do valor terminal", v.valor_presente_terminal),
+                ("= Equity value", v.equity_value),
+            ],
+            unidade=unidade_escala,
+            divisor=divisor,
+            titulo="Do patrimônio contábil ao valor do acionista",
+        )
+        + "<figcaption>A âncora contábil carrega a maior parte do valor — no DCF "
+        "o terminal costuma valer de 60% a 80% do total, e aqui erro na "
+        "perpetuidade custa menos.</figcaption></figure>",
+    ]
+
+    if v.anos:
+        serie = pd.DataFrame(
+            {
+                "Patrimônio de abertura": np.asarray(v.patrimonio_abertura) / divisor,
+                "Lucro": np.asarray(v.lucro) / divisor,
+                "Lucro residual": np.asarray(v.lucro_residual) / divisor,
+            },
+            index=v.anos,
+        ).T
+        serie.index.name = f"Em {unidade_escala}"
+        partes.append("<h2>O lucro acima do custo do capital</h2>")
+        partes.append(_tabela(serie))
+        partes.append(
+            '<p class="nota">Lucro residual negativo significa que o resultado '
+            "não cobre o custo do capital próprio: naquele ano a instituição "
+            "destruiu valor contábil, ainda que tenha dado lucro.</p>"
+        )
+
+    partes.append("<h2>O que pode derrubar a tese</h2>")
+    partes.append(_avisos(diagnostico))
+    partes.append(
+        '<div class="aviso atencao"><div class="titulo">O que não foi avaliado '
+        "aqui</div><div class=\"detalhe\">Este material não traz os percentis da "
+        "base de comparáveis nem o diagnóstico do DCF. O universo de referência "
+        "<strong>exclui bancos e seguradoras de propósito</strong> — margem "
+        "EBITDA e capex sobre receita não querem dizer neles o que querem dizer "
+        "no resto —, e o diagnóstico verifica a coerência de um DCF que não foi "
+        "usado. O modelo também não considera capital regulatório.</div></div>"
+    )
+
+    if qualidade is not None:
+        partes.append("<h3>Qualidade dos lucros</h3>")
+        partes.append(f'<p>{_e(getattr(qualidade, "resumo", ""))}</p>')
+
+    partes.append(
+        "<footer>Gerado pelo app de valuation a partir dos Dados Abertos da CVM. "
+        "O valor sai do modelo de lucro residual (Ohlson), e não de fluxo "
+        "descontado — as duas leituras não se somam.</footer>"
+    )
+    corpo = "".join(partes)
+    return (
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+        f"<title>{_e(empresa.nome)} — material de apoio</title>"
+        f"<style>{CSS}</style></head><body>"
+        f'<div class="folha">{corpo}</div></body></html>'
+    )
+
+
 def montar_html(
-    resultado,
+    resultado=None,
     analise=None,
     qualidade=None,
     diagnostico=None,
     margem=None,
     investimento=None,
+    lucro_residual=None,
+    empresa=None,
     data: str = "",
 ) -> str:
     """O material do comite, numa pagina HTML autossuficiente.
@@ -355,7 +471,24 @@ def montar_html(
     Recebe o mesmo que `relatorio.montar` e nao recalcula nada: as duas formas
     tem de dizer o mesmo numero, e a unica maneira de garantir isso e as duas
     lerem da mesma fonte.
+
+    ``lucro_residual`` **desvia a pagina inteira**: instituicao financeira nao
+    tem DCF, e montar aqui um Enterprise Value que ninguem calculou contradiria
+    no papel o que a tela mostrou. Nesse caminho ``resultado`` pode vir vazio --
+    exigi-lo seria pedir justamente o numero que a pagina recusa --, e o nome e a
+    unidade saem de ``empresa``.
     """
+    if lucro_residual is not None:
+        alvo = empresa if empresa is not None else resultado.empresa
+        return _pagina_do_banco(
+            alvo, lucro_residual, analise, qualidade, diagnostico, data
+        )
+
+    if resultado is None:
+        raise ValueError(
+            "Sem `resultado` nao ha DCF para descrever. Instituicao financeira "
+            "passa `lucro_residual` e `empresa`."
+        )
     empresa = resultado.empresa
     dcf = resultado.dcf
     unidade = empresa.unidade or ""

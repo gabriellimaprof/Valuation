@@ -46,6 +46,7 @@ from .historico import AnaliseHistorica, analisar
 from .modelo import ResultadoValuation, avaliar
 from .premissas import Empresa
 from .projeto import Projeto
+from .formulas import rotulo_do_indicador
 from .qualidade import RUIM, SEM_DADOS, avaliar_qualidade
 
 
@@ -58,6 +59,14 @@ from .qualidade import RUIM, SEM_DADOS, avaliar_qualidade
 # aviso que dirige atencao. Para referencia, os pares mais proximos da WEG ficam
 # entre 0,28 e 0,41 -- uma ordem de grandeza abaixo.
 PERFIS_INCOMPARAVEIS = 5.0
+
+
+VEREDITO_POR_EXTENSO = {
+    "bom": "Bom",
+    "atencao": "Atenção",
+    "ruim": "Ruim",
+    "sem_dados": "Sem dados",
+}
 
 
 def _medio(valores) -> float:
@@ -185,7 +194,10 @@ def _premissas_de(empresa: Empresa, analise: AnaliseHistorica | None) -> tuple[P
             _mediana(analise, "Capex / Receita"),
         ),
         Premissa(
-            "Depreciacao / Receita",
+            # O nome sai do mapa unico (`formulas.rotulo_do_indicador`), e nao de
+            # uma string local: a mesa nao pode escrever o rotulo diferente do
+            # que a tela de Historico escreve para o mesmo indicador.
+            rotulo_do_indicador("Depreciacao / Receita"),
             _medio(op.depreciacao_pct_receita),
             _mediana(analise, "Depreciacao / Receita"),
         ),
@@ -295,7 +307,11 @@ class Carteira:
                 "Valor por acao": m.valor_por_acao,
                 "Preco": m.preco,
                 "Margem de seguranca": m.margem_de_seguranca,
-                "Qualidade dos lucros": m.qualidade,
+                # O veredito e chave de codigo ("atencao"); na tela ele e
+                # texto de usuario, e sai acentuado e por extenso.
+                "Qualidade dos lucros": VEREDITO_POR_EXTENSO.get(
+                    m.qualidade, m.qualidade
+                ),
                 "Conversao de caixa": m.conversao,
             }
             for m in self.legiveis

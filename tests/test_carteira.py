@@ -289,3 +289,52 @@ def test_sem_universo_a_proximidade_fica_vazia_em_vez_de_inventar(
     assert mesa.proximidade().empty
     # E a leitura continua funcionando, sem a frase de proximidade.
     assert "perfis econômicos distantes" not in " ".join(mesa.leitura())
+
+
+def test_a_mesa_nao_depende_de_matplotlib():
+    """`Styler.background_gradient` exige matplotlib, que não é dependência.
+
+    A tela estourava com `ImportError` para qualquer usuário sem ele, e **nenhum
+    teste pegou**: o `AppTest` monta a tela e o erro só aparece quando o Styler é
+    computado, no render. Foi a varredura do navegador com modelos de verdade
+    dentro da biblioteca que achou — a tela sempre tinha sido percorrida
+    desligada, mostrando só o aviso.
+
+    E o mapa de cores do matplotlib também não serviria: a paleta daqui foi
+    validada para daltonismo e contraste nos dois modos.
+    """
+    import pathlib
+
+    fonte = pathlib.Path("app/paginas/comparar.py").read_text(encoding="utf-8")
+    assert "background_gradient" not in fonte
+    assert "cmap" not in fonte
+
+
+def test_coluna_inteiramente_vazia_nao_vira_coluna():
+    """Um traço em toda linha não informa; a ausência fica na legenda.
+
+    E o `st.dataframe` mostra o nulo bruto do Arrow — "None" em toda linha —,
+    mesmo com `na_rep` no Styler.
+    """
+    import pathlib
+
+    fonte = pathlib.Path("app/paginas/comparar.py").read_text(encoding="utf-8")
+    assert "isna().all()" in fonte
+    assert "drop(columns=vazias)" in fonte
+
+
+def test_o_rotulo_da_premissa_sai_acentuado(empresa_exemplo):
+    """A mesa não pode escrever o indicador diferente da tela de Histórico.
+
+    O mapa é único (`formulas.rotulo_do_indicador`); uma string local aqui
+    divergiria dele na primeira mudança.
+    """
+    mesa = montar(
+        [
+            _projeto(empresa_exemplo, "A", [100.0, 110.0, 121.0, 133.0]),
+            _projeto(empresa_exemplo, "B", [200.0, 210.0, 220.0, 231.0]),
+        ]
+    )
+    nomes = list(mesa.distancias().index)
+    assert "Depreciação / Receita" in nomes
+    assert "Depreciacao / Receita" not in nomes
