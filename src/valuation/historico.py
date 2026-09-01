@@ -550,6 +550,69 @@ def _convergir(inicio: float, fim: float, anos: int) -> list[float]:
     return [inicio + (fim - inicio) * (i / (anos - 1)) for i in range(anos)]
 
 
+# **A mediana resiste a ano atipico, e por isso ela e a base da projecao. O custo
+# dela e outro: quando a serie caminha numa direcao so, a mediana descreve o meio
+# de uma trajetoria que a companhia ja deixou** -- projeta o passado.
+#
+# Medido na safra 2021-2025, em 381 companhias com quatro exercicios de capital
+# de giro. |ultimo - mediana|, em pontos da receita:
+#
+#   P25 1,0   mediana 2,4   P75 5,2   P90 15,8   P95 30,8
+#
+# Distancia sozinha nao serve de corte: passa de 5 pontos em 25,7% da base, e
+# muita dessas e volatilidade e nao tendencia. Cruzada com **tres passos
+# consecutivos na mesma direcao**, sao **38 de 381 (10,0%)** -- e as que aparecem
+# sao incorporadora e companhia em recuperacao, onde o giro de fato mudou de
+# patamar: Recrusul com mediana de 33,0% e ultimo de 524,7%, Plano & Plano de
+# 8,3% para 50,3%.
+PASSOS_DE_TENDENCIA = 3
+DISTANCIA_DA_MEDIANA = 0.05
+
+
+def _mediana_descreve_a_tendencia(analise, indicador: str) -> str:
+    """Aviso quando a mediana ja nao descreve onde a companhia esta, ou "".
+
+    **Avisa e nao corrige.** Trocar a mediana pelo ultimo ano abriria a projecao
+    ao ano atipico, que e o problema que a mediana existe para resolver -- e a
+    escolha entre as duas depende de saber se a mudanca e de patamar ou de ciclo,
+    coisa que a serie nao diz.
+    """
+    serie = (
+        analise.indicadores.loc[indicador]
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+        if indicador in analise.indicadores.index
+        else pd.Series(dtype="float64")
+    )
+    if len(serie) < PASSOS_DE_TENDENCIA + 1:
+        return ""
+
+    mediana, ultimo = float(serie.median()), float(serie.iloc[-1])
+    distancia = ultimo - mediana
+    if abs(distancia) < DISTANCIA_DA_MEDIANA:
+        return ""
+
+    passos = np.diff(serie.to_numpy())
+    direcao = np.sign(passos[-1])
+    if direcao == 0:
+        return ""
+    seguidos = 0
+    for passo in passos[::-1]:
+        if np.sign(passo) != direcao:
+            break
+        seguidos += 1
+    if seguidos < PASSOS_DE_TENDENCIA:
+        return ""
+
+    caminho = "subindo" if direcao > 0 else "caindo"
+    return (
+        f"{indicador} vem {caminho} ha {seguidos} exercicios seguidos e o ultimo "
+        f"({ultimo:.1%}) esta {abs(distancia):.1%} da mediana ({mediana:.1%}), que "
+        "e o que a projecao usa. A mediana resiste a ano atipico, mas aqui ela "
+        "descreve o meio de uma trajetoria -- confira se o patamar mudou."
+    )
+
+
 def sugerir_premissas(
     analise: AnaliseHistorica,
     horizonte: int = 5,
@@ -663,6 +726,9 @@ def sugerir_premissas(
         justificativas["capital_giro_pct_receita"] = (
             f"Mediana historica de {giro_pct:.1%} da receita."
         )
+        alerta = _mediana_descreve_a_tendencia(analise, "Capital de giro / Receita")
+        if alerta:
+            alertas.append(alerta)
 
     # Arrendamento so entra na projecao quando a companhia tem arrendamento
     # relevante. Sugerir zero para todo mundo seria poluir o modelo de quem nao

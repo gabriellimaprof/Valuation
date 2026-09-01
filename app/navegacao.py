@@ -112,6 +112,15 @@ PASSOS: tuple[Passo, ...] = (
         "Planilha com fórmulas vivas e o relatório em markdown.",
         acao="Leve o modelo para fora do app",
     ),
+    # **Nao e um passo do caminho de uma empresa** -- e a mesa onde varias se
+    # olham juntas, e por isso entra depois de Exportar: primeiro se monta um
+    # valuation, depois se compara o que foi montado. Fica em PASSOS porque e
+    # dali que sai o menu, e uma tela fora dele seria inalcancavel.
+    Passo(
+        "comparar", "Comparar", "comparar", "compare_arrows",
+        "Vários modelos lado a lado, cada um contra o próprio histórico.",
+        acao="Compare os modelos que você já montou",
+    ),
 )
 
 POR_CHAVE = {passo.chave: passo for passo in PASSOS}

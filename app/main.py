@@ -24,6 +24,7 @@ for caminho in (str(RAIZ), str(RAIZ / "src")):
 from app import estado, navegacao  # noqa: E402
 from app.componentes import formatar, proximo_passo  # noqa: E402
 from app.paginas import (  # noqa: E402
+    comparar,
     custo_capital,
     dados,
     diagnostico,
@@ -229,6 +230,7 @@ TELAS = {
     "diagnostico": diagnostico.render,
     "qualitativo": qualitativo.render,
     "exportar": exportar.render,
+    "comparar": comparar.render,
 }
 
 

@@ -6,7 +6,7 @@ em qualquer coisa.
 
 ## O que é
 
-Um app Streamlit em treze telas, por cima de um motor de valuation em Python.
+Um app Streamlit em catorze telas, por cima de um motor de valuation em Python.
 Importa demonstrações financeiras, analisa o histórico, projeta o futuro, monta
 o custo de capital, desconta os fluxos, decompõe o retorno esperado, testa
 sensibilidade, critica o próprio modelo e exporta uma planilha Excel com
@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1116 testes
+pytest                        # 1125 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -61,6 +61,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   auditoria.py          de-para da leitura: identidades, contenção e origem
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
+  carteira.py           varios valuations lado a lado, contra o proprio historico
   biblioteca.py         pasta local de valuations, desligada por padrão
   excel.py              exportação com fórmulas vivas
   modelo.py             orquestração e substituição de premissas
@@ -841,7 +842,7 @@ As regras que valem:
   serve o mesmo recorte real do Olinda que os testes do módulo já usam.
 - **O app é verificado no navegador**, com Playwright, percorrendo o fluxo real:
   `python tools/navegador.py <porta>`, com o app rodando. Ele importa a WEG pela
-  própria interface, percorre as treze telas e todas as abas de cada uma, e acusa
+  própria interface, percorre as catorze telas e todas as abas de cada uma, e acusa
   exceção desenhada na página, markdown cru e rolagem horizontal.
 
   **Isso não é redundante com o `AppTest`.** O `AppTest` executa a tela em
@@ -1201,7 +1202,7 @@ não é verificação.
 
 ## Estado atual
 
-1.116 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.125 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1689,6 +1690,99 @@ Efeito na projeção, que é onde isso decide valor:
 
 Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
 uma companhia que constrói shopping projetada como se não construísse.
+
+## O trimestral passou pela varredura do anual, e agora fecha em 100%
+
+A verificacao mais forte do projeto -- voltar ao CSV bruto, achar a linha pelo
+codigo que o app registrou no de-para, aplicar escala e sinal a mao e comparar --
+**so ficou possivel no ITR depois que ele ganhou de-para**. Rodada na base
+inteira, por trimestre:
+
+| | |
+|---|---|
+| Pares conta x linha publicada | **49.670** |
+| Batem exatamente | **49.670 -- 100,0000%** |
+| Divergem | **0** |
+
+**A primeira rodada deu 98,63%, e as 731 divergencias eram do conferidor.** Cada
+uma tinha nome: `lucro_controladores` vindo de `substitui_zero` (209),
+`depreciacao_dfc` e `juros_pagos` sendo **regras somadas** que o verificador
+comparava contra uma linha so (186 e 169), a preferencia da D&A da DFC sobre a
+da DRE (26). E as 14 restantes eram a **CLI Sul**: o conferidor pegava sempre o
+consolidado quando ele existe, e o dela vem zerado -- entao a leitura correta (a
+individual) era acusada contra uma coluna de zeros.
+
+O verificador passou a excluir o que o teste do caminho anual ja exclui, e a
+escolher o escopo **por ter numero**, que e a mesma regra de
+`escopo_da_companhia`. Vale registrar: quando a medicao acusa a base inteira, o
+primeiro suspeito e ela mesma.
+
+A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
+ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
+contra a acumulada acusaria a leitura certa por um terco.
+
+## A mesa: varios modelos lado a lado
+
+`comparacao.py` compara **duas versoes do mesmo** valuation. `carteira.py`
+responde outra pergunta: com tres ou quatro companhias modeladas na mesa, **em
+qual delas eu estou sendo otimista?**
+
+**A decisao de desenho separa comparacao util de tabela bonita.** Por em coluna a
+margem projetada de cada companhia -- 22%, 15%, 31% -- nao responde nada: a
+margem de uma varejista nao se compara com a de uma geradora, e quem olha a
+tabela ou ja sabe disso (e a coluna nao acrescenta) ou nao sabe (e a coluna
+engana).
+
+O que se compara entre negocios diferentes e a **distancia entre a premissa e o
+que aquela companhia entregou**. Projetar 22% para quem entregou 20% e
+continuidade; projetar 15% para quem entregou 9% e uma afirmacao sobre mudanca.
+Lado a lado, as distancias sao comparaveis mesmo quando os niveis nao sao. E a
+ideia do balizador atravessando companhias.
+
+A tela publica **tres colunas por modelo** -- projetado, entregue e a distancia --
+porque so a terceira se le na horizontal, e mostrar as outras duas e o que
+permite conferi-la.
+
+**Distancia zero e um achado, e nao a ausencia de um.** Modelo derivado do
+historico pelo botao tem premissa igual a mediana entregue por construcao, e a
+mesa diz isso: *"nenhum destes modelos projeta acima do proprio historico -- o
+valor na tela e extrapolacao, e nao uma tese sobre o que vai mudar"*.
+
+Tres coisas que ela **nao** faz, e ha teste reprovando cada uma: nao da nota nem
+ranking (a mesma decisao de `qualitativo.py`), nao decide quais sao comparaveis
+(isso e `pares.py`) e nao recalcula premissa nenhuma. E ela **avisa quando as
+unidades nao batem** -- um modelo em R$ mil ao lado de um em R$ milhoes se le
+errado por mil vezes, e nada na tabela denunciaria; e aviso e nao recusa, porque
+as colunas percentuais continuam validas.
+
+A tela depende da **biblioteca, que nasce desligada**, e diz isso em vez de
+existir vazia -- a mesma propriedade que o botao de salvar ja tem.
+
+## A mediana projeta o passado quando a serie tem tendencia
+
+`sugerir_premissas` projeta a **mediana** historica, que resiste a ano atipico --
+e e a escolha certa na maioria. O custo dela aparece quando a serie caminha numa
+direcao so: a mediana descreve o meio de uma trajetoria que a companhia ja
+deixou.
+
+Medido na safra 2021-2025, em 381 companhias com quatro exercicios de capital de
+giro. |ultimo - mediana|, em pontos da receita:
+
+| P25 | Mediana | P75 | P90 | P95 |
+|---|---|---|---|---|
+| 1,0 | 2,4 | 5,2 | 15,8 | 30,8 |
+
+**Distancia sozinha nao serve de corte**: passa de 5 pontos em 25,7% da base, e
+muito disso e volatilidade e nao tendencia. Cruzada com **tres passos
+consecutivos na mesma direcao**, sao **38 de 381 (10,0%)** -- e as que aparecem
+sao incorporadora e companhia em recuperacao, onde o giro mudou de patamar:
+Recrusul com mediana de 33,0% e ultimo de 524,7%, Plano & Plano de 8,3% para
+50,3%, Tegra subindo 4 exercicios seguidos.
+
+**Avisa e nao corrige.** Trocar a mediana pelo ultimo ano abriria a projecao ao
+ano atipico -- o problema que a mediana existe para resolver --, e a escolha
+entre as duas depende de saber se a mudanca e de patamar ou de ciclo, coisa que
+a serie nao diz.
 
 ## Operações continuadas não são o lucro líquido, e o ITR lia a conta errada
 
