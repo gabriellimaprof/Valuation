@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1135 testes
+pytest                        # 1137 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1203,7 +1203,7 @@ não é verificação.
 
 ## Estado atual
 
-1.135 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.137 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1721,6 +1721,34 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## A mesa qualifica a si mesma: estes modelos sao comparaveis?
+
+Por lado a lado uma varejista e um banco produz uma tabela que **sugere uma
+comparacao que os numeros nao sustentam**. A mesa passou a responder isso com o
+criterio que o projeto ja tem -- o de `pares.py`, que compara risco, crescimento
+e fluxo de caixa com z-score robusto contra a base brasileira.
+
+O corte e medido. Distancia de perfil entre **6.780 pares quaisquer** do universo
+de 2021-2025:
+
+| P5 | P25 | Mediana | P75 | P90 |
+|---|---|---|---|---|
+| 0,42 | 0,78 | **1,26** | 2,78 | **5,01** |
+
+`PERFIS_INCOMPARAVEIS = 5,0` e o P90: acusa o decimo mais dissimilar, que e a
+raridade de um aviso que dirige atencao. Para referencia, os pares mais proximos
+da WEG ficam entre 0,28 e 0,41 -- uma ordem de grandeza abaixo do corte.
+
+Conferido em tres companhias reais: Multiplan e Allos ficam a **0,64** uma da
+outra (dois shoppings, corretamente proximos) e a WEG a 1,43 e 1,59 delas. Nenhum
+aviso dispara, que e o certo -- as tres sao comparaveis o bastante.
+
+**O aviso nao manda descartar a mesa.** A distancia de cada modelo para o
+**proprio** historico continua valendo qualquer que seja o vizinho; o que deixa
+de valer e ler uma contra a outra. E sem universo construido a proximidade fica
+**vazia em vez de inventar um numero**: o z-score precisa da mediana e do IQR da
+base, e distancia sem escala nao quer dizer nada.
 
 ## O material do comite: a outra forma do mesmo valuation
 
@@ -2799,9 +2827,14 @@ Em ordem de valor:
    0,17 e 0,78 (os quartis novos); `DIVIDA_EBITDA_ALTA = 3.5` segue sendo o P75
    (3,55) e dispara em 25,4%.
 
-   **Uma linha ficou de fora e está declarada:** `DESCOLAMENTO_DO_JURO` ainda é
-   da safra 2020-2024. Safra parcial que se apresenta como inteira é exatamente
-   o problema que `safra()` existe para evitar.
+   **`DESCOLAMENTO_DO_JURO` estava marcado aqui como pendente, e não estava.**
+   Ele já tinha sido recalibrado na safra 2021-2025; a nota é que ficou para
+   trás. Remedido depois das correções de leitura desta rodada (capex, `3.09`,
+   lado do balanço), ele **não se moveu**: n de 260 para 259, e os quantis
+   idênticos até a terceira casa (P75 0,100 → 0,101; P90 0,138 → 0,139). Os
+   cortes acusam 25,5% e 10,4% da base — exatamente o quartil e o decil que eles
+   são. Anotação errada envelhece igual a número errado, e custa o mesmo:
+   trabalho gasto refazendo o que já estava feito.
 
 ## Como trabalhar neste projeto
 

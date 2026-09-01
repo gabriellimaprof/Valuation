@@ -80,6 +80,22 @@ def render() -> None:
     for frase in carteira.leitura():
         st.markdown(escapar_cifrao(frase))
 
+    proximidade = carteira.proximidade()
+    if not proximidade.empty:
+        with st.expander("Estes modelos são comparáveis entre si?"):
+            st.caption(
+                "Distância de perfil econômico, pelo critério de `pares.py` — "
+                "risco, crescimento e fluxo de caixa parecidos. Na base, a "
+                "mediana entre companhias quaisquer é **1,3**; os pares mais "
+                "próximos da WEG ficam entre 0,28 e 0,41."
+            )
+            st.dataframe(
+                proximidade.style.format("{:.2f}", na_rep="—").background_gradient(
+                    cmap="Reds", axis=None
+                ),
+                width="stretch",
+            )
+
     secao(
         "A distância de cada premissa para o histórico",
         "Positivo significa que a projeção pede melhora sobre o que a companhia "

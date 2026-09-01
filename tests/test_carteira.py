@@ -233,3 +233,59 @@ def test_a_tela_de_comparar_diz_quando_a_biblioteca_esta_desligada(monkeypatch):
     texto = " ".join(i.value for i in teste.info)
     assert "desligada" in texto
     assert "VALUATION_BIBLIOTECA" in texto
+
+
+def test_a_mesa_avisa_quando_os_perfis_nao_se_comparam(empresa_exemplo, monkeypatch):
+    """Pôr uma varejista ao lado de um banco sugere uma comparação que os
+    números não sustentam.
+
+    A mesa usa o critério de `pares.py` — risco, crescimento e fluxo de caixa
+    parecidos — para qualificar a si mesma. Medida a distância entre 6.780 pares
+    quaisquer do universo: mediana 1,26 e **P90 em 5,01**, que é o corte. Os
+    pares mais próximos da WEG ficam entre 0,28 e 0,41, uma ordem de grandeza
+    abaixo.
+    """
+    import numpy as np
+
+    from valuation import carteira as mod
+
+    a = _projeto(empresa_exemplo, "Indústria", [100.0, 110.0, 121.0, 133.0])
+    b = _projeto(empresa_exemplo, "Outra coisa", [100.0, 110.0, 121.0, 133.0])
+    mesa = montar([a, b])
+
+    longe = pd.DataFrame(
+        [[np.nan, 9.0], [9.0, np.nan]],
+        index=["Indústria", "Outra coisa"],
+        columns=["Indústria", "Outra coisa"],
+    )
+    monkeypatch.setattr(mod.Carteira, "proximidade", lambda self: longe)
+
+    frases = " ".join(mesa.leitura())
+    assert "perfis econômicos distantes" in frases
+    # Traz o numero, porque "distantes" sem tamanho nao ajuda a decidir.
+    assert "9.0" in frases or "9,0" in frases
+    # E nao manda descartar a mesa: a distancia para o proprio historico continua.
+    assert "continua valendo" in frases
+
+
+def test_sem_universo_a_proximidade_fica_vazia_em_vez_de_inventar(
+    empresa_exemplo, monkeypatch
+):
+    """Distância sem escala não quer dizer nada.
+
+    O z-score precisa da mediana e do IQR da base; sem o universo construído,
+    somar dimensões de unidades diferentes produziria um número com aparência de
+    medida.
+    """
+    from valuation import pares
+
+    monkeypatch.setattr(pares, "universo_mais_proximo", lambda anos: None)
+    mesa = montar(
+        [
+            _projeto(empresa_exemplo, "A", [100.0, 110.0, 121.0, 133.0]),
+            _projeto(empresa_exemplo, "B", [200.0, 210.0, 220.0, 231.0]),
+        ]
+    )
+    assert mesa.proximidade().empty
+    # E a leitura continua funcionando, sem a frase de proximidade.
+    assert "perfis econômicos distantes" not in " ".join(mesa.leitura())

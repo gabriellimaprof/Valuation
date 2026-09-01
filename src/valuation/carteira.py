@@ -49,6 +49,17 @@ from .projeto import Projeto
 from .qualidade import RUIM, SEM_DADOS, avaliar_qualidade
 
 
+# **Quando dois modelos na mesa nao sao comparaveis.** Medida a distancia de
+# perfil entre 6.780 pares quaisquer do universo de 2021-2025:
+#
+#   P5 0,42   P25 0,78   mediana 1,26   P75 2,78   P90 **5,01**
+#
+# O corte e o P90: ele acusa o decimo mais dissimilar, que e a raridade de um
+# aviso que dirige atencao. Para referencia, os pares mais proximos da WEG ficam
+# entre 0,28 e 0,41 -- uma ordem de grandeza abaixo.
+PERFIS_INCOMPARAVEIS = 5.0
+
+
 def _medio(valores) -> float:
     """A media dos anos projetados de um direcionador, ou NaN."""
     serie = [float(v) for v in (valores or []) if np.isfinite(float(v))]
@@ -103,6 +114,9 @@ class ModeloNaMesa:
     unidade: str = ""
     qualidade: str = SEM_DADOS
     conversao: float = float("nan")
+    #: O perfil economico de `pares.py`, guardado para a mesa poder medir se
+    #: os modelos nela sao mesmo comparaveis entre si.
+    perfil: dict = field(default_factory=dict)
     erro: str = ""
 
     @property
@@ -217,6 +231,15 @@ def por_na_mesa(
         if bruto is not None and np.isfinite(float(bruto)):
             preco = float(bruto)
 
+    perfil = {}
+    if analise is not None:
+        from .pares import perfil_de
+
+        try:
+            perfil = perfil_de(analise)
+        except Exception:
+            perfil = {}
+
     por_acao = resultado.dcf.valor_por_acao
     return ModeloNaMesa(
         nome=rotulo,
@@ -230,6 +253,7 @@ def por_na_mesa(
         unidade=empresa.unidade,
         qualidade=qualidade,
         conversao=conversao,
+        perfil=perfil,
     )
 
 
@@ -315,6 +339,39 @@ class Carteira:
         }
         return pd.DataFrame(dados, index=nomes)
 
+    def proximidade(self) -> pd.DataFrame:
+        """Distancia de perfil economico entre cada par de modelos na mesa.
+
+        Usa o criterio de `pares.py` -- risco, crescimento e fluxo de caixa
+        parecidos, com z-score robusto contra a base brasileira -- para responder
+        uma pergunta que a mesa nao tinha: **estes modelos sao mesmo
+        comparaveis?** Por lado a lado uma varejista e um banco produz uma tabela
+        que sugere uma comparacao que os numeros nao sustentam.
+
+        Devolve vazio quando o universo nao foi construido: sem ele nao ha as
+        escalas que transformam "margem de 20%" em "quao incomum e essa margem",
+        e distancia sem escala nao quer dizer nada.
+        """
+        from itertools import combinations
+
+        from .pares import distancia, universo_mais_proximo
+
+        modelos = [m for m in self.legiveis if m.perfil]
+        if len(modelos) < 2:
+            return pd.DataFrame()
+        encontrado = universo_mais_proximo([])
+        if encontrado is None:
+            return pd.DataFrame()
+
+        escalas = encontrado[0].escalas()
+        nomes = [m.nome for m in modelos]
+        tabela = pd.DataFrame(float("nan"), index=nomes, columns=nomes)
+        for a, b in combinations(modelos, 2):
+            d, _ = distancia(a.perfil, b.perfil, escalas)
+            tabela.loc[a.nome, b.nome] = d
+            tabela.loc[b.nome, a.nome] = d
+        return tabela
+
     def leitura(self) -> list[str]:
         """O que a mesa diz, em frases -- sem ranking e sem veredito.
 
@@ -326,6 +383,26 @@ class Carteira:
             return []
 
         frases = []
+        distantes = self.proximidade()
+        if not distantes.empty:
+            pares = [
+                (a, b, float(distantes.loc[a, b]))
+                for i, a in enumerate(distantes.index)
+                for b in list(distantes.columns)[i + 1 :]
+                if np.isfinite(distantes.loc[a, b])
+                and distantes.loc[a, b] > PERFIS_INCOMPARAVEIS
+            ]
+            if pares:
+                a, b, d = max(pares, key=lambda x: x[2])
+                frases.append(
+                    f"**{a}** e **{b}** têm perfis econômicos distantes "
+                    f"(distância {d:.1f}, contra mediana de 1,3 entre companhias "
+                    "quaisquer da base). Pôr as premissas lado a lado sugere uma "
+                    "comparação que o negócio não sustenta — a distância para o "
+                    "próprio histórico continua valendo em cada um, mas ler uma "
+                    "contra a outra, não."
+                )
+
         if self.mistura_unidades:
             frases.append(
                 "**Os modelos estão em unidades diferentes** ("
