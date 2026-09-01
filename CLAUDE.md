@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1125 testes
+pytest                        # 1135 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -62,6 +62,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   projeto.py            salvar e retomar um valuation inteiro
   comparacao.py         ponte do que moveu o valor entre duas versoes
   carteira.py           varios valuations lado a lado, contra o proprio historico
+  apresentacao.py       o material do comite: HTML autossuficiente, SVG inline
   biblioteca.py         pasta local de valuations, desligada por padrão
   excel.py              exportação com fórmulas vivas
   modelo.py             orquestração e substituição de premissas
@@ -1202,7 +1203,7 @@ não é verificação.
 
 ## Estado atual
 
-1.125 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.135 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1720,6 +1721,47 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## O material do comite: a outra forma do mesmo valuation
+
+`relatorio.py` produz markdown, e a escolha e deliberada -- rodar de novo em tres
+meses e comparar com um diff mostra o que **mudou no raciocinio**. Isso serve ao
+analista e nao serve a uma sala: ninguem projeta um diff.
+
+`apresentacao.py` produz a outra forma: **uma pagina HTML autossuficiente, feita
+para imprimir**. Mesmos numeros, mesma origem, outra densidade.
+
+**Os graficos sao SVG escrito a mao, e nao Plotly.** Plotly e dependencia
+opcional (`app`, `dev`) e o motor nao pode exigi-la -- mas a razao principal e
+outra: o HTML exportado do Plotly carrega ~3 MB de JavaScript e **nao imprime
+bem**, porque o layout e calculado no navegador. SVG inline imprime igual em
+qualquer lugar e nao depende de rede. Ha teste exigindo que a pagina nao tenha
+`<script>`, `src=`, `href=` nem `url(` -- arquivo que precisa de rede para se
+desenhar e arquivo que falha na sala de reuniao.
+
+**Tres defeitos sairam de olhar a pagina renderizada, e nenhum teste os
+pegaria** -- a mesma familia do markdown cru e da unidade repetida:
+
+| O que aparecia | Por que |
+|---|---|
+| `63.902.487.991,2 R$` quebrando o cartao em duas linhas | **a unidade dentro do numero** -- o defeito que este arquivo ja documenta na tela, e que eu repeti aqui |
+| `63.196.776.991,` cortado na borda do grafico | 90px de folga para o rotulo do valor nao bastavam |
+| Doze digitos onde se le uma grandeza | comite le "R$ 63,9 bi", e nao o numero por extenso |
+
+A escala e **uma so para o documento**, escolhida pelo maior numero que ele
+mostra e declarada no rotulo da coluna: trocar de escala entre linhas da mesma
+tabela e o jeito mais rapido de fazer alguem comparar bilhao com milhao sem
+perceber.
+
+**Os achados do diagnostico vao no documento, e nao num anexo.** A pergunta que
+vem da mesa e exatamente a que o diagnostico antecipa; esconde-la nao a faz
+sumir, so faz o analista ser pego por ela. E quando o diagnostico nao rodou, a
+pagina **diz isso** -- "sem achados" e "nao verificado" nao sao a mesma coisa.
+
+O modulo **formata e nao calcula**: ha teste conferindo que o WACC impresso e o
+que o motor devolveu. Duas implementacoes do mesmo numero divergem no dia em que
+uma delas muda, e a divergencia apareceria entre o que o comite ve e o que o app
+mostra.
 
 ## A mesa: varios modelos lado a lado
 

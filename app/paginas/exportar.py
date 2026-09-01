@@ -14,7 +14,7 @@ import yaml
 from valuation import biblioteca, exportar_excel
 
 from .. import estado
-from ..componentes import aviso_sem_modelo, etapa
+from ..componentes import aviso_sem_modelo, etapa, secao
 
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -122,6 +122,9 @@ def _relatorio(resultado) -> None:
     )
 
     analise = estado.analise()
+    investimento = (
+        compor_investimento(analise.demonstracoes) if analise is not None else None
+    )
     diagnostico = estado.diagnostico()
     qualidade = None
     if analise is not None:
@@ -171,11 +174,7 @@ def _relatorio(resultado) -> None:
             expectativas=expectativas,
             evidencias=reunir_evidencias(analise, resultado),
             vrio=reunir_vrio(analise, resultado),
-            investimento=(
-                compor_investimento(analise.demonstracoes)
-                if analise is not None
-                else None
-            ),
+            investimento=investimento,
             respostas_qualitativas=estado.respostas_qualitativas(),
             ifrs16=ver_ex_ifrs16(analise) if analise is not None else None,
             lucro_residual=banco[0] if banco else None,
@@ -196,6 +195,46 @@ def _relatorio(resultado) -> None:
 
     with st.expander("Ver o relatório"):
         st.markdown(texto)
+
+    _material_do_comite(resultado, analise, qualidade, diagnostico, investimento)
+
+
+def _material_do_comite(resultado, analise, qualidade, diagnostico, investimento) -> None:
+    """A outra forma do mesmo valuation: uma pagina para levar a uma sala.
+
+    O markdown existe para **diffar** -- rodar de novo em tres meses e ver o que
+    mudou no raciocinio. Ninguem projeta um diff, e por isso ha as duas: mesmos
+    numeros, mesma origem, outra densidade.
+
+    A pagina e **autossuficiente**: SVG inline, sem CDN e sem script. Arquivo que
+    precisa de rede para se desenhar e arquivo que falha na sala de reuniao.
+    """
+    from datetime import date
+
+    from valuation.apresentacao import montar_html
+
+    secao(
+        "Material para comitê",
+        "Uma página com os gráficos e as tabelas, feita para imprimir.",
+    )
+    pagina = montar_html(
+        resultado,
+        analise=analise,
+        qualidade=qualidade,
+        diagnostico=diagnostico,
+        investimento=investimento,
+        data=date.today().strftime("%d/%m/%Y"),
+    )
+    st.download_button(
+        "Baixar o material (.html)",
+        data=pagina.encode("utf-8"),
+        file_name=f"comite_{_slug(estado.empresa().nome)}.html",
+        mime="text/html",
+    )
+    st.caption(
+        "Abra no navegador e imprima em PDF (Ctrl+P). O arquivo não busca nada "
+        "de fora — os gráficos são desenhados nele mesmo."
+    )
 
 
 def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> None:
