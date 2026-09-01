@@ -242,7 +242,23 @@ CONTAS_DRE: tuple[Conta, ...] = (
             "net profit",
             "net earnings",
         ),
-        codigos_cvm=("3.11", "3.09"),
+        # **`3.09` saiu daqui, e a medicao e o motivo.** Ele e "Resultado
+        # Liquido das Operacoes Continuadas" e nao o consolidado do periodo:
+        # onde ha operacao descontinuada os dois sao numeros diferentes. Estava
+        # declarado como codigo alternativo, na intencao de servir de recurso
+        # quando `3.11` falta -- e no ITR ele **ganhava**, em 195 companhias.
+        #
+        # Medido no ITR de 2026: em 186 delas `3.10` e zero e tanto faz, mas em
+        # **9 nao**, e ali o app lia outro numero. Na Randoncorp com **o sinal
+        # trocado** -- +R$ 56,5 mi de lucro onde a companhia publicou -R$ 23,1
+        # mi de prejuizo. Na CBD, -203,0 contra -252,0; na Motiva, 1.321,0
+        # contra 1.402,0.
+        #
+        # O recurso continua existindo, e agora pela identidade: `3.09` tem
+        # conta propria e `lucro_liquido` se deriva de continuadas mais
+        # descontinuadas quando `3.11` falta. Somar os dois e a definicao; pegar
+        # um deles e outra conta.
+        codigos_cvm=("3.11",),
         obrigatoria=True,
         ajuda="Resultado que sobra para o acionista. Base do ROE e do P/L.",
     ),
@@ -354,6 +370,22 @@ CONTAS_DRE: tuple[Conta, ...] = (
         sinonimos=("diferido", "imposto diferido", "deferred income tax"),
         codigos_cvm=("3.08.02",),
         ajuda="Pode inverter de sinal entre anos; nao e saida de caixa.",
+    ),
+    Conta(
+        chave="resultado_continuadas",
+        rotulo="Resultado das operacoes continuadas",
+        demonstracao="dre",
+        sinonimos=(
+            "resultado liquido das operacoes continuadas",
+            "lucro/prejuizo das operacoes continuadas",
+            "resultado das operacoes continuadas",
+            "income from continuing operations",
+        ),
+        codigos_cvm=("3.09",),
+        ajuda=(
+            "O lucro **antes** de somar o que a empresa esta deixando. Com "
+            "operacao descontinuada ele difere do consolidado do periodo."
+        ),
     ),
     Conta(
         chave="operacoes_descontinuadas",
@@ -1236,6 +1268,24 @@ DERIVACOES: tuple[Derivacao, ...] = (
         requer=("ebit", "resultado_financeiro"),
         formula="ebit + resultado_financeiro",
         explicacao="LAIR = EBIT + resultado financeiro",
+    ),
+    # Antes de recorrer a LAIR - IR: quando a companhia publica as duas pontas,
+    # a soma delas **e** o consolidado, e nao uma aproximacao. E a mesma
+    # identidade que a DRE gerencial ja verifica ("continuadas + descontinuadas
+    # = LL").
+    Derivacao(
+        chave="lucro_liquido",
+        requer=("resultado_continuadas", "operacoes_descontinuadas"),
+        formula="resultado_continuadas + operacoes_descontinuadas",
+        explicacao="Lucro liquido = continuadas + descontinuadas",
+    ),
+    # E quando so ha a linha de continuadas, ela e o consolidado: sem
+    # descontinuada publicada, os dois coincidem.
+    Derivacao(
+        chave="lucro_liquido",
+        requer=("resultado_continuadas",),
+        formula="resultado_continuadas",
+        explicacao="Lucro liquido = resultado das operacoes continuadas (sem descontinuada)",
     ),
     Derivacao(
         chave="lucro_liquido",

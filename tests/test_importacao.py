@@ -556,3 +556,48 @@ def test_a_guarda_de_lado_so_recusa_quando_os_dois_lados_sao_conhecidos():
     assert _lado_confere("tributos_diferidos_passivo", "")
     # Conta que nao declara lado unico tambem passa.
     assert _lado_confere(None, "1.03.02")
+
+
+def test_operacoes_continuadas_nao_sao_o_lucro_liquido():
+    """`3.09` deixou de ser código alternativo de `lucro_liquido`.
+
+    Ele é "Resultado Líquido das Operações Continuadas" e não o consolidado do
+    período: onde há operação descontinuada, os dois são números diferentes.
+    Estava declarado como alternativa para quando `3.11` falta — e no ITR ele
+    **ganhava**, em 195 companhias.
+
+    Medido no ITR de 2026: em 186 delas `3.10` é zero e tanto faz, mas em **9
+    não**. Na Randoncorp com o **sinal trocado** — o app lia +R$ 56,5 mi de
+    lucro onde a companhia publicou −R$ 23,1 mi de prejuízo; na CBD, −203,0
+    contra −252,0. Depois da correção: 5 companhias caem em `3.09`, todas sem
+    `3.11` publicado, e **nenhuma diverge do consolidado**.
+    """
+    from valuation.importacao.esquema import POR_CHAVE
+
+    assert POR_CHAVE["lucro_liquido"].codigos_cvm == ("3.11",)
+    assert POR_CHAVE["resultado_continuadas"].codigos_cvm == ("3.09",)
+
+
+def test_o_lucro_liquido_ausente_vem_da_soma_das_duas_pontas(tmp_path):
+    """O recurso continua existindo, e agora pela identidade.
+
+    Somar continuadas e descontinuadas **é** o consolidado; pegar uma das duas é
+    outra conta. É a mesma identidade que a DRE gerencial já verifica.
+    """
+    caminho = _escrever(
+        tmp_path / "continuadas.xlsx",
+        [
+            ["Demonstração do Resultado - Consolidado"],
+            ["Conta", "Descrição", 2024],
+            ["3.01", "Receita de Venda de Bens e/ou Serviços", 1000.0],
+            ["3.05", "Resultado Antes do Resultado Financeiro e dos Tributos", 200.0],
+            ["3.09", "Resultado Líquido das Operações Continuadas", 100.0],
+            ["3.10", "Resultado Líquido de Operações Descontinuadas", -30.0],
+        ],
+    )
+    dfs = importar(caminho)
+
+    assert float(dfs.valor("resultado_continuadas")) == pytest.approx(100.0)
+    assert float(dfs.valor("operacoes_descontinuadas")) == pytest.approx(-30.0)
+    # 100 - 30 = 70, e nao os 100 que a leitura antiga devolveria.
+    assert float(dfs.valor("lucro_liquido")) == pytest.approx(70.0)

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1114 testes
+pytest                        # 1116 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1201,7 +1201,7 @@ não é verificação.
 
 ## Estado atual
 
-1.114 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.116 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1689,6 +1689,68 @@ Efeito na projeção, que é onde isso decide valor:
 
 Antes da correção as quatro primeiras projetavam capex de 1% a 4% da receita —
 uma companhia que constrói shopping projetada como se não construísse.
+
+## Operações continuadas não são o lucro líquido, e o ITR lia a conta errada
+
+O de-para trimestral, recém-criado, permitiu a segunda pergunta: **os dois
+caminhos leem a mesma conta da mesma linha?** Comparados conta a conta em 437
+companhias, aparecem 327 combinações divergentes — e quase todas são benignas.
+`capex`, `dividendos_pagos`, `juros_pagos` e `impostos_pagos` são **regras
+somadas**, onde abaixo do total de seção o plano é conta livre: a mesma rubrica
+sai em `6.02.01` num arquivo e `6.02.02` no outro, e isso é ordem de linha, não
+leitura inconsistente.
+
+Uma não é benigna: **`lucro_liquido` vindo de `3.11` no DFP e de `3.09` no ITR**.
+
+`3.09` é "Resultado Líquido das Operações Continuadas" e `3.11` é o consolidado
+do período. Onde há operação descontinuada eles **não são o mesmo número**, e a
+diferença é grande — medida no DFP de 2025, em 28 companhias, com inversão de
+sinal em várias:
+
+| Companhia | 3.09 | 3.11 |
+|---|---|---|
+| Natura | +R$ 529,0 mi | **−R$ 1.785,2 mi** |
+| Americanas | +R$ 98,0 mi | **−R$ 271,0 mi** |
+| Hidrovias | +R$ 60,5 mi | **−R$ 140,9 mi** |
+
+A causa: `3.09` estava declarado como **código alternativo** de `lucro_liquido`,
+na intenção de servir de recurso quando `3.11` falta. No ITR ele ganhava, em
+**195 companhias**. Em 186 delas `3.10` é zero e tanto faz — mas em **9 não**:
+
+| Companhia | Lido (`3.09`) | Publicado (`3.11`) |
+|---|---|---|
+| Randoncorp | **+R$ 56,5 mi** | **−R$ 23,1 mi** — sinal trocado |
+| CBD | −R$ 203,0 mi | −R$ 252,0 mi |
+| Motiva | R$ 1.321,0 mi | R$ 1.402,0 mi |
+| Raia Drogasil | R$ 416,3 mi | R$ 424,5 mi |
+
+**O recurso continua existindo, e agora pela identidade.** `3.09` ganhou conta
+própria (`resultado_continuadas`) e `lucro_liquido` deriva de continuadas mais
+descontinuadas quando `3.11` falta — que é a mesma identidade que a DRE
+gerencial já verifica. Somar as duas **é** o consolidado; pegar uma delas é
+outra conta.
+
+Depois da correção: as companhias que caem em `3.09` vão de 195 para **5**,
+todas sem `3.11` publicado, e **nenhuma diverge do consolidado**. A auditoria da
+base sai byte a byte idêntica, e o caminho anual não se move.
+
+## A correção do lado do balanço não move valuation nenhum
+
+Registrado porque a pergunta é natural e a resposta não é óbvia: os R$ 275 bi
+corrigidos acima **não mudam nenhum número calculado**. `tributos_diferidos_passivo`
+não é consumida por módulo algum do motor — é conta de leitura, que vive na
+árvore publicada e na tela de conferência. Medido no lucro residual dos bancos,
+antes e depois:
+
+| | Equity | P/VP |
+|---|---|---|
+| Bradesco | R$ 170,0525 bi → R$ 170,0525 bi | 0,950287 → 0,950287 |
+| Banco do Brasil | R$ 229,1629 bi → idem | 1,183892 → idem |
+| Itaú | R$ 268,5716 bi → idem | 1,248729 → idem |
+
+Idêntico até a sexta casa. A correção arruma **o que se mostra**, não o que se
+calcula — e isso é o que a torna barata, não o que a torna dispensável: número
+errado na tela é o que o analista usa para decidir se confia no resto.
 
 ## R$ 275 bilhões de ativo lidos como passivo, e o de-para do ITR que os achou
 
