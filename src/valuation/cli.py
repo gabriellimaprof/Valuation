@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import formato
 from .custo_capital import calcular_custo_capital
 from .entrada import ArquivoModelo, carregar_comparaveis, carregar_modelo
 from .excel import exportar_excel
@@ -41,7 +42,14 @@ def _tabela(df: pd.DataFrame, formato: str = "{:,.1f}") -> None:
 
 
 def _pct(valor: float) -> str:
-    return "n/a" if valor is None or not np.isfinite(valor) else f"{valor:.2%}"
+    """Percentual no padrao brasileiro -- e ele **nao era**.
+
+    A CLI usava `f"{valor:.2%}"`, que produz "12.34%" com ponto decimal:
+    formatacao inglesa numa ferramenta em portugues, e discordando do relatorio
+    e do app, que dizem "12,34%" do mesmo numero. Nenhum teste pegava, porque
+    cada modulo tinha a propria copia do formatador e testava a sua.
+    """
+    return formato.pct(valor, casas=2, ausente="n/a")
 
 
 def _dinheiro(valor: float | None, unidade: str) -> str:

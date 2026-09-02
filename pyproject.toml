@@ -17,7 +17,11 @@ dependencies = [
 
 [project.optional-dependencies]
 app = ["streamlit>=1.40", "plotly>=5.20"]
-dev = ["pytest>=7.4", "formulas>=1.2", "streamlit>=1.40", "plotly>=5.20"]
+#  so serve para **conferir a impressao do material do comite**: o PDF
+# e gerado pelo Chromium e lido de volta para ver quantas paginas sairam e o
+# que caiu em cada uma. Sem declarar, o teste rodaria na minha maquina e nao
+# na limpa -- que e o defeito que este projeto ja pagou com o  puro.
+dev = ["pytest>=7.4", "formulas>=1.2", "streamlit>=1.40", "plotly>=5.20", "pypdf>=4.0"]
 
 [project.scripts]
 valuation = "valuation.cli:main"

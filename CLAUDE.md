@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1144 testes
+pytest                        # 1157 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -63,6 +63,7 @@ src/valuation/          motor, sem nenhuma dependência do Streamlit
   comparacao.py         ponte do que moveu o valor entre duas versoes
   carteira.py           varios valuations lado a lado, contra o proprio historico
   apresentacao.py       o material do comite: HTML autossuficiente, SVG inline
+  formato.py            numero no padrao brasileiro, numa peca so
   biblioteca.py         pasta local de valuations, desligada por padrão
   excel.py              exportação com fórmulas vivas
   modelo.py             orquestração e substituição de premissas
@@ -1203,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.144 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.157 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1721,6 +1722,83 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## A contagem de acoes vem sem escala, e 133 companhias a publicam em milhares
+
+O arquivo de composicao de capital da CVM **nao tem coluna de escala**, e as
+companhias divergem. Achado ao ver "Valor por acao: R$ 426.236,8" da Porto
+Seguro numa pagina de comite:
+
+| Companhia | O arquivo diz | O real |
+|---|---|---|
+| WEG | 4.197.317.998 | 4,2 bilhoes |
+| **Porto Seguro** | **646.586** | ~646,6 **milhoes** |
+| **Vale** | **4.268.779** | 4,27 **bilhoes** |
+
+Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**:
+
+```
+10^4 a 10^7 : 133 companhias
+10^7 a 10^8 :  57
+10^8 a 10^10: 226 companhias
+```
+
+**E o app nao pode corrigir.** Parte das 133 e SPE de capital fechado, onde
+55.686 acoes e o numero de verdade -- a Axia Energia Nordeste tem essa contagem e
+ela esta certa. Nao ha como distinguir "informou em milhares" de "tem poucas
+acoes" pelo arquivo.
+
+O que da para separar e o **uso**. Um valor por acao de R$ 426.236 nao e preco de
+tela, e publica-lo num material de comite e pior que omiti-lo. O corte sai do
+patrimonio liquido por acao medido na base -- mediana **R$ 12,87** e P75 em
+**R$ 1.589**, e o salto entre os dois e o que denuncia as duas populacoes. Acima
+de R$ 1.000 por acao estao 27,2% da base.
+
+A mesa **para de publicar** o numero e **diz por que**: coluna que some sem
+explicacao e pior que coluna errada, porque quem le nao distingue "esta companhia
+nao tem o numero" de "o numero existe e nao serve".
+
+**Ainda em aberto:** a mesma guarda nao esta na tela de Margem de seguranca nem
+no diagnostico, e la o valor por acao e comparado com o preco informado -- onde o
+erro de mil vezes tem consequencia direta.
+
+## Seis copias do formatador, e uma delas falava ingles
+
+`_pct` e `_num` estavam em **seis modulos do motor**, e nao eram iguais.
+Divergiam no marcador de ausencia (`n/d`, `n/a`, `—`) e uma divergia no que
+importa: `cli._pct` usava `f"{valor:.2%}"`, que produz **"12.34%" com ponto
+decimal** -- formatacao inglesa numa CLI em portugues, discordando do relatorio e
+do app sobre o mesmo numero.
+
+**Nenhum teste pegava, porque cada modulo testava a propria copia.**
+
+`formato.py` e a peca unica. O marcador de ausencia continua parametro, porque os
+tres em uso querem dizer coisas diferentes no contexto de cada um -- num
+documento impresso o travessao le melhor que "n/d"; numa tabela de terminal
+"n/d" e mais explicito que um traco que pode passar por hifen. O que nao pode
+variar e o **numero**. Ha teste que reprova a setima copia.
+
+## O material do comite para varios modelos
+
+A pagina de um valuation responde "quanto vale esta". Um comite com tres na mesa
+faz outra pergunta -- "em qual delas estamos sendo otimistas?" --, e a resposta e
+a distancia de cada premissa para o proprio historico.
+
+`montar_html_da_mesa` nao repete o material individual: quem quer o detalhe de
+uma companhia gera a pagina dela. Aqui cabe o que **so existe na comparacao** --
+as distancias, a matriz de proximidade e o resumo lado a lado.
+
+E o aviso de perfis incomparaveis foi **provado com dado real**: Porto Seguro e
+Multiplan ficam a **10,2** de distancia, contra a mediana de 1,3 entre companhias
+quaisquer. Ate aqui ele so tinha disparado em teste.
+
+## A porta para a mesa fica onde a pergunta nasce
+
+Guardar um modelo na biblioteca e exatamente o momento em que se quer po-lo ao
+lado dos outros. O link para Comparar passou a aparecer ali, com a contagem do
+que ja esta guardado -- mandar o usuario procurar no menu e o mesmo trabalho
+braco que o aviso de premissas fora do historico ja tinha identificado como
+desnecessario.
 
 ## A tela de Comparar percorrida com modelo dentro, e o que ela escondia
 

@@ -338,3 +338,52 @@ def test_o_rotulo_da_premissa_sai_acentuado(empresa_exemplo):
     nomes = list(mesa.distancias().index)
     assert "Depreciação / Receita" in nomes
     assert "Depreciacao / Receita" not in nomes
+
+
+def test_valor_por_acao_implausivel_nao_e_publicado(empresa_exemplo):
+    """A CVM publica a composição de capital **sem coluna de escala**.
+
+    A WEG informa 4.197.317.998 ações; a Porto Seguro informa **646.586**, e a
+    real é ~646,6 milhões. A Vale aparece com 4.268.779 e tem 4,27 bilhões.
+    Medida a contagem nas 436 companhias de 2025, o histograma é bimodal — 133
+    entre 10⁴ e 10⁷, 226 entre 10⁸ e 10¹⁰.
+
+    **O app não corrige**, porque parte das 133 é SPE de capital fechado onde
+    55.686 ações é o número de verdade. O que dá para separar é o uso: um valor
+    por ação de R$ 426.236 não é preço de tela.
+    """
+    from dataclasses import replace
+
+    from valuation.carteira import VALOR_POR_ACAO_IMPLAUSIVEL, ModeloNaMesa
+
+    normal = ModeloNaMesa(nome="Normal", valor_por_acao=15.2)
+    absurdo = ModeloNaMesa(nome="Absurdo", valor_por_acao=426_236.8)
+    sem_dado = ModeloNaMesa(nome="Sem dado", valor_por_acao=float("nan"))
+
+    assert normal.valor_por_acao_publicavel
+    assert not absurdo.valor_por_acao_publicavel
+    assert not sem_dado.valor_por_acao_publicavel
+    # O corte e medido, e o teste monta o caso a partir dele.
+    assert ModeloNaMesa(
+        nome="No limite", valor_por_acao=VALOR_POR_ACAO_IMPLAUSIVEL
+    ).valor_por_acao_publicavel
+
+
+def test_a_mesa_diz_por_que_o_valor_por_acao_sumiu(empresa_exemplo):
+    """Coluna que some sem explicação é pior que coluna errada.
+
+    Quem lê precisa distinguir "esta companhia não tem o número" de "o número
+    existe e não serve".
+    """
+    from valuation.carteira import Carteira, ModeloNaMesa
+
+    mesa = Carteira(
+        modelos=[
+            ModeloNaMesa(nome="A", valor_por_acao=15.0, unidade="R$"),
+            ModeloNaMesa(nome="B", valor_por_acao=426_236.8, unidade="R$"),
+        ]
+    )
+    frases = " ".join(mesa.leitura())
+    assert "**B**" in frases
+    assert "sem coluna de escala" in frases
+    assert "milhares" in frases

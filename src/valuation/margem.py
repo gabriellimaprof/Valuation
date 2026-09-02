@@ -37,6 +37,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from . import formato
 from .erros import CombinacaoInviavel
 from .modelo import avaliar, substituir
 from .premissas import Empresa
@@ -143,10 +144,8 @@ class MargemDeSeguranca:
         return f"Preço {_pct(abs(self.margem))} acima do valor calculado."
 
 
-def _pct(valor: float, casas: int = 1) -> str:
-    if not np.isfinite(valor):
-        return "n/d"
-    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+def _pct(valor, casas: int = 1) -> str:
+    return formato.pct(valor, casas, "n/d")
 
 
 def margem_de_seguranca(

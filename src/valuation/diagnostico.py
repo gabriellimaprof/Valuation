@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from . import formato
 from .dcf import valor_terminal_gordon
 from .historico import AnaliseHistorica
 from .qualidade import CGO_BOM
@@ -39,16 +40,12 @@ def _pct(valor: float, casas: int = 1) -> str:
     Os achados sao lidos por quem trabalha em portugues; "9,0%" e o que essa
     pessoa espera ver, e "9.0%" destoa do resto do app.
     """
-    if not np.isfinite(valor):
-        return "n/d"
-    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+    return formato.pct(valor, casas)
 
 
 def _num(valor: float, casas: int = 1) -> str:
     """Numero no padrao brasileiro: milhar com ponto, decimal com virgula."""
-    if not np.isfinite(valor):
-        return "n/d"
-    return f"{valor:,.{casas}f}".replace(",", "@").replace(".", ",").replace("@", ".")
+    return formato.num(valor, casas)
 
 # Faixas de referencia. Deliberadamente largas: servem para pegar o absurdo, nao
 # para impor uma visao de mundo.

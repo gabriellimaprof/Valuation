@@ -42,6 +42,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from . import formato
 from .historico import AnaliseHistorica, analisar
 from .modelo import ResultadoValuation, avaliar
 from .premissas import Empresa
@@ -59,6 +60,28 @@ from .qualidade import RUIM, SEM_DADOS, avaliar_qualidade
 # aviso que dirige atencao. Para referencia, os pares mais proximos da WEG ficam
 # entre 0,28 e 0,41 -- uma ordem de grandeza abaixo.
 PERFIS_INCOMPARAVEIS = 5.0
+
+
+# **O valor por acao pode ser aritmeticamente certo e inutil.** A CVM publica a
+# composicao de capital **sem coluna de escala**, e as companhias divergem: a WEG
+# informa 4.197.317.998 acoes e a Porto Seguro informa **646.586** -- a real e
+# ~646,6 milhoes. A Vale aparece com 4.268.779, e tem 4,27 bilhoes.
+#
+# Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**:
+#
+#   10^4 a 10^7 : 133 companhias
+#   10^8 a 10^10: 226 companhias
+#
+# E o app **nao pode corrigir**, porque parte das 133 e SPE de capital fechado
+# onde 55.686 acoes e o numero de verdade. O que da para separar e o uso: um
+# "valor por acao" de R$ 426.236 nao e preco de tela, e publica-lo num material
+# de comite e pior que omiti-lo.
+#
+# O corte usa o **patrimonio liquido por acao**, medido na base: mediana R$ 12,87
+# e P75 em R$ 1.589 -- o salto entre os dois e o que denuncia as duas populacoes.
+# Acima de R$ 1.000 por acao estao 27,2% da base, e ali o numero deixa de
+# descrever um papel.
+VALOR_POR_ACAO_IMPLAUSIVEL = 1_000.0
 
 
 VEREDITO_POR_EXTENSO = {
@@ -145,6 +168,17 @@ class ModeloNaMesa:
         if self.valor_por_acao <= 0:
             return float("nan")
         return 1 - self.preco / self.valor_por_acao
+
+    @property
+    def valor_por_acao_publicavel(self) -> bool:
+        """O valor por acao descreve um papel, ou so a aritmetica?
+
+        Acima de `VALOR_POR_ACAO_IMPLAUSIVEL` a contagem de acoes quase sempre
+        veio em milhares, e o numero deixa de ser comparavel com preco de tela.
+        A mesa **nao o corrige** -- ela para de publica-lo, e diz por que.
+        """
+        v = self.valor_por_acao
+        return bool(np.isfinite(v)) and abs(v) <= VALOR_POR_ACAO_IMPLAUSIVEL
 
     @property
     def otimismo(self) -> float:
@@ -302,17 +336,19 @@ class Carteira:
             {
                 "Modelo": m.nome,
                 "WACC": m.wacc,
-                "g perpetuo": m.crescimento_perpetuo,
+                "g perpétuo": m.crescimento_perpetuo,
                 "Equity value": m.equity_value,
-                "Valor por acao": m.valor_por_acao,
-                "Preco": m.preco,
-                "Margem de seguranca": m.margem_de_seguranca,
+                "Valor por ação": (
+                    m.valor_por_acao if m.valor_por_acao_publicavel else float("nan")
+                ),
+                "Preço": m.preco,
+                "Margem de segurança": m.margem_de_seguranca,
                 # O veredito e chave de codigo ("atencao"); na tela ele e
                 # texto de usuario, e sai acentuado e por extenso.
                 "Qualidade dos lucros": VEREDITO_POR_EXTENSO.get(
                     m.qualidade, m.qualidade
                 ),
-                "Conversao de caixa": m.conversao,
+                "Conversão de caixa": m.conversao,
             }
             for m in self.legiveis
         ]
@@ -412,7 +448,7 @@ class Carteira:
                 a, b, d = max(pares, key=lambda x: x[2])
                 frases.append(
                     f"**{a}** e **{b}** têm perfis econômicos distantes "
-                    f"(distância {d:.1f}, contra mediana de 1,3 entre companhias "
+                    f"(distância {formato.num(d)}, contra mediana de 1,3 entre companhias "
                     "quaisquer da base). Pôr as premissas lado a lado sugere uma "
                     "comparação que o negócio não sustenta — a distância para o "
                     "próprio histórico continua valendo em cada um, mas ler uma "
@@ -436,10 +472,10 @@ class Carteira:
                 maior = max(medidas, key=lambda p: p.distancia)
                 frases.append(
                     f"**{pior.nome}** é o modelo cuja projeção mais pede melhora "
-                    f"sobre o próprio histórico: {pior.otimismo:.0%} das premissas "
+                    f"sobre o próprio histórico: {formato.pct(pior.otimismo, 0)} das premissas "
                     "medidas estão acima do entregue, e a que mais se afasta é "
-                    f"**{maior.nome}** ({maior.projetado:.1%} projetado contra "
-                    f"{maior.historico:.1%} entregue)."
+                    f"**{maior.nome}** ({formato.pct(maior.projetado)} projetado contra "
+                    f"{formato.pct(maior.historico)} entregue)."
                 )
             elif medidas:
                 # **Distancia zero e um achado, e nao a ausencia de um.** Modelo
@@ -454,6 +490,17 @@ class Carteira:
                     "não revisadas: o valor na tela é extrapolação, e não uma "
                     "tese sobre o que vai mudar."
                 )
+
+        sem_papel = [m for m in self.legiveis if not m.valor_por_acao_publicavel]
+        if sem_papel and any(np.isfinite(m.valor_por_acao) for m in sem_papel):
+            nomes = ", ".join(f"**{m.nome}**" for m in sem_papel)
+            frases.append(
+                f"O valor por ação de {nomes} não foi publicado: a CVM divulga a "
+                "composição de capital **sem coluna de escala**, e parte das "
+                "companhias informa a quantidade em milhares. O número sairia "
+                "aritmeticamente certo e mil vezes fora do que se compara com "
+                "preço de tela — confira a contagem de ações antes de usá-lo."
+            )
 
         ruins = [m for m in self.legiveis if m.qualidade == RUIM]
         if ruins:

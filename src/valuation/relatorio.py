@@ -31,6 +31,7 @@ import numpy as np
 import pandas as pd
 
 from . import referencias
+from . import formato
 from .diagnostico import ALERTA, ERRO, Diagnostico
 from .margem import MargemDeSeguranca
 from .modelo import ResultadoValuation
@@ -49,17 +50,12 @@ INDICADORES_DO_HISTORICO = (
 )
 
 
-def _pct(valor: float | None, casas: int = 1) -> str:
-    if valor is None or not np.isfinite(valor):
-        return "n/d"
-    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+def _pct(valor, casas: int = 1) -> str:
+    return formato.pct(valor, casas, "n/d")
 
 
-def _num(valor: float | None, casas: int = 1) -> str:
-    if valor is None or not np.isfinite(valor):
-        return "n/d"
-    texto = f"{valor:,.{casas}f}"
-    return texto.replace(",", "@").replace(".", ",").replace("@", ".")
+def _num(valor, casas: int = 1) -> str:
+    return formato.num(valor, casas, "n/d")
 
 
 def _formatar(valor: float, tipo: str) -> str:

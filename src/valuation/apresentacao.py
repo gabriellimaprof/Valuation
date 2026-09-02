@@ -32,6 +32,8 @@ import html
 from dataclasses import dataclass
 
 import numpy as np
+
+from . import formato
 import pandas as pd
 
 # Paleta fixa, e nao a do tema. Documento impresso tem um modo so, e o papel e
@@ -47,9 +49,7 @@ AREIA = "#faf9f7"
 
 
 def _pct(valor, casas: int = 1) -> str:
-    if valor is None or not np.isfinite(valor):
-        return "—"
-    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+    return formato.pct(valor, casas, "—")
 
 
 # **Comite le grandeza, e nao digito.** "R$ 63.902.487.991,2" e um numero que
@@ -71,10 +71,7 @@ def escala_do_documento(valores) -> tuple[float, str]:
 
 
 def _num(valor, casas: int = 1) -> str:
-    if valor is None or not np.isfinite(valor):
-        return "—"
-    texto = f"{valor:,.{casas}f}"
-    return texto.replace(",", "@").replace(".", ",").replace("@", ".")
+    return formato.num(valor, casas, "—")
 
 
 def _e(texto) -> str:
@@ -344,6 +341,103 @@ def _avisos(diagnostico) -> str:
             f'<div class="detalhe">{_e(a.detalhe)}</div></div>'
         )
     return "".join(blocos)
+
+
+def montar_html_da_mesa(carteira, data: str = "") -> str:
+    """O material de **varios modelos**, para um comite que ve tres companhias.
+
+    A pagina de um valuation responde "quanto vale esta". Um comite que tem tres
+    na mesa faz outra pergunta -- "em qual delas estamos sendo otimistas?" --, e
+    a resposta dela e a **distancia de cada premissa para o proprio historico**,
+    que e o que atravessa negocios diferentes.
+
+    Nao repete o material individual: quem quer o detalhe de uma companhia gera a
+    pagina dela. Aqui cabe o que so existe na comparacao.
+    """
+    legiveis = carteira.legiveis
+    if len(legiveis) < 2:
+        raise ValueError(
+            "Comparacao precisa de dois modelos legiveis; com um so, toda frase "
+            "desta pagina seria sobre nada."
+        )
+
+    resumo = carteira.resumo()
+    divisor, sufixo = escala_do_documento(resumo.get("Equity value", []))
+    unidades = {m.unidade for m in legiveis if m.unidade}
+    base = next(iter(unidades)) if len(unidades) == 1 else ""
+    rotulo_valor = " ".join(x for x in (base, sufixo) if x) or "valor"
+
+    partes = [
+        "<h1>Modelos lado a lado</h1>",
+        f'<p class="subtitulo">{len(legiveis)} companhias · material de apoio à '
+        f'decisão · gerado em {_e(data or "—")}</p>',
+        "<p>O que se compara entre negócios diferentes <strong>não é o nível da "
+        "premissa</strong> — margem de 22% numa varejista e de 31% numa geradora "
+        "não dizem qual projeção é mais agressiva. É a <strong>distância</strong> "
+        "entre o que se projetou e o que aquela companhia entregou: essa "
+        "atravessa setores.</p>",
+    ]
+
+    for frase in carteira.leitura():
+        # As frases vem em markdown leve (`**`), que aqui vira `<strong>`:
+        # elas sao escritas uma vez, no motor, e cada consumidor as
+        # renderiza no proprio formato.
+        pedacos = _e(frase).split("**")
+        montado = "".join(
+            p if i % 2 == 0 else f"<strong>{p}</strong>" for i, p in enumerate(pedacos)
+        )
+        partes.append(f'<p class="nota">{montado}</p>')
+
+    partes.append("<h2>A distância de cada premissa para o histórico</h2>")
+    distancias = carteira.distancias()
+    if not distancias.empty:
+        distancias.index.name = "Premissa"
+        partes.append(_tabela(distancias, formatos={c: _pct for c in distancias.columns}))
+        partes.append(
+            '<p class="nota">Positivo significa que a projeção pede melhora sobre '
+            "o que a companhia entregou — e isso pode ter todo motivo. O número "
+            "diz onde olhar, e não o que concluir.</p>"
+        )
+
+    proximidade = carteira.proximidade()
+    if not proximidade.empty:
+        partes.append("<h2>Estes modelos são comparáveis entre si?</h2>")
+        proximidade.index.name = "Distância de perfil"
+        partes.append(_tabela(proximidade, formatos={c: (lambda v: _num(v, 2)) for c in proximidade.columns}))
+        partes.append(
+            '<p class="nota">Distância de perfil econômico — risco, crescimento e '
+            "fluxo de caixa. Na base brasileira a mediana entre companhias "
+            "quaisquer é <strong>1,3</strong>; acima de <strong>5,0</strong> "
+            "estão os 10% mais dissimilares.</p>"
+        )
+
+    partes.append("<h2>O que cada modelo diz que a companhia vale</h2>")
+    if "Equity value" in resumo.columns:
+        resumo = resumo.copy()
+        resumo["Equity value"] = resumo["Equity value"] / divisor
+        resumo = resumo.rename(columns={"Equity value": f"Equity value ({rotulo_valor})"})
+    # Coluna sem nenhum numero nao vira coluna: um travessao em toda linha nao
+    # informa, e a legenda ja diz por que ela nao esta la.
+    resumo = resumo.dropna(axis=1, how="all")
+    resumo.index.name = "Modelo"
+    formatos = {}
+    for coluna in resumo.columns:
+        if coluna in ("WACC", "g perpétuo", "Margem de segurança", "Conversão de caixa"):
+            formatos[coluna] = _pct
+    partes.append(_tabela(resumo, formatos=formatos))
+
+    partes.append(
+        "<footer>Comparação entre modelos salvos, e não entre companhias: cada "
+        "linha é o que <em>este</em> valuation afirma. Duas versões da mesma "
+        "companhia são tão comparáveis quanto duas companhias.</footer>"
+    )
+    corpo = "".join(partes)
+    return (
+        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+        "<title>Modelos lado a lado</title>"
+        f"<style>{CSS}</style></head><body>"
+        f'<div class="folha">{corpo}</div></body></html>'
+    )
 
 
 def _pagina_do_banco(empresa, lucro_residual, analise, qualidade, diagnostico, data):

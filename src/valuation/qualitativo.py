@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import referencias
+from . import formato
 from .formulas import rotulo_do_indicador
 
 # Anos com ROIC acima do WACC a partir dos quais o retorno excedente deixa de
@@ -49,10 +50,8 @@ class Evidencia:
         return bool(self.medido)
 
 
-def _pct(valor: float, casas: int = 1) -> str:
-    if not np.isfinite(valor):
-        return "n/d"
-    return f"{valor * 100:.{casas}f}%".replace(".", ",")
+def _pct(valor, casas: int = 1) -> str:
+    return formato.pct(valor, casas, "n/d")
 
 
 def _dias(valor: float) -> str:

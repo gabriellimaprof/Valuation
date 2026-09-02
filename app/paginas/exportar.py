@@ -13,7 +13,7 @@ import yaml
 
 from valuation import biblioteca, exportar_excel
 
-from .. import estado
+from .. import estado, navegacao
 from ..componentes import aviso_sem_modelo, etapa, secao
 
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -338,6 +338,20 @@ def _guardar_na_biblioteca() -> None:
             return
         st.success(f"Guardado em `{caminho}`.")
     st.caption(f"Pasta: `{biblioteca.diretorio()}`")
+
+    # **A porta para a mesa fica onde a pergunta nasce.** Guardar um modelo e
+    # exatamente o momento em que se quer po-lo ao lado dos outros; mandar o
+    # usuario procurar "Comparar" no menu e o mesmo trabalho braco que o aviso de
+    # premissas fora do historico ja tinha identificado como desnecessario.
+    guardados = [e for e in biblioteca.listar() if e.legivel]
+    if len(guardados) >= 2:
+        pagina = navegacao.pagina("comparar")
+        if pagina is not None:
+            st.page_link(
+                pagina,
+                label=f"Comparar com os outros {len(guardados) - 1} modelos guardados",
+                icon=":material/compare_arrows:",
+            )
 
 
 

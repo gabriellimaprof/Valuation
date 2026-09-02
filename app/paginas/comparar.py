@@ -123,6 +123,7 @@ def render() -> None:
         )
 
     secao("O que cada modelo diz que a companhia vale")
+    from valuation.apresentacao import montar_html_da_mesa
     resumo = carteira.resumo()
 
     # **A escala e uma so para a tabela**, pelo maior equity que ela mostra, e
@@ -136,14 +137,13 @@ def render() -> None:
     if "Equity value" in resumo.columns:
         resumo["Equity value"] = resumo["Equity value"] / divisor
 
+    # Os rotulos ja nascem acentuados em `carteira.resumo()`: renomear aqui
+    # fazia a tela e a pagina do comite dizerem nomes diferentes do mesmo campo.
     resumo = resumo.rename(
         columns={
             "Equity value": f"Equity value ({rotulo_valor})",
-            "Valor por acao": "Valor por ação (R$)",
-            "Preco": "Preço (R$)",
-            "g perpetuo": "g perpétuo",
-            "Margem de seguranca": "Margem de segurança",
-            "Conversao de caixa": "Conversão de caixa",
+            "Valor por ação": "Valor por ação (R$)",
+            "Preço": "Preço (R$)",
         }
     )
     # **Coluna inteiramente vazia nao vira coluna.** O `st.dataframe` mostra o
@@ -176,4 +176,24 @@ def render() -> None:
         "Margem de segurança só aparece com preço informado — o app não busca "
         "cotação sozinho, e zero ali significaria “está no preço justo”, que é "
         "uma afirmação."
+    )
+
+    # **O comite que ve tres companhias quer as tres na mesma pagina.** A pagina
+    # de um valuation responde "quanto vale esta"; esta responde "em qual delas
+    # estamos sendo otimistas", que so existe na comparacao.
+    secao("Levar a comparação para o comitê")
+    from datetime import date
+
+    st.download_button(
+        "Baixar a comparação (.html)",
+        data=montar_html_da_mesa(
+            carteira, data=date.today().strftime("%d/%m/%Y")
+        ).encode("utf-8"),
+        file_name="comparacao_de_modelos.html",
+        mime="text/html",
+    )
+    st.caption(
+        "Uma página com as três tabelas desta tela, feita para imprimir. Não "
+        "repete o material individual: quem quer o detalhe de uma companhia gera "
+        "a página dela em **Exportar**."
     )
