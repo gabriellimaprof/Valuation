@@ -1809,6 +1809,21 @@ do grupo. A classificacao continua sendo **por estrutura e nao pelo desvio** --
 usa-lo como criterio faria a lista mudar com a amostra --, mas aqui as duas
 apontam junto.
 
+**E ela sobrevive a troca de amostra e de metodologia**, o que uma medicao
+sozinha nunca garante. Tres rodadas, duas populacoes de companhias (o universo
+construido e o cadastro inteiro) e as duas metodologias:
+
+| Rodada | CGO / EBITDA | FCO / EBITDA |
+|---|---|---|
+| 80 companhias, universo, sem controle | 20,3p | 17,7p |
+| 90 companhias, cadastro, sem controle | 18,3p | 13,5p |
+| **80 companhias, controlada** | **17,9p** | **14,3p** |
+
+A linha da direita e o que fecha o argumento: a `Conversao de caixa` **ja tinha
+sido tirada da lista** por carregar imposto e juro pagos, irregulares dentro do
+ano -- e a `Conversao operacional`, que eu deixei dentro, mede **pior que ela nas
+tres**. Nao havia leitura em que a que ficou fosse a mais regular das duas.
+
 Na tela os dez indicadores de `SO_NO_EXERCICIO` aparecem **sem percentil** quando
 a serie e trimestral, com o aviso dizendo por que; no material do comite a secao
 inteira e recusada, porque no papel nao ha espaco para explicar linha a linha e

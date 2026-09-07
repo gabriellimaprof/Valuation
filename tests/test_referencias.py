@@ -258,6 +258,12 @@ def test_a_conversao_operacional_nao_atravessa_a_frequencia():
     período** — sem o confundidor de mudança real: 17,9 pontos de desvio de
     percentil, o pior do grupo que atravessa por 7,8 pontos de folga, e acima de
     quatro dos oito que não atravessam.
+
+    Confirmado em **três rodadas, duas populações e duas metodologias**, e o que
+    fecha o argumento é a comparação com a irmã: a `Conversão de caixa` já tinha
+    saído da lista por carregar imposto e juro pagos, e a `Conversão
+    operacional` mede **pior que ela nas três** (20,3 × 17,7; 18,3 × 13,5;
+    17,9 × 14,3). Não havia leitura em que a que ficou fosse a mais regular.
     """
     from valuation import referencias
 
