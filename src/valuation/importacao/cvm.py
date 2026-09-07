@@ -3131,6 +3131,7 @@ def importar_ltm_rolante(
     catalogo: list[Companhia] | None = None,
     ano: int | None = None,
     forcar_download: bool = False,
+    anos_de_itr: int = 2,
 ) -> Demonstracoes:
     """O ano movel encerrado em **cada** trimestre, uma coluna cada.
 
@@ -3143,41 +3144,105 @@ def importar_ltm_rolante(
     trimestre. **Nao e a soma dos quatro trimestres isolados**: o quarto
     trimestre do exercicio anterior nao existe no ITR, ele seria o exercicio
     fechado menos o acumulado de nove meses.
+
+    **Ela nao para num ITR, e a razao e que um ITR nao da serie.** O arquivo de
+    um exercicio so tem os trimestres ja publicados nele: em 2026 sao dois, e
+    numa companhia de exercicio deslocado pode ser **um**. Medido:
+
+    | | 1 ITR | 2 ITRs |
+    |---|---|---|
+    | WEG | 2 colunas, 0,25 ano | **5 colunas, 1,25 ano** |
+    | Vale | 2 colunas, 0,25 ano | **5 colunas, 1,25 ano** |
+    | Sao Martinho | **1 coluna**, sem serie | **4 colunas, 1,00 ano** |
+
+    Duas consequencias, e as duas decidem numero: o span passa de 0,25 para 1,25
+    ano, entao o CAGR volta a ter um ano de observacao (`crescimento_composto`
+    recusa abaixo disso, e recusava sempre); e o **par a/a passa a existir dentro
+    da serie** -- com 1T25 ao lado de 1T26, `anterior_comparavel` encontra o
+    trimestre do exercicio anterior, e `Crescimento da receita` deixa de sair
+    vazio.
+
+    O CAGR muda de verdade: na Vale, de +10,5% para **+16,5%**; na WEG, de -0,6%
+    para +0,2%. A leitura de um ITR era ruido.
+
+    Custo medido: **+3 a +4 segundos**. E o preco de uma leitura que sem isso nao
+    sustenta projecao nenhuma.
     """
     from .series import _rotulo_do_trimestre, montar_serie
 
+    from .series import periodo_do_rotulo
+
     codigo_cvm, registro, nome = _identificar(companhia, catalogo)
-    zip_itr, ano, escopo, trimestres = _abrir_itr(
-        ano or date.today().year, codigo_cvm, cache, forcar_download
-    )
+    pedido = ano or date.today().year
 
     partes = []
     avisos_ultimo: list[str] = []
-    for data_refer in trimestres:
+    anos_lidos: list[int] = []
+    ano = None
+    # Do mais recente para tras. `_abrir_itr` pode cair num exercicio anterior
+    # quando o pedido esta vazio, entao o ano **resolvido** e que conta -- sem
+    # isso dois passos leriam o mesmo arquivo e a serie sairia duplicada.
+    for passo in range(max(1, anos_de_itr)):
         try:
-            dfs = importar_ltm(
-                registro or codigo_cvm,
-                cache=cache,
-                catalogo=catalogo,
-                ano=ano,
-                forcar_download=False,
-                data_refer=data_refer,
+            _zip, ano_lido, _escopo, trimestres = _abrir_itr(
+                pedido - passo, codigo_cvm, cache, forcar_download
             )
         except ErroCVM:
             continue
-        partes.append((_rotulo_do_trimestre(data_refer), dfs))
-        avisos_ultimo = dfs.avisos
+        if ano_lido in anos_lidos:
+            continue
+        anos_lidos.append(ano_lido)
+        if ano is None:
+            ano = ano_lido
+        for data_refer in trimestres:
+            try:
+                dfs = importar_ltm(
+                    registro or codigo_cvm,
+                    cache=cache,
+                    catalogo=catalogo,
+                    ano=ano_lido,
+                    forcar_download=False,
+                    data_refer=data_refer,
+                )
+            except ErroCVM:
+                continue
+            rotulo = _rotulo_do_trimestre(data_refer)
+            partes.append((rotulo, dfs))
+            # O aviso que viaja e o do trimestre **mais recente**, e o laco vai
+            # do mais novo para o mais velho: so o primeiro ano o define.
+            if ano_lido == ano:
+                avisos_ultimo = dfs.avisos
 
     if not partes:
         raise ErroCVM(
-            f"Nao consegui montar ano movel nenhum da companhia {codigo_cvm} em {ano}."
+            f"Nao consegui montar ano movel nenhum da companhia {codigo_cvm} em {pedido}."
         )
+    ano = ano if ano is not None else pedido
+
+    # **A ordem sai do rotulo lido, e nao da ordem de leitura.** O laco percorre
+    # os exercicios de tras para frente, entao sem isto a serie comecaria em
+    # 1T26 e terminaria em 3T25 -- e toda conta que compara colunas vizinhas
+    # (crescimento, ponte do ciclo) leria a serie de cabeca para baixo.
+    partes.sort(key=lambda par: periodo_do_rotulo(par[0]) or (0, 0))
+    # Uma data de referencia pode aparecer em dois ITRs; a coluna e uma so.
+    vistos = set()
+    unicas = []
+    for rotulo, dfs in partes:
+        if rotulo in vistos:
+            continue
+        vistos.add(rotulo)
+        unicas.append((rotulo, dfs))
+    partes = unicas
 
     return montar_serie(
         partes,
         empresa=nome,
         unidade="R$",
-        origem=f"CVM ITR — ano móvel rolante de {ano}",
+        origem=(
+            f"CVM ITR — ano móvel rolante de {min(anos_lidos)}–{ano}"
+            if len(anos_lidos) > 1
+            else f"CVM ITR — ano móvel rolante de {ano}"
+        ),
         # Rotulo de trimestre, conteudo de doze meses: e **anual**.
         periodicidade="anual",
         fonte={
@@ -3185,6 +3250,7 @@ def importar_ltm_rolante(
             "codigo_cvm": codigo_cvm,
             "ano": ano,
             "serie": "ltm_rolante",
+            "anos_de_itr": len(anos_lidos),
             **({"setor": registro.setor} if registro and registro.setor else {}),
         },
         avisos=[

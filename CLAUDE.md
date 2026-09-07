@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1190 testes
+pytest                        # 1192 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.190 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.192 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1263,7 +1263,9 @@ código não existe naquele arquivo.
 2. Betas e prêmios de risco-país embarcados são **valores de referência de ordem
    de grandeza**, não a base oficial do Damodaran. O app rotula isso na tela.
 3. Do ITR, só o **consolidado** é lido, e o ano móvel exige o exercício anterior
-   fechado — companhia que abriu capital há menos de um ano não o tem.
+   fechado — companhia que abriu capital há menos de um ano não o tem. A série
+   rolante lê **dois ITRs** e não um, porque um só devolve duas colunas (uma, em
+   exercício deslocado) e isso não é série.
 
    **Ler o consolidado não é limitação, é a escolha certa — e agora medida.**
    Das 467 companhias de 2024, **462 publicam os dois escopos**, e a individual é
@@ -2020,6 +2022,50 @@ capex se concentra em trimestres. O desvio de percentil deles na medicao
 controlada e de 9,1 e 10,1 pontos, dentro da faixa do grupo que atravessa
 (mediana 1,9; pior caso 17,9). Ha teste travando os dois, porque a proxima
 medicao vai tentar arrasta-los para fora de novo.
+
+### O ano movel parava num ITR, e um ITR nao da serie
+
+O arquivo de um exercicio so tem os trimestres **ja publicados** nele. Em 2026
+sao dois; numa companhia de exercicio deslocado pode ser um. Medido:
+
+| | 1 ITR | 2 ITRs |
+|---|---|---|
+| WEG | 2 colunas, 0,25 ano | **5 colunas, 1,25 ano** |
+| Vale | 2 colunas, 0,25 ano | **5 colunas, 1,25 ano** |
+| Sao Martinho (exercicio fecha em marco) | **1 coluna**, sem serie | **4 colunas, 1,00 ano** |
+
+Isso decide dois numeros, e os dois eram lacunas conhecidas:
+
+- **O CAGR volta a ter observacao.** Com 0,25 ano de intervalo,
+  `crescimento_composto` recusa derivar tendencia (`SPAN_MINIMO_PARA_TENDENCIA`)
+  -- ou seja, a leitura que o app **recomenda** quando recusa a serie trimestral
+  nao sustentava projecao nenhuma. E o numero muda de verdade: na Vale, de
+  **+10,5% para +16,5%**; a leitura de um ITR era ruido.
+- **O par a/a passa a existir dentro da serie.** `anterior_comparavel` procura o
+  mesmo trimestre do exercicio anterior; com um ITR ele nao esta la, entao
+  `Crescimento da receita` saia `NaN` -- a linha "--" que o usuario via logo
+  depois de trocar para o ano movel. Com 1T25 ao lado de 1T26 ela aparece.
+
+E as duas leituras do crescimento passam a **concordar**, que e a melhor
+conferencia possivel: na Vale, CAGR de +16,5% contra crescimento a/a mediano de
++17,6%; em Sao Martinho, -3,7% nas duas.
+
+Custo medido: **+3 a +4 segundos**. `anos_de_itr=2` e o padrao, e o parametro
+existe porque a decisao pode ser revertida sem mexer no codigo.
+
+**Duas armadilhas do laco, e nenhuma daria erro:** ele percorre os exercicios do
+mais recente para tras, entao a serie sairia de cabeca para baixo sem ordenar
+pelo rotulo lido (`periodo_do_rotulo`) -- e toda conta que compara colunas
+vizinhas leria a serie invertida; e `_abrir_itr` **cai num exercicio anterior**
+quando o pedido esta vazio, entao dois passos podem devolver o mesmo arquivo. O
+ano **resolvido** e que conta, e ha deduplicacao por rotulo.
+
+**Dois testes travavam numero em vez de propriedade**, e os dois viraram falha
+sozinhos com uma mudanca legitima -- o mesmo defeito dos testes que pinavam a
+safra. A lista exata de colunas virou "os trimestres do exercicio pedido estao
+la, em ordem"; e o piso de `35e9`, que separava ano de trimestre para 2025, virou
+a propriedade que nao precisa de numero magico: **um ano movel supera qualquer
+trimestre isolado da mesma companhia**.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

@@ -545,15 +545,40 @@ def test_o_ano_movel_rolante_e_uma_serie_e_mostra_tendencia():
     Doze meses em queda e doze em alta dão o mesmo ponto no último trimestre; a
     série é o que separa os dois. Na WEG a receita móvel sobe de 40.032 para
     41.380 ao longo de 2025.
+
+    **A lista exata de colunas não é a propriedade.** Ela estava pinada aqui e
+    virou falha sozinha quando o ano móvel passou a juntar dois ITRs — mudança
+    legítima, e o mesmo defeito dos testes que pinavam a safra. O que se trava é
+    que os trimestres do exercício pedido estão lá, em ordem, e que cada coluna
+    é um ano inteiro.
     """
-    from valuation.importacao.cvm import importar_ltm_rolante
+    from valuation.historico import anos_entre
+    from valuation.importacao.cvm import importar_ltm_rolante, importar_trimestral
 
     rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
-    assert list(rolante.valores.columns) == ["1T25", "2T25", "3T25"]
-    receita = [float(v) for v in rolante.valores.loc["receita_liquida"]]
-    assert receita == sorted(receita)
-    # E cada coluna e um ano inteiro, e nao um trimestre.
-    assert all(v > 35e9 for v in receita)
+    colunas = list(rolante.valores.columns)
+
+    for esperada in ("1T25", "2T25", "3T25"):
+        assert esperada in colunas
+    # Em ordem cronologica: o laco le os exercicios de tras para frente, e sem
+    # ordenar a serie sairia de cabeca para baixo.
+    de_2025 = [c for c in colunas if str(c).endswith("25")]
+    assert de_2025 == sorted(de_2025)
+
+    receita = rolante.valores.loc["receita_liquida"]
+    em_2025 = [float(receita[c]) for c in de_2025]
+    assert em_2025 == sorted(em_2025)
+
+    # **Cada coluna é um ano inteiro, e a prova não precisa de número mágico.**
+    # O piso de 35e9 que estava aqui separava ano de trimestre para 2025 e virou
+    # falha sozinho quando 2024 entrou na série — o mesmo defeito da lista de
+    # colunas pinada, duas linhas acima. A propriedade é que um ano móvel supera
+    # qualquer trimestre isolado da mesma companhia.
+    isolados = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    maior_trimestre = float(isolados.valores.loc["receita_liquida"].max())
+    assert all(float(v) > maior_trimestre for v in receita.dropna())
+    # A serie ja cobre mais de um ano, que e o que o CAGR precisa.
+    assert anos_entre(colunas[0], colunas[-1]) >= 1.0
 
 
 def test_a_ultima_coluna_do_rolante_e_o_ano_movel_pontual():
@@ -1147,3 +1172,51 @@ def test_serie_de_trimestres_isolados_nao_sustenta_projecao():
     movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
     sugestao = sugerir_premissas(analisar(movel))
     assert sugestao.operacionais.receita_base > 0
+
+
+def test_o_ano_movel_junta_dois_itrs_porque_um_nao_da_serie():
+    """Um ITR só tem os trimestres já publicados nele, e isso não é série.
+
+    Medido no ITR de 2026: WEG e Vale ficam com **duas** colunas e span de 0,25
+    ano; São Martinho, cujo exercício fecha em março, fica com **uma**. Com
+    span abaixo de um ano `crescimento_composto` recusa derivar tendência — ou
+    seja, a leitura que o app recomenda quando recusa a série trimestral não
+    sustentava projeção nenhuma.
+
+    Com dois ITRs: 5 colunas e 1,25 ano na WEG e na Vale, 4 e 1,00 em São
+    Martinho. E o CAGR muda de verdade — na Vale, de +10,5% para **+16,5%**.
+    """
+    from valuation.historico import anos_entre
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    um = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=1)
+    dois = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=2)
+
+    assert len(dois.valores.columns) > len(um.valores.columns)
+    colunas = list(dois.valores.columns)
+    assert anos_entre(colunas[0], colunas[-1]) > anos_entre(
+        *[list(um.valores.columns)[i] for i in (0, -1)]
+    )
+    # Nenhuma coluna repetida: a mesma data pode aparecer em dois ITRs.
+    assert len(colunas) == len(set(colunas))
+    # E a origem diz que são dois exercícios, em vez de anunciar um.
+    assert "–" in dois.origem or "-" in dois.origem
+
+
+def test_o_par_a_a_passa_a_existir_dentro_do_ano_movel():
+    """O crescimento a/a saía vazio, e a causa era a série ter um ano só.
+
+    `anterior_comparavel` procura o mesmo trimestre do exercício anterior. Com
+    um ITR ele não está na série, então `Crescimento da receita` ficava `NaN` —
+    a linha "—" que o usuário via logo depois de trocar para o ano móvel.
+    """
+    import numpy as np
+
+    from valuation.historico import analisar
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    um = analisar(importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=1))
+    dois = analisar(importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=2))
+
+    assert not np.isfinite(um.mediana("Crescimento da receita"))
+    assert np.isfinite(dois.mediana("Crescimento da receita"))
