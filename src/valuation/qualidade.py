@@ -91,6 +91,10 @@ class QualidadeDosLucros:
 
     sinais: list[Sinal] = field(default_factory=list)
     conversao_mediana: float = float("nan")
+    # Por que nao ha veredito, quando nao ha. Sem isto a ausencia sai sempre
+    # como "faltam dados de fluxo de caixa", que **misatribui a causa**: numa
+    # serie trimestral os dados estao la, e o que falta e a frequencia certa.
+    motivo_da_ausencia: str = ""
 
     @property
     def por_severidade(self) -> list[Sinal]:
@@ -114,7 +118,8 @@ class QualidadeDosLucros:
             ATENCAO: "O lucro se converte, mas há pontos que pedem explicação.",
             RUIM: "A distância entre lucro e caixa é grande o bastante para "
             "mudar a leitura do resultado.",
-            SEM_DADOS: "Faltam dados de fluxo de caixa para avaliar a qualidade "
+            SEM_DADOS: self.motivo_da_ausencia
+            or "Faltam dados de fluxo de caixa para avaliar a qualidade "
             "dos lucros.",
         }[self.veredito]
 
@@ -363,8 +368,49 @@ def _giro(analise: AnaliseHistorica) -> Sinal:
     )
 
 
+# Os seis indicadores de que o veredito depende. **Todos os seis** estao em
+# `referencias.SO_NO_EXERCICIO`, e essa e a razao da recusa abaixo: nao ha um
+# subconjunto que sobreviva a uma serie de trimestres isolados.
+INSUMOS_DO_VEREDITO = (
+    "Conversao de caixa (FCO / EBITDA)",
+    "Conversao operacional (CGO / EBITDA)",
+    "Crescimento da receita",
+    "Custo da divida efetivo",
+    "Custo da divida pelo caixa",
+    "Investimento em giro (DFC) / Receita",
+)
+
+
 def avaliar_qualidade(analise: AnaliseHistorica) -> QualidadeDosLucros:
-    """Junta os sinais de caixa num veredito sobre a qualidade do lucro."""
+    """Junta os sinais de caixa num veredito sobre a qualidade do lucro.
+
+    **Recusa a serie de trimestres isolados, e a recusa foi medida.** Os seis
+    indicadores de que o veredito depende misturam fluxo do periodo com estoque
+    ou comparam um periodo com outro -- os seis estao em `SO_NO_EXERCICIO`.
+    Medido em 30 companhias, ano movel contra trimestres isolados **do mesmo
+    periodo**: o veredito muda em **11 delas (37%)**, e nao por pouco -- uma vai
+    de `ruim` a `bom`.
+
+    Nao ha subconjunto que se salve, entao guardar sinal a sinal produziria um
+    veredito montado sobre um insumo so, que e pior: ele teria a mesma aparencia
+    de um veredito completo. A recusa **diz o motivo**, e o motivo nao e o
+    mesmo de "faltam dados de fluxo de caixa" -- aqui os dados estao la.
+    """
+    from . import referencias
+
+    if not referencias.a_mediana_se_compara(analise, "Conversao de caixa (FCO / EBITDA)"):
+        return QualidadeDosLucros(
+            sinais=[],
+            motivo_da_ausencia=(
+                "A série importada é de **trimestres isolados**, e os seis "
+                "indicadores que sustentam este veredito não atravessam a "
+                "frequência: conversão, giro e custo da dívida misturam fluxo de "
+                "três meses com saldo. Medido em 30 companhias, o veredito muda "
+                "em 37% delas entre esta leitura e o ano móvel do mesmo período. "
+                "Importe em **Ano móvel rolante** ou em **Anual**."
+            ),
+        )
+
     sinais = [_conversao(analise), _giro(analise), _juros(analise)]
     return QualidadeDosLucros(
         sinais=sinais,

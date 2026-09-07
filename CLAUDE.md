@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1193 testes
+pytest                        # 1195 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.193 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.195 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2097,6 +2097,43 @@ desaparece sem explicacao nao se distingue de ancora que nunca existiu.
 
 Junto saiu `premissas._referencia`, funcao morta que ninguem chamava e que
 carregaria o mesmo defeito no dia em que alguem a ligasse.
+
+### O veredito de qualidade mudava em 37% das companhias
+
+Este era o ultimo consumidor sem guarda, e eu quase o dispensei com um
+raciocinio errado: como a razao `FCO / EBITDA` se move so **1,05x** entre as duas
+leituras, concluí que os cortes transferiam e o veredito sobreviveria. A medicao
+diz outra coisa.
+
+Medido em 30 companhias, ano movel contra trimestres isolados **do mesmo
+periodo**: o veredito muda em **11 delas (37%)**, e nao por pouco -- uma vai de
+`ruim` a `bom`, duas de `atencao` a `bom`, uma de `bom` a `atencao`. A mediana da
+razao mal se move e as companhias **cruzam os cortes** mesmo assim; e os outros
+sinais do veredito (giro, juro, crescimento) se movem junto.
+
+A causa esta na lista de insumos: sao **seis**, e os **seis** estao em
+`SO_NO_EXERCICIO`.
+
+| Insumo | Por que nao atravessa |
+|---|---|
+| Conversao de caixa (FCO / EBITDA) | FCO carrega imposto e juro pagos |
+| Conversao operacional (CGO / EBITDA) | CGO carrega provisao e impairment |
+| Crescimento da receita | variacao de um periodo contra outro |
+| Custo da divida efetivo | fluxo do periodo sobre saldo (0,26x) |
+| Custo da divida pelo caixa | idem |
+| Investimento em giro (DFC) / Receita | fluxo do periodo sobre estoque |
+
+**Nao ha subconjunto que se salve**, entao guardar sinal a sinal produziria um
+veredito montado sobre um insumo so -- pior que a recusa, porque teria a mesma
+aparencia de um veredito completo. `avaliar_qualidade` recusa, e a recusa **diz
+o motivo certo**: ate aqui toda ausencia saia como "faltam dados de fluxo de
+caixa", que **misatribui a causa** -- numa serie trimestral os dados estao la, e
+o que falta e a frequencia. `motivo_da_ausencia` separa os dois casos.
+
+O ano movel continua recebendo veredito, e isso e o que o teste de controle
+trava: ele tem rotulo de trimestre e conteudo de doze meses, e uma decisao
+tomada pelo rotulo o recusaria junto -- sendo ele justamente a saida que o app
+oferece.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

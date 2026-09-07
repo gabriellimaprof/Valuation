@@ -436,3 +436,77 @@ def test_o_sinal_cita_o_percentil_da_conversao_operacional():
 
     n, _ = referencias.BASE["Conversao operacional (CGO / EBITDA)"]
     assert f"{n} companhias" in sinal.detalhe
+
+
+def _analise_com(periodicidade, colunas):
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            c: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "fluxo_operacional": 200.0,
+                "caixa_das_operacoes": 240.0,
+                "variacao_capital_giro": -20.0,
+                "divida_bruta": 400.0,
+                "juros_pagos": 20.0,
+                "despesa_financeira": 30.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+            }
+            for c in colunas
+        }
+    )
+    return analisar(
+        Demonstracoes(
+            empresa="T", valores=valores, unidade="R$", periodicidade=periodicidade
+        )
+    )
+
+
+def test_o_veredito_recusa_a_serie_de_trimestres_isolados():
+    """Os seis insumos do veredito não atravessam a frequência — os seis.
+
+    Medido em 30 companhias, ano móvel contra trimestres isolados **do mesmo
+    período**: o veredito muda em **11 delas (37%)**, e não por pouco — uma vai
+    de `ruim` a `bom`.
+
+    Não há subconjunto que se salve, então guardar sinal a sinal produziria um
+    veredito montado sobre um insumo só — pior, porque teria a mesma aparência
+    de um veredito completo.
+    """
+    from valuation.qualidade import SEM_DADOS, INSUMOS_DO_VEREDITO, avaliar_qualidade
+    from valuation import referencias
+
+    # A premissa da recusa, travada: se algum insumo passar a atravessar a
+    # frequência, esta decisão precisa ser reexaminada em vez de sobreviver
+    # calada.
+    for indicador in INSUMOS_DO_VEREDITO:
+        assert not referencias.atravessa_a_frequencia(indicador), indicador
+
+    trimestral = avaliar_qualidade(_analise_com("trimestral", ["1T25", "2T25", "3T25"]))
+    assert trimestral.veredito == SEM_DADOS
+    assert "trimestres isolados" in trimestral.resumo
+    # A causa **não** é falta de DFC: os dados estão lá.
+    assert "Faltam dados de fluxo de caixa" not in trimestral.resumo
+
+
+def test_o_ano_movel_e_a_serie_anual_continuam_recebendo_veredito():
+    """O controle: a recusa é da frequência, e não de qualquer série curta.
+
+    O ano móvel tem rótulo de trimestre e conteúdo de doze meses — se a decisão
+    fosse pelo rótulo, ele seria recusado junto, e ele é justamente a saída que
+    o app oferece.
+    """
+    from valuation.qualidade import SEM_DADOS, avaliar_qualidade
+
+    movel = avaliar_qualidade(_analise_com("anual", ["1T25", "2T25", "3T25"]))
+    anual = avaliar_qualidade(_analise_com("anual", [2023, 2024, 2025]))
+    assert movel.veredito != SEM_DADOS
+    assert anual.veredito != SEM_DADOS
