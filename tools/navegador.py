@@ -82,9 +82,25 @@ def conferir(pg, nome: str) -> str:
     return corpo
 
 
-def percorrer(porta: str, trimestral: bool = False) -> int:
+# As tres leituras do tempo, e o rotulo de cada uma no radio da tela de Dados.
+# `None` e a anual: ela e o padrao e nao pede clique nenhum.
+VISOES = {
+    "anual": None,
+    "trimestral": "Trimestral (isolado)",
+    "movel": "Ano móvel rolante",
+}
+
+
+def percorrer(porta: str, trimestral: bool = False, visao: str = "anual") -> int:
     global PREFIXO
-    PREFIXO = "trimestral_" if trimestral else ""
+    # `trimestral=True` continua funcionando: ele e a forma antiga de pedir a
+    # mesma coisa, e ha chamada dele no workflow.
+    if trimestral:
+        visao = "trimestral"
+    if visao not in VISOES:
+        print(f"visao desconhecida: {visao!r}. Use uma de {sorted(VISOES)}.")
+        return 2
+    PREFIXO = f"{visao}_" if visao != "anual" else ""
     url = f"http://localhost:{porta}"
     with sync_playwright() as p:
         navegador = p.chromium.launch()
@@ -126,16 +142,24 @@ def percorrer(porta: str, trimestral: bool = False) -> int:
         pg.wait_for_timeout(2500)
         pg.keyboard.press("Enter")
         esperar(pg, 4000)
-        if trimestral:
+        rotulo_da_visao = VISOES[visao]
+        if rotulo_da_visao is not None:
             # A serie trimestral tem colunas **propositalmente vazias** -- caixa
             # e balanco do exercicio anterior nao existem no ITR --, e e
             # exatamente esse tipo de coisa que se le errado na tela sem
             # ninguem olhar. Ate aqui ela so fora conferida por medicao.
-            pg.get_by_text("Trimestral (isolado)", exact=True).first.click()
+            #
+            # E o **ano movel** e a leitura que o app recomenda quando recusa a
+            # de cima -- era a unica das tres que nunca tinha sido percorrida na
+            # tela, e mandar o usuario para uma leitura nao percorrida e o pior
+            # dos tres casos.
+            pg.get_by_text(rotulo_da_visao, exact=True).first.click()
             pg.wait_for_timeout(1500)
 
         pg.locator("button", has_text="Importar da CVM").first.click()
-        esperar(pg, 25000)
+        # O ano movel monta uma coluna por trimestre **de dois ITRs**, cada uma
+        # por `importar_ltm`: e a leitura mais cara das tres.
+        esperar(pg, 60000 if visao == "movel" else 25000)
 
         conferir(pg, "Dados")
 
@@ -182,14 +206,16 @@ def percorrer(porta: str, trimestral: bool = False) -> int:
 
 
 if __name__ == "__main__":
-    # `--trimestral` percorre a serie do ITR em vez da DFP anual. Sao duas
-    # passadas e nao uma opcao dentro do mesmo laco: importar troca o estado da
-    # sessao inteira, e conferir as duas na mesma sessao esconderia qual delas
-    # produziu a tela.
+    # `--trimestral` e `--movel` percorrem as duas series do ITR em vez da DFP
+    # anual. Sao passadas separadas e nao uma opcao dentro do mesmo laco:
+    # importar troca o estado da sessao inteira, e conferir duas na mesma
+    # sessao esconderia qual delas produziu a tela.
     argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    escolhida = "anual"
+    if "--trimestral" in sys.argv:
+        escolhida = "trimestral"
+    elif "--movel" in sys.argv:
+        escolhida = "movel"
     raise SystemExit(
-        percorrer(
-            argumentos[0] if argumentos else "8501",
-            trimestral="--trimestral" in sys.argv,
-        )
+        percorrer(argumentos[0] if argumentos else "8501", visao=escolhida)
     )

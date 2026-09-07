@@ -193,6 +193,40 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "Prazo medio de estoque (dias)": (413, (0.000, 0.000, 0.003, 29.868, 105.187, 214.466, 416.923)),
     "Prazo medio de pagamento (dias)": (413, (11.509, 18.165, 33.961, 53.374, 90.356, 150.241, 226.043)),
     "Ciclo de conversao de caixa (dias)": (413, (-94.740, -42.765, -0.864, 42.505, 125.635, 261.776, 511.457)),
+
+    # ------------------------------------------------------------------
+    # **Os oito que tinham guarda de frequencia e nao tinham percentil.**
+    # Eles entraram em `SO_NO_EXERCICIO` porque misturam fluxo do periodo com
+    # estoque -- e a lista responde "a mediana se compara com uma premissa
+    # anual?", que nao depende de haver distribuicao. Sem distribuicao, porem, o
+    # balizador so tinha metade da resposta: dizia "acima do que a empresa
+    # entregou" e nao dizia se o numero e incomum no mercado.
+    #
+    # Medidos na **mesma safra (2021-2025) e com a mesma metodologia**: mediana
+    # por companhia, quantis entre companhias, nas 421 do universo.
+    #
+    # `Capex / Depreciacao` e a **validacao cruzada** desta rodada: ele ja tinha
+    # sido medido noutra ocasiao para calibrar
+    # `capex_perpetuo_acima_da_depreciacao`, e sai identico ate a terceira casa
+    # (P25 0,56 · P50 0,99 · P75 1,75 · P90 3,15). Reproduzir uma distribuicao
+    # ja publicada por outro caminho e a melhor evidencia de que a metodologia e
+    # a mesma.
+    "Giro do ativo": (416, (0.079, 0.136, 0.298, 0.516, 0.854, 1.213, 1.558)),
+    "Giro do capital investido": (397, (0.16, 0.246, 0.489, 0.917, 1.647, 2.854, 4.18)),
+    # As **duas** leituras do custo da divida, e a distancia entre elas e a
+    # informacao. A mediana da despesa financeira sobre divida da 18,2% e a do
+    # juro efetivamente pago da 9,3%: a linha `3.06.02` junta variacao cambial e
+    # monetaria de todo o passivo, e por isso o Kd do WACC vem do juro pago.
+    "Custo da divida efetivo": (412, (0.056, 0.101, 0.133, 0.182, 0.269, 0.572, 1.205)),
+    "Custo da divida pelo caixa": (349, (0.003, 0.026, 0.06, 0.093, 0.122, 0.142, 0.176)),
+    "FCO / Passivo circulante": (421, (-0.29, -0.149, 0.034, 0.242, 0.532, 0.822, 1.234)),
+    # Reinvestimento x ROIC: o crescimento que a propria operacao financia. A
+    # mediana em **1,4%** diz que a companhia brasileira mediana nao sustenta,
+    # so com reinvestimento, nem a inflacao.
+    "Crescimento fundamentado (reinvest. x ROIC)": (374, (-0.113, -0.075, -0.022, 0.014, 0.081, 0.158, 0.243)),
+    "Margem bruta": (418, (0.101, 0.147, 0.244, 0.336, 0.498, 0.678, 0.863)),
+    # Mediana em **0,99x**: o estado estacionario e repor o que se gasta.
+    "Capex / Depreciacao": (390, (0.095, 0.192, 0.549, 0.993, 1.748, 3.147, 5.724)),
 }# Descolamento entre o juro de competencia (DRE) e o juro pago (DFC), medido nas
 # mesmas 368 companhias que publicam os dois. **A mediana e +8,2 p.p.**, e nao
 # perto de zero: a linha 3.06.02 da CVM junta variacao cambial e monetaria de
@@ -312,6 +346,17 @@ UNIDADES: dict[str, str] = {
     "Prazo medio de estoque (dias)": DIAS,
     "Prazo medio de pagamento (dias)": DIAS,
     "Ciclo de conversao de caixa (dias)": DIAS,
+    # Os oito novos. Custo de divida, margem e crescimento fundamentado se leem
+    # em **percentual**; os giros e as coberturas, em **vezes** -- "0,52 vezes o
+    # ativo por ano" e nao "52%", que sugeriria uma fracao de alguma coisa.
+    "Custo da divida efetivo": PERCENTUAL,
+    "Custo da divida pelo caixa": PERCENTUAL,
+    "Crescimento fundamentado (reinvest. x ROIC)": PERCENTUAL,
+    "Margem bruta": PERCENTUAL,
+    "Giro do ativo": MULTIPLO,
+    "Giro do capital investido": MULTIPLO,
+    "FCO / Passivo circulante": MULTIPLO,
+    "Capex / Depreciacao": MULTIPLO,
 }
 
 

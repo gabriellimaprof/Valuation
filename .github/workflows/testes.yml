@@ -64,9 +64,14 @@ jobs:
             sleep 2
           done
       - run: python tools/navegador.py 8501
-      # A varredura tambem percorre a serie trimestral: ela tem colunas
-      # propositalmente vazias, e defeito ali se le como numero errado.
+      # As **tres** leituras do tempo, e nao uma. A trimestral tem colunas
+      # propositalmente vazias -- caixa e balanco do exercicio anterior nao
+      # existem no ITR --, e defeito ali se le como numero errado.
       - run: python tools/navegador.py 8501 --trimestral
+      # E o ano movel e a leitura que o app **recomenda** quando recusa a de
+      # cima. Ela era a unica das tres nunca percorrida na tela, e mandar o
+      # usuario para uma leitura nao percorrida e o pior dos tres casos.
+      - run: python tools/navegador.py 8501 --movel
 
       # **O contraste e a unica verificacao que pega esse tipo de regressao.**
       # `pytest` confere que as cores sao as da paleta; contraste e propriedade

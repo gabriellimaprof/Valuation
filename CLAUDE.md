@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1195 testes
+pytest                        # 1204 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.195 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.204 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2134,6 +2134,84 @@ O ano movel continua recebendo veredito, e isso e o que o teste de controle
 trava: ele tem rotulo de trimestre e conteudo de doze meses, e uma decisao
 tomada pelo rotulo o recusaria junto -- sendo ele justamente a saida que o app
 oferece.
+
+### "Serie trimestral + tela" nao era alcancada por teste nenhum
+
+Tres dos defeitos desta rodada chegaram a producao e ficaram la porque essa
+combinacao so era percorrida pela **varredura do navegador, que roda por
+agendamento**. `tests/test_tela_trimestral.py` fecha isso: ele semeia a serie do
+ITR nas telas de Historico, Premissas, Diagnostico e Custo de capital e confere
+que cada guarda dispara.
+
+Duas escolhas do arquivo carregam o aprendizado da rodada:
+
+- **O fixture passa por `escalar`.** Era ali que `periodicidade` se perdia, e a
+  tela de Dados converte para R$ milhoes logo depois de importar. Um fixture que
+  nao escala teria passado sem ver nada.
+- **Ha um fixture de controle com o ano movel**, que tem rotulo de trimestre e
+  conteudo de doze meses. Toda guarda tem de deixa-lo passar -- ele e a saida
+  que o app oferece. Se alguem trocar `periodicidade` por uma leitura do
+  **rotulo**, so este controle quebra; os outros continuariam verdes.
+
+**E ele registrou um ponto cego do proprio `AppTest`:** ele **nao expoe colecao
+nenhuma** para `st.html`. A tabela dos direcionadores vai por `st.html` por
+decisao documentada (o Styler so atravessa cor para o canvas, e nao peso nem
+tamanho), entao um teste de tela que procurasse o conteudo dela ali passaria por
+vazio -- procurando numa colecao que nao existe. O conteudo e verificado
+chamando a funcao, e ha um teste que trava o ponto cego para a proxima pessoa
+nao escrever o teste vazio.
+
+### Os oito indicadores com guarda ganharam distribuicao
+
+Eles entraram em `SO_NO_EXERCICIO` por misturarem fluxo do periodo com estoque,
+e ficaram numa situacao meio-termo: o balizador dizia "acima do que a empresa
+entregou" e **nao dizia se o numero e incomum no mercado**, porque `BASE` nao os
+media.
+
+Medidos na mesma safra (2021-2025) e com a mesma metodologia -- mediana por
+companhia, quantis entre companhias, nas 421 do universo:
+
+| | P25 | Mediana | P75 | P90 | n |
+|---|---|---|---|---|---|
+| Giro do ativo | 0,30x | **0,52x** | 0,85x | 1,21x | 416 |
+| Giro do capital investido | 0,49x | 0,92x | 1,65x | 2,85x | 397 |
+| **Custo da divida efetivo** | 13,3% | **18,2%** | 26,9% | 57,2% | 412 |
+| **Custo da divida pelo caixa** | 6,0% | **9,3%** | 12,2% | 14,2% | 349 |
+| FCO / Passivo circulante | 0,03x | 0,24x | 0,53x | 0,82x | 421 |
+| Crescimento fundamentado | -2,2% | **1,4%** | 8,1% | 15,8% | 374 |
+| Margem bruta | 24,4% | 33,6% | 49,8% | 67,8% | 418 |
+| Capex / Depreciacao | 0,55x | **0,99x** | 1,75x | 3,15x | 390 |
+
+Tres leituras que a medicao entrega de graca:
+
+- **As duas medidas do custo da divida distam 8,9 pontos na mediana** (18,2%
+  contra 9,3%), e essa distancia e a mesma coisa que este arquivo ja registrava
+  na WEG: a linha `3.06.02` junta variacao cambial e monetaria de todo o
+  passivo. E por isso que o Kd do WACC vem do juro pago.
+- **O crescimento fundamentado mediano e 1,4%**: a companhia brasileira mediana
+  nao sustenta nem a inflacao so com reinvestimento.
+- `Capex / Depreciacao` e a **validacao cruzada** da rodada. Ele ja tinha sido
+  medido para calibrar `capex_perpetuo_acima_da_depreciacao`, e sai **identico
+  ate a terceira casa** (0,55/0,99/1,75/3,15). Reproduzir por outro caminho uma
+  distribuicao ja publicada e a melhor evidencia de que a metodologia e a mesma.
+
+**E a invariante do universo pegou o erro que ela existe para pegar.** Publicar
+em `BASE` sem coletar em `INDICADORES_EXTRA` faz a proxima regeracao **apagar**
+a distribuicao, calada -- o defeito que `Arrendamento / Divida bruta` ja
+cometeu. O teste em `test_pares.py` reprovou os oito, e eles entraram na lista.
+
+### A varredura passou a percorrer as tres leituras
+
+Ela cobria a anual e a trimestral. Faltava o **ano movel**, que e justamente a
+leitura que o app **recomenda** quando recusa a de trimestres isolados -- mandar
+o usuario para uma leitura nunca percorrida e o pior dos tres casos.
+`--movel` e a terceira passada, e ela entrou no agendamento junto das outras
+duas.
+
+Sao passadas separadas e nao uma opcao dentro do mesmo laco: importar troca o
+estado da sessao inteira, e conferir duas na mesma sessao esconderia qual delas
+produziu a tela. O ano movel espera mais na importacao (60s contra 25s): ele
+monta uma coluna por trimestre de **dois ITRs**, cada uma por `importar_ltm`.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

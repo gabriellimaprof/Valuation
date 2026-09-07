@@ -105,6 +105,22 @@ INDICADORES_EXTRA: tuple[str, ...] = (
     "Prazo medio de estoque (dias)",
     "Prazo medio de pagamento (dias)",
     "Ciclo de conversao de caixa (dias)",
+    # Os oito que ganharam distribuicao depois de ganharem guarda de frequencia.
+    # Eles precisam estar **aqui** e nao so em `BASE`: `gerar_referencias` so
+    # emite o indicador que o universo mediu, entao publicar sem coletar faz a
+    # proxima regeracao **apagar** a distribuicao, calada. E o defeito que
+    # `Arrendamento / Divida bruta` ja cometeu uma vez, e o teste de invariante
+    # em `test_pares.py` existe por causa dele -- foi ele que pegou este.
+    "Giro do ativo",
+    # `Giro do capital investido` **nao entra aqui**: ele ja e dimensao de
+    # comparacao (`DIMENSOES`), e o universo o coleta por la. Lista-lo nas duas
+    # produziria coluna duplicada na regeracao.
+    "Custo da divida efetivo",
+    "Custo da divida pelo caixa",
+    "FCO / Passivo circulante",
+    "Crescimento fundamentado (reinvest. x ROIC)",
+    "Margem bruta",
+    "Capex / Depreciacao",
 )
 
 
