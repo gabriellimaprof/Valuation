@@ -3087,6 +3087,16 @@ def importar_trimestral(
         unidade="R$",
         origem=f"CVM ITR — trimestres isolados de {ano} e do exercício anterior",
         periodicidade="trimestral",
+        # `serie` diz **qual das tres leituras** e esta: refazer a busca precisa
+        # saber se o pedido era trimestre isolado ou ano movel, e o rotulo da
+        # coluna nao distingue os dois -- "1T26" e o rotulo dos dois.
+        fonte={
+            "tipo": FONTE_CVM,
+            "codigo_cvm": codigo_cvm,
+            "ano": ano,
+            "serie": "trimestral",
+            **({"setor": registro.setor} if registro and registro.setor else {}),
+        },
         # **Estes textos vao para a tela**, e por isso vem acentuados. O codigo
         # em volta escreve em ASCII; o que o usuario le, nao.
         avisos=[
@@ -3170,6 +3180,13 @@ def importar_ltm_rolante(
         origem=f"CVM ITR — ano móvel rolante de {ano}",
         # Rotulo de trimestre, conteudo de doze meses: e **anual**.
         periodicidade="anual",
+        fonte={
+            "tipo": FONTE_CVM,
+            "codigo_cvm": codigo_cvm,
+            "ano": ano,
+            "serie": "ltm_rolante",
+            **({"setor": registro.setor} if registro and registro.setor else {}),
+        },
         avisos=[
             "**Cada coluna e um ano movel de doze meses**, encerrado no trimestre "
             "que a rotula -- e nao um exercicio social. A serie tira a "

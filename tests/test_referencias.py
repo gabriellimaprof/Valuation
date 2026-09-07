@@ -204,9 +204,19 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
     encolhe a um quarto e a razão quadruplica —, quando é variação de um período
     contra outro, ou quando o numerador é irregular dentro do ano.
 
-    Medido na WEG e em mais duas, o desvio médio do percentil entre a leitura
-    anual e a trimestral separa os grupos com um vale no meio: ROIC 44, ROE 36,
-    Crescimento 33 · **vale** · Capex/Receita 9, Liquidez 7, Margens 0-1.
+    A separação foi medida três vezes, e **só a terceira mede o que diz medir**:
+
+    | Medição | Grupos (desvio mediano do percentil) |
+    |---|---|
+    | 3 companhias, anual × trimestral | vale limpo — artefato do tamanho |
+    | 79 companhias, anual × trimestral | 20p × 5p, com sobreposição em 15-18 |
+    | **80 companhias, ano móvel × trimestre isolado do mesmo período** | **18,5p × 1,9p** |
+
+    A terceira elimina o confundidor: as duas leituras cobrem **os mesmos
+    meses**, então o que sobra é frequência e não mudança da companhia. A
+    sobreposição de 15-18 pontos era em boa parte esse confundidor, e as três
+    razões estoque-sobre-estoque medem **0,0 pontos** — não "quase zero": zero,
+    que é a previsão estrutural exata.
 
     A classificação é **por estrutura e não pelo desvio**: o desvio confirma, e
     usá-lo como critério faria a lista mudar com a amostra.
@@ -216,10 +226,10 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
     for estrutural in ("ROIC", "ROE", "Crescimento da receita", "Divida liquida / EBITDA"):
         assert not referencias.atravessa_a_frequencia(estrutural), estrutural
 
-    # A conversao de **caixa** ficou fora: o FCO de um trimestre carrega imposto
-    # e juro pagos, que sao irregulares dentro do ano -- o mesmo criterio do
-    # payout. A **operacional** fica, porque o CGO e antes dos dois. Medido em 79
-    # companhias: 18 pontos de desvio contra 11.
+    # **As duas conversoes ficaram fora, e pelo mesmo criterio.** O FCO de um
+    # trimestre carrega imposto e juro pagos; o CGO carrega provisao e
+    # impairment. Os dois numeradores sao irregulares dentro do ano, e os dois
+    # se concentram no fechamento do exercicio.
     assert not referencias.atravessa_a_frequencia("Conversao de caixa (FCO / EBITDA)")
 
     for atravessa in (
@@ -229,9 +239,44 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
         "Capex / Receita",
         "Ciclo de conversao de caixa (dias)",
         "Divida bruta / Patrimonio liquido",
-        "Conversao operacional (CGO / EBITDA)",
     ):
         assert referencias.atravessa_a_frequencia(atravessa), atravessa
 
     orfaos = sorted(i for i in referencias.SO_NO_EXERCICIO if i not in referencias.BASE)
     assert not orfaos, f"indicador listado que BASE não publica: {orfaos}"
+
+
+def test_a_conversao_operacional_nao_atravessa_a_frequencia():
+    """O CGO é antes do imposto e do juro — e isso é metade do argumento.
+
+    Ele é lucro **mais os ajustes não-caixa**, e provisão, impairment e baixa de
+    ativo são tão irregulares dentro do ano quanto o imposto pago: concentram-se
+    no fechamento do exercício. É o mesmo critério que tirou `Conversão de
+    caixa` da lista, aplicado um degrau adiante.
+
+    Medido em 80 companhias, ano móvel contra trimestre isolado **do mesmo
+    período** — sem o confundidor de mudança real: 17,9 pontos de desvio de
+    percentil, o pior do grupo que atravessa por 7,8 pontos de folga, e acima de
+    quatro dos oito que não atravessam.
+    """
+    from valuation import referencias
+
+    assert not referencias.atravessa_a_frequencia("Conversao operacional (CGO / EBITDA)")
+    assert not referencias.atravessa_a_frequencia("Conversao de caixa (FCO / EBITDA)")
+
+
+def test_estoque_sobre_estoque_atravessa_a_frequencia():
+    """A previsão estrutural que a medição controlada confirmou exatamente.
+
+    Razão entre dois saldos não depende de quanto tempo a coluna cobre, e as
+    três da base medem **0,0 pontos** de desvio entre a leitura anual e a
+    trimestral do mesmo período — não "quase zero": zero.
+    """
+    from valuation import referencias
+
+    for indicador in (
+        "Liquidez corrente",
+        "Divida bruta / Patrimonio liquido",
+        "Arrendamento / Divida bruta",
+    ):
+        assert referencias.atravessa_a_frequencia(indicador), indicador

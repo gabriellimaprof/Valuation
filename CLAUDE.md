@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1171 testes
+pytest                        # 1185 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.171 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.185 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1760,37 +1760,169 @@ fluxo do mesmo periodo** (margem, conversao) ou **estoque sobre estoque**
 variacao de um periodo contra outro, ou quando o numerador e irregular dentro do
 ano.
 
-A primeira medicao usava **3 companhias** (n=2 por indicador) e mostrava um vale
-limpo entre os grupos. Refeita em **79 companhias** com as duas leituras (n de 47
-a 79 por indicador), a separacao em agregado se confirma e **o vale nao existe**:
+### A medicao foi refeita tres vezes, e so a terceira mede o que diz medir
 
-| | Desvio mediano do percentil |
+| Medicao | Grupos, desvio mediano do percentil |
 |---|---|
-| Os que **nao** atravessam (8 indicadores) | **20 pontos** |
-| Os que atravessam (14) | **5 pontos** |
+| 3 companhias, anual x trimestral | vale limpo -- artefato do tamanho |
+| 79 companhias, anual x trimestral | **20p x 5p**, com sobreposicao em 15-18 |
+| **80 companhias, ano movel x trimestre isolado do mesmo periodo** | **18,5p x 1,9p** |
 
-Sao 4x de diferenca, e isso sustenta a regra. Mas os grupos **se sobrepoem na
-borda** -- o pior dos que atravessam mede 18 e o melhor dos que nao atravessam
-mede 15 --, e o vale limpo da primeira medicao era artefato do tamanho da
-amostra.
+As duas primeiras comparavam a leitura anual de 2021-2025 com a trimestral de
+2025, e **parte do desvio era mudanca da companhia ao longo de quatro
+exercicios**, nao artefato de frequencia. A terceira elimina o confundidor: ano
+movel rolante de 2025 contra trimestres isolados de 2025 -- mesma companhia,
+mesmos meses, mesmo arquivo, so a duracao da coluna muda.
 
-A classificacao continua sendo **por estrutura e nao pelo desvio**: usa-lo como
-criterio faria a lista mudar com a amostra. Mas a medicao grande pegou **um erro
-de aplicacao meu**: `Conversao de caixa (FCO / EBITDA)` estava classificada como
-"atravessa" -- fluxo sobre fluxo do mesmo periodo, pela estrutura --, e mediu
-**18 pontos**, o pior do grupo. A causa e o criterio que eu ja tinha escrito e
-nao apliquei: o FCO de um trimestre carrega **imposto e juro pagos**, que sao
-irregulares dentro do ano, exatamente como o dividendo do payout. Ela saiu do
-grupo; `Conversao operacional` fica, porque o CGO e antes dos dois e mede 11. Na tela os oito
-indicadores de `SO_NO_EXERCICIO` aparecem **sem percentil** quando a serie e
-trimestral, com o aviso dizendo por que; no material do comite a secao inteira e
-recusada, porque no papel nao ha espaco para explicar linha a linha e meia tabela
-comparavel engana mais do que ajuda.
+O efeito de controlar e grande. A separacao passa de 4x para **10x**, e a
+sobreposicao de 15-18 pontos era em boa parte o confundidor. E a previsao
+estrutural mais forte se confirma **exatamente**: as tres razoes
+estoque-sobre-estoque -- `Liquidez corrente`, `Divida bruta / Patrimonio
+liquido`, `Arrendamento / Divida bruta` -- medem **0,0 pontos**. Nao "quase
+zero": zero, que e o que uma razao entre dois saldos tem de dar quando a unica
+coisa que muda e quanto tempo a coluna cobre.
+
+| Indicador | Desvio controlado | Classificado |
+|---|---|---|
+| Capital de giro / Receita | 24,9p | so no exercicio |
+| ROIC | 23,6p | so no exercicio |
+| Divida liquida / EBITDA | 21,0p | so no exercicio |
+| Payout | 20,0p | so no exercicio |
+| **Conversao operacional (CGO / EBITDA)** | **17,9p** | **atravessava** |
+| Depreciacao / Receita | 10,1p | atravessa |
+| Capex / Receita | 9,1p | atravessa |
+| Margem EBITDA | 5,6p | atravessa |
+| Margens, prazos, ciclo | 0,1p a 3,7p | atravessam |
+
+**E ela pegou um segundo erro de aplicacao meu, irmao do primeiro.** Este
+arquivo registrava que `Conversao de caixa (FCO / EBITDA)` saiu do grupo porque
+o FCO de um trimestre carrega **imposto e juro pagos**, irregulares dentro do
+ano -- e que `Conversao operacional` ficava "porque o CGO e antes dos dois". Isso
+e metade do argumento: o CGO e lucro **mais os ajustes nao-caixa**, e provisao,
+impairment e baixa de ativo sao tao irregulares dentro do ano quanto o imposto
+pago -- concentram-se no fechamento do exercicio. Eu parei de ler o proprio
+criterio no meio.
+
+A medicao controlada confirma: **17,9 pontos**, o pior do grupo que atravessa por
+**7,8 pontos de folga**, e acima de quatro dos oito que nao atravessam. Ela saiu
+do grupo. A classificacao continua sendo **por estrutura e nao pelo desvio** --
+usa-lo como criterio faria a lista mudar com a amostra --, mas aqui as duas
+apontam junto.
+
+Na tela os dez indicadores de `SO_NO_EXERCICIO` aparecem **sem percentil** quando
+a serie e trimestral, com o aviso dizendo por que; no material do comite a secao
+inteira e recusada, porque no papel nao ha espaco para explicar linha a linha e
+meia tabela comparavel engana mais do que ajuda.
 
 Junto vieram duas coisas que a tabela pedia: ela e **ordenada pela distancia ate
 a mediana da base** -- no topo esta onde a companhia e mais incomum, que e o que
 se procura -- e a **safra entra na legenda**, porque quem imprime a tela perde o
 aviso que fica acima dela.
+
+### As duas guardas de frequencia estavam inertes no app
+
+Elas nunca tinham sido vistas funcionando. Percorrido o caminho no navegador --
+importar a WEG como serie trimestral, abrir Premissas, clicar em "Sugerir a
+partir do historico" -- **nenhuma das duas disparava**, e o capital de giro
+entrava na projecao a **152,0% da receita**.
+
+A causa nao tinha nada a ver com frequencia: **`Demonstracoes.escalar`
+reconstruia o objeto campo a campo**. A tela de Dados converte para R$ milhoes
+logo depois de importar, e o campo `periodicidade`, acrescentado depois daquela
+funcao, voltava ao padrao `"anual"` -- a serie trimestral chegava ao resto do app
+se declarando exercicio. Virou `replace`, com teste que percorre
+`dataclasses.fields` e reprova o **proximo** campo perdido antes de ele existir.
+
+Copia campo a campo e bomba-relogio: funciona ate alguem acrescentar um campo, e
+o defeito nasce longe da linha que o causou.
+
+**Percorrer o caminho achou tres portas, e cada uma perdia de um jeito
+diferente:**
+
+| Onde | O que acontecia |
+|---|---|
+| `escalar` | descartava o campo na conversao de unidade |
+| **projeto salvo** | nao gravava o campo; um valuation trimestral voltava do disco anual |
+| **tabela dos direcionadores** | nunca teve guarda nenhuma |
+
+No projeto salvo nao ha importador para recuperar, entao arquivo antigo recupera
+pela **origem**, que o proprio app gravou ("trimestres isolados" contra "ano
+movel rolante") -- e **nao pelo rotulo da coluna**, que nao distingue trimestre
+isolado de ano movel de doze meses encerrado nele.
+
+**E a regra estava copiada, que e como a terceira nasceu sem ela.** O balizador e
+a tabela dos direcionadores tinham cada um a sua copia; a mesa (`carteira.py`,
+que e motor) nao tinha nenhuma. `referencias.a_mediana_se_compara` passou a ser a
+peca unica, e os tres delegam.
+
+Na tabela dos direcionadores a coluna do **percentil continua valendo** e a da
+empresa nao: ali o numero comparado com a base e a premissa **projetada**, que e
+anual por construcao. A ausencia diz por que -- "serie trimestral" na celula --,
+porque coluna que esvazia sem explicacao nao se distingue de dado faltando.
+
+### O CAGR contava colunas, e o ano movel conta trimestres
+
+Passo entre colunas e duracao de coluna sao coisas diferentes, e o ano movel
+rolante separa as duas: cada coluna cobre **doze meses** e a seguinte comeca
+**tres meses** depois. `periodicidade` responde a primeira pergunta;
+`anos_entre` responde a segunda, e quem calcula taxa **ao ano** precisa da
+segunda.
+
+`crescimento_composto` dividia pelo numero de passos. Medido na WEG, ano movel de
+2025: **1,67% onde a anualizacao da mesma serie da 6,84%** -- quatro vezes menor,
+o mesmo erro do `DIAS_NO_ANO`, agora na premissa de crescimento. E ele estava
+justamente na leitura que o app **recomenda** quando recusa projetar sobre
+trimestres isolados. Serie anual nao se move: ali um passo **e** um ano.
+
+**E consertar a dimensao expos o problema de verdade.** O ano movel montado de um
+ITR so tem os trimestres ja publicados naquele ano. Medido em 25 companhias com
+o ITR de 2026: **as 25 tem span de 0,25 ano** -- duas colunas. Anualizar o
+movimento de um trimestre eleva ruido a quarta potencia, e o resultado virava a
+premissa de crescimento **perpetuo**:
+
+| P10 | Mediana | P90 | \|CAGR\| acima de 30% |
+|---|---|---|---|
+| -13,9% | +3,4% | +24,2% | 3 de 25 |
+
+`SPAN_MINIMO_PARA_TENDENCIA = 1.0` fecha isso, e o corte e **um ano por
+definicao e nao por calibracao**: "taxa ao ano" pede ao menos um ano de
+observacao. Abaixo dele a sugestao parte do longo prazo, com alerta que diz
+quantos meses a serie cobre e manda importar em **Anual** para tirar tendencia da
+propria companhia.
+
+Junto, a justificativa deixou de mentir: ela dizia "CAGR historico da receita"
+mesmo quando o CAGR fora descartado. Premissa sugerida que o analista nao
+consegue explicar e pior do que premissa em branco -- e uma que ele explica
+errado e pior ainda.
+
+### A saida da recusa passou a ficar a um clique
+
+A recusa de projetar sobre trimestres isolados **nomeava** o ano movel e nao o
+oferecia: o usuario tinha de voltar a Dados, achar a aba da CVM, digitar a
+companhia de novo e trocar a visao. E o mesmo trabalho braco que o aviso de
+premissas fora do historico ja tinha identificado como desnecessario -- **o botao
+que resolve fica onde a pergunta nasce**.
+
+Isso so foi possivel porque **a serie trimestral passou a guardar `fonte`**. Ela
+nao guardava nenhuma, e sem ela o app sabe dizer a origem e nao sabe ir buscar de
+novo: "Atualizar da CVM" nunca aparecia numa serie trimestral, e um valuation
+trimestral salvo nao podia ser rebuscado. O campo `serie` diz **qual das tres
+leituras** e aquela, porque o rotulo da coluna nao distingue trimestre isolado de
+ano movel -- "1T26" e o rotulo dos dois.
+
+**Duas coisas sairam de olhar a tela, e nenhum teste as pegaria:**
+
+- **Botao dentro do `if` de outro botao nunca e lido.** A primeira versao
+  desenhava a saida dentro do bloco do "Sugerir a partir do historico": na rerun
+  que o clique provoca, o `if` de fora ja e falso e o botao de dentro nao e
+  redesenhado. Ele aparecia e nao fazia nada.
+- **E aparecer antes e melhor que aparecer depois.** A serie ja se sabe
+  trimestral quando a tela abre, entao o aviso e a saida vem **antes** do botao
+  -- quem ve descobre que a projecao nao sai sem precisar clicar, levar a recusa
+  e so entao achar o caminho.
+
+Conferido no navegador, o laco inteiro: importar trimestral, ver o aviso, clicar
+na saida, o aviso sumir e a projecao derivar do ano movel.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import tempfile
 from pathlib import Path
 
@@ -750,6 +751,49 @@ def _reimportar_da_cvm(dfs, anos: list[int]) -> None:
         + (f" Exercício(s) novo(s): {', '.join(str(a) for a in ganhos)}." if ganhos else "")
     )
     st.rerun()
+
+
+def reimportar_como_ano_movel(dfs) -> bool:
+    """Troca a serie de trimestres isolados pelo ano movel da mesma companhia.
+
+    **Publica, porque quem precisa dela nao esta nesta tela.** A recusa de
+    projetar sobre trimestres isolados nasce em Premissas, e ate aqui ela
+    nomeava a saida sem oferece-la: o usuario tinha de voltar a Dados, achar a
+    aba da CVM, digitar a companhia de novo e trocar a visao. E o mesmo trabalho
+    braçal que o aviso de premissas fora do historico ja tinha identificado como
+    desnecessario -- **o botao que resolve fica onde a pergunta nasce**.
+
+    So e possivel porque a serie passou a guardar `fonte`: sem ela o app sabe
+    dizer a origem e nao sabe ir buscar de novo.
+    """
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    fonte = getattr(dfs, "fonte", None) or {}
+    if fonte.get("tipo") != FONTE_CVM or not fonte.get("codigo_cvm"):
+        return False
+
+    try:
+        with st.spinner("Montando o ano móvel a partir do ITR…"):
+            novo = importar_ltm_rolante(
+                int(fonte["codigo_cvm"]),
+                ano=fonte.get("ano"),
+                catalogo=_catalogo_cvm(),
+            )
+    except ErroCVM as erro:
+        st.error(f"Não consegui montar o ano móvel: {erro}")
+        return False
+
+    # A unidade e o nome vieram de escolhas que o usuario ja fez; trocar a
+    # leitura nao pode desfaze-las pelas costas dele. E a mesma regra de
+    # `_reimportar_da_cvm`.
+    if dfs.unidade != novo.unidade:
+        divisor = next((d for d, u in UNIDADES_CVM.values() if u == dfs.unidade), None)
+        if divisor:
+            novo = novo.escalar(divisor, dfs.unidade)
+    novo = replace(novo, empresa=dfs.empresa)
+
+    estado.definir_demonstracoes(novo)
+    return True
 
 
 def _demonstracao(dfs, chave: str) -> None:

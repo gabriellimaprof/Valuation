@@ -461,3 +461,95 @@ def test_o_caixa_preso_traduz_os_dias_em_dinheiro(dfs):
     ultimo = caixa.index[-1]
     esperado = ciclo[ultimo] * dfs.serie("receita_liquida")[ultimo] / 365
     assert caixa[ultimo] == pytest.approx(esperado)
+
+
+def test_o_cagr_conta_anos_e_nao_colunas():
+    """O ano móvel rolante é onde contar colunas erra por quatro.
+
+    Cada coluna dele cobre **doze meses** e a seguinte começa **três meses**
+    depois: passo e duração são coisas diferentes, e quem calcula taxa ao ano
+    precisa do passo. Medido na WEG, ano móvel de 2025: o CAGR saía em **1,67%**
+    onde a anualização da mesma série dá **6,84%** — o mesmo erro do
+    `DIAS_NO_ANO`, agora na premissa de crescimento.
+
+    Ele estava justamente na leitura que o app **recomenda** quando recusa
+    projetar sobre trimestres isolados.
+    """
+    from valuation.historico import anos_entre, crescimento_composto
+
+    # Meio ano de distancia entre 1T25 e 3T25, e nao dois anos.
+    assert anos_entre("1T25", "3T25") == pytest.approx(0.5)
+    assert anos_entre("3T24", "3T25") == pytest.approx(1.0)
+    assert anos_entre(2021, 2025) == pytest.approx(4.0)
+
+    # +21% em meio ano sao 46,4% ao ano, e nao 10%.
+    movel = pd.Series([100.0, 110.0, 121.0], index=["1T25", "2T25", "3T25"])
+    assert crescimento_composto(movel) == pytest.approx(0.4641, abs=1e-4)
+
+    # Serie anual nao se move: ali um passo **e** um ano.
+    anual = pd.Series([100.0, 110.0, 121.0], index=[2023, 2024, 2025])
+    assert crescimento_composto(anual) == pytest.approx(0.10)
+
+
+def test_o_cagr_cai_no_passo_por_coluna_quando_o_rotulo_nao_e_periodo():
+    """Planilha com cabeçalho livre continua funcionando como sempre funcionou."""
+    from valuation.historico import crescimento_composto
+
+    livre = pd.Series([100.0, 121.0], index=["antes", "depois"])
+    assert crescimento_composto(livre) == pytest.approx(0.21)
+
+
+def test_cagr_sobre_menos_de_um_ano_nao_vira_premissa_de_crescimento():
+    """O ano móvel montado de um ITR nunca chega a um ano de intervalo.
+
+    Medido em 25 companhias com o ITR de 2026: **as 25 têm span de 0,25 ano** —
+    duas colunas, porque só dois trimestres foram publicados. Anualizar o
+    movimento de um trimestre eleva o ruído à quarta potência, e o resultado
+    virava a premissa de crescimento **perpétuo**: P10 de −13,9%, P90 de +24,2%,
+    e |CAGR| acima de 30% em 3 das 25.
+
+    Isto **não** é a guarda de frequência — o ano móvel é anual por conteúdo e a
+    projeção o aceita. É outra pergunta: a série é longa o bastante para ter
+    tendência? Ela vale igual para uma série anual de um ano só.
+    """
+    from valuation.historico import sugerir_premissas
+
+    # Duas colunas de ano movel: conteudo de doze meses, tres meses de intervalo.
+    curta = _demonstracoes(
+        {
+            "receita_liquida": [1000.0, 1030.0],
+            "custo_produtos_vendidos": [600.0, 618.0],
+            "ebit": [200.0, 206.0],
+            "depreciacao_amortizacao": [50.0, 51.5],
+            "ativo_total": [1500.0, 1545.0],
+            "patrimonio_liquido": [700.0, 721.0],
+        },
+        ["1T26", "2T26"],
+    )
+    sugestao = sugerir_premissas(analisar(curta))
+
+    # 3% num trimestre viraria 12,6% ao ano; a premissa nao parte dai.
+    assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.045)
+    assert "meses" in " ".join(sugestao.alertas)
+    # A justificativa nao pode dizer "CAGR historico" quando nao foi ele.
+    assert "CAGR" not in sugestao.justificativas["crescimento_receita"]
+
+
+def test_serie_anual_longa_continua_partindo_do_cagr():
+    """O controle: a guarda do span não pode tocar no caminho normal."""
+    from valuation.historico import sugerir_premissas
+
+    longa = _demonstracoes(
+        {
+            "receita_liquida": [1000.0, 1100.0, 1210.0, 1331.0],
+            "custo_produtos_vendidos": [600.0, 660.0, 726.0, 798.6],
+            "ebit": [200.0, 220.0, 242.0, 266.2],
+            "depreciacao_amortizacao": [50.0, 55.0, 60.5, 66.55],
+            "ativo_total": [1500.0, 1650.0, 1815.0, 1996.5],
+            "patrimonio_liquido": [700.0, 770.0, 847.0, 931.7],
+        },
+        [2022, 2023, 2024, 2025],
+    )
+    sugestao = sugerir_premissas(analisar(longa))
+    assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.10)
+    assert "CAGR" in sugestao.justificativas["crescimento_receita"]

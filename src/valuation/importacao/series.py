@@ -121,6 +121,7 @@ def montar_serie(
     origem: str,
     avisos: list[str] | None = None,
     periodicidade: str = "anual",
+    fonte: dict | None = None,
 ) -> Demonstracoes:
     """Junta demonstrações de vários períodos numa tabela com uma coluna cada.
 
@@ -161,6 +162,11 @@ def montar_serie(
         # Quem monta a serie e quem sabe quanto tempo cada coluna cobre: o ano
         # movel tem rotulo de trimestre e conteudo de doze meses.
         periodicidade=periodicidade,
+        # **A serie tambem sabe de onde veio.** Ate aqui ela nao guardava
+        # `fonte`, e sem ela o caminho do ITR ficava fora de tudo que depende de
+        # saber refazer a busca: "Atualizar da CVM" nunca aparecia numa serie
+        # trimestral, e um valuation trimestral salvo nao podia ser rebuscado.
+        fonte=dict(fonte or {}),
     )
 
 

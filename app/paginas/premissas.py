@@ -73,6 +73,16 @@ def _barra_de_acoes(analise) -> None:
         )
         return
 
+    # **A saida fica fora do bloco do outro botao, e antes dele.** Botao
+    # desenhado dentro do `if` de outro botao nunca chega a ser lido: na rerun
+    # que o clique provoca, o `if` de fora ja e falso e o botao de dentro nao e
+    # redesenhado. Conferido no navegador -- ele aparecia e nao fazia nada.
+    #
+    # E aparecer antes e melhor que aparecer depois: quem ve a serie trimestral
+    # descobre que a projecao nao sai **antes** de clicar, em vez de clicar,
+    # levar a recusa e so entao achar a saida.
+    _oferecer_o_ano_movel(analise)
+
     colunas = st.columns([2, 2, 3])
     if colunas[0].button("Sugerir a partir do histórico"):
         try:
@@ -221,6 +231,42 @@ def _editor(operacionais, anos: list[int], analise) -> None:
                 replace(operacionais, receita_base=receita, ano_base=int(ano_base)),
             )
             estado.atualizar({"prejuizo_fiscal_acumulado": prejuizo})
+            st.rerun()
+
+
+def _oferecer_o_ano_movel(analise) -> None:
+    """O botao que resolve a recusa, ao lado dela.
+
+    Aparece **so quando a serie e de trimestres isolados e a origem permite
+    refazer a busca** -- planilha importada a mao nao tem de onde rebuscar, e um
+    botao que falharia e pior que botao nenhum.
+    """
+    dfs = getattr(analise, "demonstracoes", None)
+    if dfs is None or getattr(dfs, "periodicidade", "anual") != "trimestral":
+        return
+    fonte = getattr(dfs, "fonte", None) or {}
+    if fonte.get("tipo") != "cvm" or not fonte.get("codigo_cvm"):
+        return
+
+    st.warning(
+        "**Esta série é de trimestres isolados, e não sustenta uma projeção.** "
+        "A receita-base seria a de três meses, o capital de giro sairia quatro "
+        "vezes maior sobre ela e o crescimento compararia trimestres vizinhos."
+    )
+    st.caption(
+        "O **ano móvel rolante** são doze meses encerrados em cada trimestre: "
+        "ele tira a sazonalidade sem esperar o exercício fechar, e é a "
+        "anualização certa desta série. Trocar aqui **substitui o histórico "
+        "importado** e mantém a unidade e o nome que você escolheu."
+    )
+    if st.button("Reimportar em Ano móvel rolante"):
+        from .dados import reimportar_como_ano_movel
+
+        if reimportar_como_ano_movel(dfs):
+            st.success(
+                "Histórico trocado para o ano móvel rolante. "
+                "Clique em **Sugerir a partir do histórico** de novo."
+            )
             st.rerun()
 
 

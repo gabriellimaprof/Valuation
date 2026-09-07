@@ -385,9 +385,22 @@ SO_NO_EXERCICIO: frozenset[str] = frozenset(
         # supostamente atravessa. A causa e o mesmo criterio que ja estava
         # escrito duas linhas acima e que eu nao apliquei aqui: o FCO de um
         # trimestre carrega **imposto e juro pagos**, que sao irregulares dentro
-        # do ano. `Conversao operacional` fica de fora desta lista porque o CGO e
-        # antes dos dois, e mede 11 pontos.
+        # do ano.
         "Conversao de caixa (FCO / EBITDA)",
+        # **E este eu deixei de fora pela metade do argumento.** O CGO e antes
+        # do imposto e do juro -- verdade, e era o que estava escrito aqui --,
+        # mas ele e lucro **mais os ajustes nao-caixa**, e provisao, impairment
+        # e baixa de ativo sao tao irregulares dentro do ano quanto o imposto
+        # pago: concentram-se no fechamento do exercicio. E o mesmo criterio da
+        # linha acima, aplicado um degrau adiante, e eu parei de le-lo no meio.
+        #
+        # A medicao **controlada** e o que confirmou: ano movel contra trimestre
+        # isolado do **mesmo periodo**, em 80 companhias, ele da 17,9 pontos --
+        # o pior do grupo que atravessa por 7,8 pontos de folga, e acima de
+        # quatro dos oito que nao atravessam. A classificacao continua sendo por
+        # estrutura (usar o desvio como criterio faria a lista mudar com a
+        # amostra), mas aqui as duas apontam junto.
+        "Conversao operacional (CGO / EBITDA)",
     }
 )
 

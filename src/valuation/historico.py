@@ -504,14 +504,59 @@ def comparacao_ano_a_ano(demonstracoes) -> pd.DataFrame | None:
     return tabela
 
 
+# Um CAGR sobre menos de um ano de intervalo nao descreve tendencia: ele
+# anualiza o movimento de um trimestre, elevando o ruido a quarta potencia. O
+# corte e um ano por definicao, e nao por calibracao -- "taxa ao ano" pede ao
+# menos um ano de observacao.
+SPAN_MINIMO_PARA_TENDENCIA = 1.0
+
+
+def anos_entre(inicio, fim) -> float:
+    """Quantos **anos** separam duas colunas, pelo rotulo.
+
+    O passo entre colunas nao e o mesmo que a duracao de cada coluna, e o ano
+    movel rolante separa os dois: cada coluna cobre **doze meses** e a coluna
+    seguinte comeca **tres meses** depois. `periodicidade` responde a primeira
+    pergunta; esta funcao responde a segunda, e quem calcula taxa ao ano precisa
+    da segunda.
+
+    Vale tambem quando ha buraco na serie: `1T25` a `3T25` e meio ano, tenha ou
+    nao a coluna do meio.
+    """
+    from .importacao.series import periodo_do_rotulo
+
+    a, b = periodo_do_rotulo(inicio), periodo_do_rotulo(fim)
+    if a is not None and b is not None:
+        return (b[0] - a[0]) + (b[1] - a[1]) / 4
+    try:
+        return float(int(str(fim).strip()) - int(str(inicio).strip()))
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def crescimento_composto(serie: pd.Series) -> float:
-    """CAGR entre o primeiro e o ultimo ano com dado positivo."""
+    """CAGR entre a primeira e a ultima coluna com dado positivo, **ao ano**.
+
+    **Contava colunas e nao anos**, e o ano movel rolante e onde isso doi: as
+    colunas dele sao trimestrais e o conteudo, de doze meses -- entao tres
+    passos de trimestre entravam na conta como tres anos e a taxa saia dividida
+    por quatro. Medido na WEG, ano movel de 2025: **1,67% onde a anualizacao da
+    mesma serie da 6,84%**. E o mesmo erro do `DIAS_NO_ANO`, na premissa de
+    crescimento -- e ele estava justamente na leitura que o app recomenda quando
+    recusa projetar sobre trimestres isolados.
+
+    Serie anual nao se move: ali um passo **e** um ano.
+    """
     valores = serie.dropna()
     valores = valores[valores > 0]
     if len(valores) < 2:
         return float("nan")
-    periodos = len(valores) - 1
-    return float((valores.iloc[-1] / valores.iloc[0]) ** (1 / periodos) - 1)
+    anos = anos_entre(valores.index[0], valores.index[-1])
+    if not np.isfinite(anos) or anos <= 0:
+        # Rotulo que nao se le como periodo: o passo por coluna e o que sobra, e
+        # e o que esta funcao sempre fez.
+        anos = float(len(valores) - 1)
+    return float((valores.iloc[-1] / valores.iloc[0]) ** (1 / anos) - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -698,7 +743,39 @@ def sugerir_premissas(
             "Nao ha receita liquida no ultimo ano; sem ela nao da para projetar."
         )
 
+    # **Um CAGR precisa de um ano de intervalo para ser tendencia.** O ano movel
+    # rolante montado de um ITR so tem os trimestres ja publicados naquele ano:
+    # medido em 25 companhias com o ITR de 2026, **as 25 tem span de 0,25 ano**
+    # -- duas colunas. Anualizar o tropeco de um trimestre e elevar ruido a
+    # quarta potencia, e o resultado virava a premissa de crescimento
+    # **perpetuo**: P10 de -13,9%, P90 de +24,2%, e |CAGR| acima de 30% em 3 das
+    # 25. E o problema do ano atipico em miniatura, e pior, porque um trimestre
+    # e menos que um ano.
+    #
+    # Isto **nao** e a guarda de frequencia: o ano movel e anual por conteudo e
+    # a projecao a aceita. E outra pergunta -- a serie e longa o bastante para
+    # ter tendencia? -- e ela vale igual para uma serie anual de um ano so.
+    serie_receita = d.serie("receita_liquida").dropna()
+    serie_receita = serie_receita[serie_receita > 0]
+    span = (
+        anos_entre(serie_receita.index[0], serie_receita.index[-1])
+        if len(serie_receita) >= 2
+        else float("nan")
+    )
     cagr = crescimento_composto(d.serie("receita_liquida"))
+    if np.isfinite(span) and span < SPAN_MINIMO_PARA_TENDENCIA:
+        # **Meses, e nao "0,25 ano".** O texto vai para a tela, e uma fracao de
+        # ano obriga quem le a converter de cabeca justamente o numero que o
+        # aviso existe para tornar obvio.
+        meses = int(round(span * 12))
+        alertas.append(
+            f"A série cobre **{meses} {'mês' if meses == 1 else 'meses'}** entre "
+            "a primeira e a última coluna, e um CAGR aí anualiza o movimento de "
+            "um trimestre — ruído, e não tendência. O crescimento sugerido parte "
+            "do longo prazo. Para derivar a tendência da própria companhia, "
+            "importe em **Anual**."
+        )
+        cagr = float("nan")
     crescimento_recente = analise.ultimo("Crescimento da receita")
     partida = next(
         (v for v in (cagr, crescimento_recente) if np.isfinite(v)),
@@ -719,8 +796,20 @@ def sugerir_premissas(
         )
 
     crescimentos = _convergir(partida, crescimento_de_longo_prazo, horizonte)
+    # A justificativa **nao pode dizer "CAGR historico" quando nao foi ele**:
+    # premissa sugerida que o analista nao consegue explicar e pior do que
+    # premissa em branco, e uma que ele explica errado e pior ainda.
+    de_onde = (
+        "CAGR historico da receita"
+        if np.isfinite(cagr)
+        else (
+            "crescimento do ultimo periodo"
+            if np.isfinite(crescimento_recente)
+            else "crescimento de longo prazo, por falta de serie que sustente tendencia"
+        )
+    )
     justificativas["crescimento_receita"] = (
-        f"Parte de {partida:.1%} (CAGR historico da receita) e converge linearmente "
+        f"Parte de {partida:.1%} ({de_onde}) e converge linearmente "
         f"ate {crescimento_de_longo_prazo:.1%} no ultimo ano projetado."
     )
 
