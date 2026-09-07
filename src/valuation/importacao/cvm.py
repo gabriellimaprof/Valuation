@@ -829,6 +829,80 @@ def _cnpj_da_companhia(zip_path: Path, ano: int, codigo_cvm: int) -> str | None:
     return None
 
 
+# **A contagem de acoes vem sem escala, e a companhia publica a evidencia para
+# desmenti-la.** O arquivo de composicao de capital nao tem coluna de escala, e
+# elas divergem: a WEG informa 4.197.317.998 e a Porto Seguro informa 646.586,
+# quando a real e ~646,6 milhoes. A Vale aparece com 4.268.779 e tem 4,27 bilhoes.
+#
+# O desempate esta no bloco `3.99` da propria DRE -- o lucro por acao, que a CVM
+# publica **em reais por acao**. Se a contagem estiver mil vezes menor, o LPA
+# calculado (`lucro / acoes`) sai mil vezes maior que o publicado.
+#
+# Medido nas 359 companhias de 2025 que publicam os dois:
+#
+#   P25 1,00x   P50 **1,01x**   P75 867x   P90 1.002x   P95 1.049x
+#
+#   ate 3x   (contagem coerente)      249  (69,4%)
+#   3x a 100x (zona cinzenta)           7  ( 1,9%)
+#   acima de 100x (em milhares)       103  (28,7%)
+#
+# A distribuicao e **bimodal com um vale quase vazio**: 1,9% no meio. Nao e
+# chute -- e a propria companhia dizendo que a contagem esta em milhares.
+#
+# A faixa e larga de proposito. O LPA publicado e o **basico ou diluido**, sobre
+# acoes **medias** do periodo, e o app divide por acoes de fechamento: 1,5x na
+# Embraer e leitura normal, nao erro. Exigir exatamente 1000 perderia os casos em
+# que as duas convencoes se somam (a Vale sai em 854x).
+RAZAO_DE_ESCALA_MINIMA = 100.0
+RAZAO_DE_ESCALA_MAXIMA = 10_000.0
+FATOR_DE_MILHARES = 1_000.0
+
+
+def _acoes_conferidas_no_lucro_por_acao(acoes, linhas, ano) -> tuple[float, str]:
+    """Confere a contagem contra o lucro por acao que a companhia publicou.
+
+    Devolve a contagem (corrigida ou nao) e o aviso, vazio quando nada mudou.
+    Sem LPA publicado nao ha o que conferir, e ausencia de evidencia nao e
+    evidencia de erro: a contagem passa como veio.
+    """
+    if not acoes or acoes <= 0:
+        return acoes, ""
+
+    lpa = [
+        abs(float(l.valor))
+        for l in linhas
+        if l.demonstracao == "dre"
+        and str(l.codigo).startswith(CODIGO_POR_ACAO)
+        and l.ano == ano
+        and l.valor is not None
+        and np.isfinite(float(l.valor))
+        and float(l.valor) != 0
+    ]
+    lucro = [
+        float(l.valor)
+        for l in linhas
+        if l.demonstracao == "dre" and str(l.codigo) == "3.11" and l.ano == ano
+        and l.valor is not None and np.isfinite(float(l.valor))
+    ]
+    if not lpa or not lucro or not lucro[0]:
+        return acoes, ""
+
+    razao = abs(lucro[0] / acoes) / max(lpa)
+    if not (RAZAO_DE_ESCALA_MINIMA <= razao <= RAZAO_DE_ESCALA_MAXIMA):
+        return acoes, ""
+
+    corrigida = acoes * FATOR_DE_MILHARES
+    return corrigida, (
+        f"**A quantidade de ações veio em milhares.** O arquivo informa "
+        f"{acoes:,.0f}".replace(",", ".")
+        + f", e o lucro por ação que a companhia publica ({max(lpa):,.2f} por "
+        "ação) só fecha com mil vezes isso. Corrigi para "
+        + f"{corrigida:,.0f}".replace(",", ".")
+        + ". A CVM divulga a composição de capital sem coluna de escala, e as "
+        "companhias divergem — o desempate é a própria demonstração."
+    )
+
+
 def acoes_em_circulacao(zip_path: Path, ano: int, codigo_cvm: int) -> float | None:
     """Acoes emitidas menos as em tesouraria, do arquivo de composicao de capital.
 
@@ -2044,6 +2118,11 @@ def importar_cvm(
             continue
 
         acoes = acoes_em_circulacao(zip_path, ano, codigo_cvm)
+        acoes, aviso_acoes = _acoes_conferidas_no_lucro_por_acao(
+            acoes, do_ano, max(l.ano for l in do_ano)
+        )
+        if aviso_acoes:
+            avisos.append(aviso_acoes)
         if acoes:
             # A quantidade acompanha a escala dos valores para que equity
             # dividido por acoes de o preco por acao na unidade certa.

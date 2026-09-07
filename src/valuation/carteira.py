@@ -62,26 +62,11 @@ from .qualidade import RUIM, SEM_DADOS, avaliar_qualidade
 PERFIS_INCOMPARAVEIS = 5.0
 
 
-# **O valor por acao pode ser aritmeticamente certo e inutil.** A CVM publica a
-# composicao de capital **sem coluna de escala**, e as companhias divergem: a WEG
-# informa 4.197.317.998 acoes e a Porto Seguro informa **646.586** -- a real e
-# ~646,6 milhoes. A Vale aparece com 4.268.779, e tem 4,27 bilhoes.
-#
-# Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**:
-#
-#   10^4 a 10^7 : 133 companhias
-#   10^8 a 10^10: 226 companhias
-#
-# E o app **nao pode corrigir**, porque parte das 133 e SPE de capital fechado
-# onde 55.686 acoes e o numero de verdade. O que da para separar e o uso: um
-# "valor por acao" de R$ 426.236 nao e preco de tela, e publica-lo num material
-# de comite e pior que omiti-lo.
-#
-# O corte usa o **patrimonio liquido por acao**, medido na base: mediana R$ 12,87
-# e P75 em R$ 1.589 -- o salto entre os dois e o que denuncia as duas populacoes.
-# Acima de R$ 1.000 por acao estao 27,2% da base, e ali o numero deixa de
-# descrever um papel.
-VALOR_POR_ACAO_IMPLAUSIVEL = 1_000.0
+# O corte da contagem de acoes mora em `historico`, onde ela e adotada -- e
+# de la ele alcanca CLI, Excel, relatorio e margem de seguranca de uma vez.
+# Aqui ele so e reusado, porque um modelo salvo **antes** da guarda existir
+# ainda carrega a contagem ruim na ponte.
+from .historico import VALOR_POR_ACAO_IMPLAUSIVEL  # noqa: E402
 
 
 VEREDITO_POR_EXTENSO = {

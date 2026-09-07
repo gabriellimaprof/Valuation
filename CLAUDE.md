@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1157 testes
+pytest                        # 1159 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.157 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.159 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1723,11 +1723,11 @@ A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/0
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
 
-## A contagem de acoes vem sem escala, e 133 companhias a publicam em milhares
+## A contagem de acoes vem sem escala, e a companhia publica o desmentido
 
 O arquivo de composicao de capital da CVM **nao tem coluna de escala**, e as
-companhias divergem. Achado ao ver "Valor por acao: R$ 426.236,8" da Porto
-Seguro numa pagina de comite:
+companhias divergem. Achado ao ver "Valor por acao: R$ 426.236,8" da Porto Seguro
+numa pagina de comite:
 
 | Companhia | O arquivo diz | O real |
 |---|---|---|
@@ -1735,32 +1735,53 @@ Seguro numa pagina de comite:
 | **Porto Seguro** | **646.586** | ~646,6 **milhoes** |
 | **Vale** | **4.268.779** | 4,27 **bilhoes** |
 
-Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**:
+Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**: 133
+entre 10^4 e 10^7, e 226 entre 10^8 e 10^10.
 
-```
-10^4 a 10^7 : 133 companhias
-10^7 a 10^8 :  57
-10^8 a 10^10: 226 companhias
-```
+**A primeira resposta foi recusar publicar o numero**, porque parte das 133 e SPE
+de capital fechado onde 55.686 acoes e o valor de verdade -- e nada no arquivo
+distingue "informou em milhares" de "tem poucas acoes".
 
-**E o app nao pode corrigir.** Parte das 133 e SPE de capital fechado, onde
-55.686 acoes e o numero de verdade -- a Axia Energia Nordeste tem essa contagem e
-ela esta certa. Nao ha como distinguir "informou em milhares" de "tem poucas
-acoes" pelo arquivo.
+**A segunda resposta e melhor, e ela estava dentro do proprio arquivo.** A
+companhia publica o **lucro por acao** no bloco `3.99` da DRE, em reais por acao.
+Se a contagem estiver mil vezes menor, o LPA calculado (`lucro / acoes`) sai mil
+vezes maior que o publicado. E evidencia da propria companhia, sem rede e sem
+chute.
 
-O que da para separar e o **uso**. Um valor por acao de R$ 426.236 nao e preco de
-tela, e publica-lo num material de comite e pior que omiti-lo. O corte sai do
-patrimonio liquido por acao medido na base -- mediana **R$ 12,87** e P75 em
-**R$ 1.589**, e o salto entre os dois e o que denuncia as duas populacoes. Acima
-de R$ 1.000 por acao estao 27,2% da base.
+Medido nas 359 companhias de 2025 que publicam os dois:
 
-A mesa **para de publicar** o numero e **diz por que**: coluna que some sem
-explicacao e pior que coluna errada, porque quem le nao distingue "esta companhia
-nao tem o numero" de "o numero existe e nao serve".
+| P25 | Mediana | P75 | P90 | P95 |
+|---|---|---|---|---|
+| 1,00x | **1,01x** | 867x | 1.002x | 1.049x |
 
-**Ainda em aberto:** a mesma guarda nao esta na tela de Margem de seguranca nem
-no diagnostico, e la o valor por acao e comparado com o preco informado -- onde o
-erro de mil vezes tem consequencia direta.
+| | Companhias |
+|---|---|
+| ate 3x (contagem coerente) | 249 (69,4%) |
+| 3x a 100x (zona cinzenta) | **7 (1,9%)** |
+| acima de 100x (em milhares) | 103 (28,7%) |
+
+**A distribuicao e bimodal com o vale quase vazio** -- 1,9% no meio --, e e isso
+que permite corrigir em vez de so recusar. A faixa aceita vai de 100x a 10.000x
+de proposito: o LPA publicado e o basico ou diluido, sobre acoes **medias** do
+periodo, e o app divide por acoes de fechamento. Na Embraer isso da 1,5x, que e
+leitura normal e nao erro; exigir exatamente 1000 perderia a Vale, que sai em
+854x.
+
+Resultado: **99 companhias corrigidas**, e a razao passa a ficar colada em 1
+(P25 0,96 · P50 1,00 · P75 1,02). Sobram 4 acima de 100x, e para elas continua
+valendo a guarda de `historico`, que **nao adota** a contagem -- assim
+`valor_por_acao` sai vazio em todo consumidor de uma vez, CLI, Excel, relatorio,
+margem de seguranca e telas, em vez de cada um precisar lembrar de conferir.
+
+A auditoria da base sai **byte a byte identica**: a correcao muda a contagem de
+acoes, e nenhuma identidade contabil passa por ela.
+
+**Uma via foi medida e descartada.** A ideia anterior era usar a busca de papel do
+Yahoo: companhia com ticker e listada, e ali a contagem em milhares seria erro.
+Medido em 40 das suspeitas, **17 tem papel (43%)** -- Embraer, Eneva, Suzano,
+Yduqs --, mas a lista "sem papel" contem a **Vale**, que e listada. A busca erra
+60% por construcao (ja documentado), entao ela nao separa as duas populacoes. O
+LPA publicado separa.
 
 ## Seis copias do formatador, e uma delas falava ingles
 

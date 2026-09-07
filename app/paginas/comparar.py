@@ -19,9 +19,12 @@ from valuation import biblioteca
 from valuation.apresentacao import escala_do_documento
 from valuation.carteira import montar_da_biblioteca
 
+from ..graficos import barras_divergentes
+
 from ..componentes import (
     escapar_cifrao,
     etapa,
+    grafico,
     pintar_por_intensidade,
     secao,
     unidade_curta,
@@ -107,9 +110,12 @@ def render() -> None:
         "entregou — e isso pode ter todo motivo. O número diz onde olhar.",
     )
     distancias = carteira.distancias()
-    st.dataframe(
+    # O grafico primeiro e a tabela ao lado, como o resto do app: a tabela se le
+    # celula a celula, e o padrao -- quem projeta acima do entregue, e em quais
+    # linhas -- so aparece com o zero no meio.
+    grafico(
+        barras_divergentes(distancias, "Projetado menos entregue"),
         pintar_por_intensidade(distancias).format("{:+.1%}", na_rep="—"),
-        width="stretch",
     )
 
     with st.expander("Ver projetado e entregue, lado a lado"):

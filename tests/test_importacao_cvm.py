@@ -2584,3 +2584,82 @@ def test_o_indice_so_e_montado_quando_o_membro_se_repete():
 
     limpar_cache_de_membros()
     assert not _indices
+
+
+def test_a_contagem_de_acoes_em_milhares_e_corrigida_pelo_lucro_por_acao(catalogo):
+    """A CVM publica a composição de capital **sem coluna de escala**.
+
+    A WEG informa 4.197.317.998 ações; a Porto Seguro informa **646.586**, e a
+    real é ~646,6 milhões. A Vale aparece com 4.268.779 e tem 4,27 bilhões.
+
+    O desempate está no bloco `3.99` da própria DRE — o lucro por ação, que a
+    CVM publica **em reais por ação**. Se a contagem estiver mil vezes menor, o
+    LPA calculado sai mil vezes maior que o publicado.
+
+    Medido nas 359 companhias de 2025 que publicam os dois, a distribuição é
+    bimodal com o vale quase vazio:
+
+        P50 **1,01x** · até 3x: 249 (69,4%) · 3x a 100x: 7 (1,9%) · >100x: 103
+
+    Depois da correção, **99 companhias corrigidas** e a razão colada em 1
+    (P25 0,96 · P50 1,00 · P75 1,02); sobram 4 acima de 100x.
+    """
+    from valuation.importacao.cvm import (
+        FATOR_DE_MILHARES,
+        RAZAO_DE_ESCALA_MAXIMA,
+        RAZAO_DE_ESCALA_MINIMA,
+        _acoes_conferidas_no_lucro_por_acao,
+    )
+    from valuation.importacao.cvm import LinhaCVM
+
+    def _linhas(lucro, lpa):
+        return [
+            LinhaCVM(codigo="3.11", descricao="Lucro", valor=lucro, ano=2025,
+                     demonstracao="dre", escala="UNIDADE", escopo="con"),
+            LinhaCVM(codigo="3.99.01.01", descricao="Lucro por Ação", valor=lpa,
+                     ano=2025, demonstracao="dre", escala="UNIDADE", escopo="con"),
+        ]
+
+    # Porto Seguro: 646.586 acoes publicadas, lucro de 3,4 bi, LPA de 5,21.
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(
+        646_586.0, _linhas(3_400_000_000.0, 5.21), 2025
+    )
+    assert acoes == 646_586.0 * FATOR_DE_MILHARES
+    assert "milhares" in aviso
+    # O aviso traz os dois numeros, porque "corrigi" sem dizer o quanto nao se
+    # confere.
+    assert "646.586" in aviso and "646.586.000" in aviso
+
+    # Contagem coerente passa intacta e **sem aviso**.
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(
+        4_195_695_973.0, _linhas(6_800_000_000.0, 1.62), 2025
+    )
+    assert acoes == 4_195_695_973.0
+    assert aviso == ""
+
+    # A faixa e larga de proposito: o LPA publicado e sobre acoes **medias** e
+    # pode ser basico ou diluido, entao 1,5x e leitura normal e nao erro.
+    acoes, _ = _acoes_conferidas_no_lucro_por_acao(
+        1_000_000.0, _linhas(1_500_000.0, 1.00), 2025
+    )
+    assert acoes == 1_000_000.0, "1,5x nao e erro de escala"
+
+    # E fora da faixa nada acontece: 20x nao e mil vezes.
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(
+        1_000_000.0, _linhas(20_000_000.0, 1.00), 2025
+    )
+    assert acoes == 1_000_000.0 and aviso == ""
+    assert RAZAO_DE_ESCALA_MINIMA == 100.0 and RAZAO_DE_ESCALA_MAXIMA == 10_000.0
+
+
+def test_sem_lucro_por_acao_publicado_a_contagem_passa_como_veio(catalogo):
+    """Ausência de evidência não é evidência de erro."""
+    from valuation.importacao.cvm import LinhaCVM, _acoes_conferidas_no_lucro_por_acao
+
+    so_lucro = [
+        LinhaCVM(codigo="3.11", descricao="Lucro", valor=1e9, ano=2025,
+                 demonstracao="dre", escala="UNIDADE", escopo="con")
+    ]
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(646_586.0, so_lucro, 2025)
+    assert acoes == 646_586.0
+    assert aviso == ""

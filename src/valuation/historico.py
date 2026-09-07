@@ -23,6 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from . import formato
 from .importacao import Demonstracoes
 from .premissas import (
     ALIQUOTA_IR_BRASIL,
@@ -613,6 +614,50 @@ def _mediana_descreve_a_tendencia(analise, indicador: str) -> str:
     )
 
 
+# **A contagem de acoes vem sem escala, e um quarto da base a publica em
+# milhares.** O arquivo de composicao de capital da CVM nao tem coluna de escala,
+# e as companhias divergem:
+#
+#   WEG            4.197.317.998   correto
+#   Porto Seguro   **646.586**     a real e ~646,6 milhoes
+#   Vale           **4.268.779**   a real e 4,27 bilhoes
+#
+# Medida a contagem nas 436 companhias de 2025, o histograma e **bimodal**: 133
+# entre 10^4 e 10^7, e 226 entre 10^8 e 10^10.
+#
+# **O app nao pode corrigir**, e a razao e boa: parte das 133 e SPE de capital
+# fechado, onde 55.686 acoes e o numero de verdade -- a Axia Energia Nordeste tem
+# essa contagem e ela esta certa. Nao ha no arquivo o que distinga "informou em
+# milhares" de "tem poucas acoes".
+#
+# O que da para separar e o **uso**. O corte sai do patrimonio liquido por acao,
+# medido na base: mediana **R$ 12,87** e P75 em **R$ 1.589** -- o salto entre os
+# dois e o que denuncia as duas populacoes. Acima de R$ 1.000 por acao o numero
+# deixa de descrever um papel, venha de escala errada ou de capital fechado, e
+# nos dois casos um "valor por acao" ali nao serve para comparar com preco.
+#
+# A guarda **nao adota a contagem** em vez de adota-la e publicar o numero: assim
+# `valor_por_acao` sai `None` em todo consumidor de uma vez -- CLI, Excel,
+# relatorio, margem de seguranca e as telas --, em vez de cada um precisar
+# lembrar de conferir.
+VALOR_POR_ACAO_IMPLAUSIVEL = 1_000.0
+
+
+def acoes_utilizaveis(acoes, patrimonio_liquido) -> bool:
+    """A contagem sustenta um valor por acao comparavel com preco de tela?
+
+    Sem patrimonio nao ha como aferir, e ausencia de evidencia nao e evidencia
+    de erro: a contagem passa.
+    """
+    if acoes is None or not np.isfinite(float(acoes)) or float(acoes) <= 0:
+        return False
+    if patrimonio_liquido is None or not np.isfinite(float(patrimonio_liquido)):
+        return True
+    if float(patrimonio_liquido) <= 0:
+        return True
+    return float(patrimonio_liquido) / float(acoes) <= VALOR_POR_ACAO_IMPLAUSIVEL
+
+
 def sugerir_premissas(
     analise: AnaliseHistorica,
     horizonte: int = 5,
@@ -774,6 +819,22 @@ def sugerir_premissas(
     # acao, e o numero que o usuario digitaria a mao erra o preco sem errar o
     # valor da empresa -- um engano que atravessa revisao sem ser notado.
     acoes = d.valor("acoes_em_circulacao")
+    patrimonio_final = d.valor("patrimonio_liquido")
+    if np.isfinite(acoes) and acoes > 0 and not acoes_utilizaveis(acoes, patrimonio_final):
+        # **O formatador vai nos numeros, e nao na frase.** Aplicar a troca de
+        # separador ao texto inteiro tambem inverte a pontuacao: "acoes, o que
+        # da" virou "acoes. o que da" na primeira versao disto.
+        alertas.append(
+            f"A companhia publica {formato.num(acoes, 0)} ações, o que dá "
+            f"{formato.num(patrimonio_final / acoes, 0)} de patrimônio por ação "
+            "— acima do que descreve um papel. A CVM divulga a composição de "
+            "capital sem coluna de escala, e parte das companhias informa a "
+            "quantidade em milhares; outras têm mesmo poucas ações, por serem de "
+            "capital fechado. Não adotei a contagem: sem ela não há valor por "
+            "ação, que é melhor que um valor por ação mil vezes fora."
+        )
+        acoes = float("nan")
+
     ponte = PonteValor(
         divida_bruta=float(np.nan_to_num(d.divida_bruta().dropna().iloc[-1]))
         if d.divida_bruta().notna().any()

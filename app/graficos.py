@@ -647,3 +647,38 @@ def linhas_em_dias(
     layout["showlegend"] = True
     figura.update_layout(**layout)
     return figura
+
+
+def barras_divergentes(dados: pd.DataFrame, titulo: str = "", altura: int = 300) -> go.Figure:
+    """Distancia de cada premissa para o historico, por modelo.
+
+    A tabela de distancias se le celula a celula; o padrao -- quem projeta acima
+    do entregue e em quais linhas -- so aparece com o **zero no meio** e as
+    barras saindo dele para os dois lados. E o unico grafico em que a cor tem
+    significado de estado, e nao de identidade: acima do historico e abaixo dele
+    sao coisas diferentes, e nao duas series.
+    """
+    p = paleta()
+    figura = go.Figure()
+    for k, coluna in enumerate(dados.columns):
+        valores = dados[coluna].astype(float)
+        figura.add_trace(
+            go.Bar(
+                y=[str(i) for i in dados.index],
+                x=valores,
+                name=str(coluna),
+                orientation="h",
+                marker={"color": p.serie(k), "line": {"width": 0}},
+                hovertemplate=f"<b>{coluna}</b><br>%{{y}}: %{{x:+.1%}}<extra></extra>",
+            )
+        )
+
+    layout = layout_base(altura + 26 * len(dados), titulo)
+    layout["barmode"] = "group"
+    layout["xaxis"]["tickformat"] = "+.0%"
+    layout["xaxis"]["zeroline"] = True
+    layout["xaxis"]["zerolinecolor"] = p.texto_secundario
+    layout["xaxis"]["zerolinewidth"] = 1
+    layout["showlegend"] = True
+    figura.update_layout(**layout)
+    return figura
