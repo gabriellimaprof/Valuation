@@ -31,6 +31,17 @@ DADOS = Path(__file__).parent / "dados" / "cvm"
 RAIZ = Path(__file__).resolve().parent.parent
 WEG = 5410
 
+# Quantos ITRs o **recorte** tem: 2024 e 2025. O padrao de producao e tres, e
+# pedi-lo aqui faria o leitor **baixar** o ITR de 2023 da CVM -- 32 MB dentro do
+# diretorio de fixtures, num projeto cuja regra e que nenhum teste alcanca a
+# rede. Foi o que aconteceu quando o padrao mudou de dois para tres, e o guarda
+# `test_os_fixtures_continuam_sendo_recortes_e_nao_downloads` acusou.
+#
+# Fixar aqui tambem devolve o tempo: os testes do ano movel custavam ~30s cada
+# lendo tres exercicios, e a suite inteira subiu de 250s para 477s.
+ITRS_NO_RECORTE = 2
+
+
 
 def _script(modulo: str) -> str:
     return f"""
@@ -66,7 +77,9 @@ def ano_movel():
     que o app oferece quando recusa a de cima. Uma decisao tomada pelo **rotulo**
     da coluna recusaria as duas, e o teste nao veria diferenca.
     """
-    return importar_ltm_rolante(WEG, cache=DADOS, ano=2025).escalar(1e6, "R$ milhões")
+    return importar_ltm_rolante(
+        WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE
+    ).escalar(1e6, "R$ milhões")
 
 
 def _rodar(modulo: str, dfs) -> AppTest:

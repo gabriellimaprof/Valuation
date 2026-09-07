@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1204 testes
+pytest                        # 1205 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.204 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.205 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2212,6 +2212,58 @@ Sao passadas separadas e nao uma opcao dentro do mesmo laco: importar troca o
 estado da sessao inteira, e conferir duas na mesma sessao esconderia qual delas
 produziu a tela. O ano movel espera mais na importacao (60s contra 25s): ele
 monta uma coluna por trimestre de **dois ITRs**, cada uma por `importar_ltm`.
+
+### Dois ITRs ou tres? A medicao respondeu, e o padrao mudou
+
+`anos_de_itr=2` tinha sido escolhido por dar span acima de um ano ao custo de
+~3s, **sem comparar com a alternativa** -- que e uma escolha por conveniencia
+com aparencia de decisao. Medido em 25 companhias, contra a serie **anual** de
+2021-2025, que e a leitura que o proprio app recomenda para tendencia:
+
+| | colunas | span | distancia para o CAGR anual | custo |
+|---|---|---|---|---|
+| 2 ITRs | 5 | 1,25 ano | 15,4 p.p. | 9,2s |
+| **3 ITRs** | **8** | **2,25 anos** | **10,2 p.p.** | **11,4s** |
+
+E a premissa muda: |CAGR(3) - CAGR(2)| tem mediana de **4,2 p.p.**, passa de
+2 p.p. em 15 das 25 e de 5 p.p. em 12. Na WEG o CAGR vai de **+0,2% para +9,3%**,
+contra 14,7% da leitura anual.
+
+**Acrescentar historia nao custa atualidade**, e essa e a razao de a troca ser
+barata: a atualidade do ano movel esta na **ultima coluna** -- os doze meses mais
+recentes --, e ela nao se move. O que colunas antigas acrescentam e tendencia,
+que e o que a projecao pede.
+
+### O padrao novo fez a suite baixar 32 MB da CVM
+
+Com tres ITRs, `importar_ltm_rolante(..., ano=2025)` passou a pedir o ITR de
+**2023**, que nao esta no recorte de teste -- e o leitor foi busca-lo. Dois
+arquivos de verdade apareceram dentro de `tests/dados/cvm` (32,3 MB e o DFP de
+2022), num projeto cuja regra e que **nenhum teste alcanca a rede**.
+
+O guarda `test_os_fixtures_continuam_sendo_recortes_e_nao_downloads` acusou, que
+e exatamente para isso que ele existe. Os testes passaram a fixar
+`ITRS_NO_RECORTE = 2`, com o motivo escrito ao lado, e ha um teste que trava o
+padrao de **producao** em tres lendo a **assinatura** -- importar de verdade ali
+reporia o download.
+
+O custo tinha aparecido antes disso, e por outro sintoma: a suite subiu de 250s
+para **477s**, porque sete testes do ano movel passaram a ler tres exercicios
+cada. Com os ITRs fixados ela voltou a 253s.
+
+### A varredura engolia "o app nao terminou de desenhar"
+
+`esperar()` aguarda o `stStatusWidget` sumir -- e quando ele **nao** some no
+prazo, o `except Exception: pass` deixava a varredura seguir e ler telas em meio
+a renderizacao. Visto na passada do ano movel, que e a mais cara das tres:
+Qualitativo saiu com **1.065 caracteres numa execucao e 3.883 na seguinte**, com
+o mesmo codigo e os mesmos dados.
+
+Contagem que depende da velocidade da maquina e pior que contagem nenhuma: ela
+manda procurar defeito onde nao ha -- gastei uma investigacao inteira atras de
+uma perda de conteudo que nunca existiu -- e treina quem le a ignorar a
+variacao, inclusive a verdadeira. O tempo esgotado virou **problema declarado**,
+com o nome do passo em que aconteceu.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

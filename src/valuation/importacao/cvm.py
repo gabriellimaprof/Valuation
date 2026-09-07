@@ -3131,7 +3131,7 @@ def importar_ltm_rolante(
     catalogo: list[Companhia] | None = None,
     ano: int | None = None,
     forcar_download: bool = False,
-    anos_de_itr: int = 2,
+    anos_de_itr: int = 3,
 ) -> Demonstracoes:
     """O ano movel encerrado em **cada** trimestre, uma coluna cada.
 
@@ -3165,8 +3165,24 @@ def importar_ltm_rolante(
     O CAGR muda de verdade: na Vale, de +10,5% para **+16,5%**; na WEG, de -0,6%
     para +0,2%. A leitura de um ITR era ruido.
 
-    Custo medido: **+3 a +4 segundos**. E o preco de uma leitura que sem isso nao
-    sustenta projecao nenhuma.
+    **O padrao e tres e nao dois, e a diferenca foi medida** -- dois tinha sido
+    escolhido por dar span acima de um ano ao custo de ~3s, sem comparar com a
+    alternativa. Em 25 companhias, contra a serie **anual** de 2021-2025, que e a
+    leitura que o proprio app recomenda para tendencia:
+
+    | | colunas | span | distancia para o CAGR anual | custo |
+    |---|---|---|---|---|
+    | 2 ITRs | 5 | 1,25 ano | 15,4 p.p. | 9,2s |
+    | **3 ITRs** | **8** | **2,25 anos** | **10,2 p.p.** | **11,4s** |
+
+    E a premissa muda: |CAGR(3) - CAGR(2)| tem mediana de **4,2 p.p.**, passa de
+    2 p.p. em 15 das 25 e de 5 p.p. em 12. Custo: **+2,2 segundos**.
+
+    **Acrescentar historia nao custa atualidade.** A atualidade do ano movel esta
+    na **ultima coluna** -- os doze meses mais recentes --, e ela nao se move com
+    isto; o que colunas antigas acrescentam e a tendencia, que e justamente o que
+    a projecao pede. Companhia que nao tem tres ITRs publicados degrada sozinha:
+    o exercicio que falta e pulado.
     """
     from .series import _rotulo_do_trimestre, montar_serie
 

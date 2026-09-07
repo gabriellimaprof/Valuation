@@ -30,6 +30,17 @@ DADOS = Path(__file__).parent / "dados" / "cvm"
 ITR = DADOS / "itr_cia_aberta_2025.zip"
 WEG, SAO_MARTINHO, RAIA = 5410, 20516, 5258
 
+# Quantos ITRs o **recorte** tem: 2024 e 2025. O padrao de producao e tres, e
+# pedi-lo aqui faria o leitor **baixar** o ITR de 2023 da CVM -- 32 MB dentro do
+# diretorio de fixtures, num projeto cuja regra e que nenhum teste alcanca a
+# rede. Foi o que aconteceu quando o padrao mudou de dois para tres, e o guarda
+# `test_os_fixtures_continuam_sendo_recortes_e_nao_downloads` acusou.
+#
+# Fixar aqui tambem devolve o tempo: sete testes do ano movel custavam ~30s cada
+# lendo tres exercicios, e a suite inteira subiu de 250s para 477s.
+ITRS_NO_RECORTE = 2
+
+
 
 # ---------------------------------------------------------------------------
 # O contrato do arquivo
@@ -555,7 +566,7 @@ def test_o_ano_movel_rolante_e_uma_serie_e_mostra_tendencia():
     from valuation.historico import anos_entre
     from valuation.importacao.cvm import importar_ltm_rolante, importar_trimestral
 
-    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
     colunas = list(rolante.valores.columns)
 
     for esperada in ("1T25", "2T25", "3T25"):
@@ -588,7 +599,7 @@ def test_a_ultima_coluna_do_rolante_e_o_ano_movel_pontual():
     """
     from valuation.importacao.cvm import importar_ltm_rolante
 
-    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
     pontual = importar_ltm(WEG, cache=DADOS, ano=2025)
     for chave in ("receita_liquida", "ebit", "lucro_liquido", "patrimonio_liquido"):
         assert float(rolante.valores.loc[chave].iloc[-1]) == pytest.approx(
@@ -604,7 +615,7 @@ def test_cada_serie_declara_o_que_ela_e():
     assert any("sazonalidade" in a for a in tri.avisos)
     assert any("isolados" in a for a in tri.avisos)
 
-    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
     assert any("doze meses" in a for a in rolante.avisos)
     assert any("nao e um exercicio social" in a or "não é um exercício social" in a.lower()
                for a in rolante.avisos)
@@ -946,7 +957,7 @@ def test_as_series_declaram_a_mesma_unidade_que_a_anual():
 
     anual = importar_cvm(WEG, [2024], cache=DADOS)
     trimestral = importar_trimestral(WEG, cache=DADOS, ano=2025)
-    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    rolante = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
 
     assert trimestral.unidade == anual.unidade
     assert rolante.unidade == anual.unidade
@@ -1051,7 +1062,7 @@ def test_o_valuation_do_ano_movel_nao_estoura():
     from valuation.modelo import Empresa
     from valuation.premissas import PremissasMacro, PremissasPerpetuidade
 
-    dfs = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    dfs = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
     s = sugerir_premissas(analisar(dfs))
     empresa = Empresa(
         nome=dfs.empresa,
@@ -1128,7 +1139,7 @@ def test_a_periodicidade_e_declarada_e_nao_lida_do_rotulo():
 
     anual = importar_cvm(WEG, [2024], cache=DADOS)
     tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
-    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
 
     assert anual.periodicidade == "anual"
     assert tri.periodicidade == "trimestral"
@@ -1169,7 +1180,7 @@ def test_serie_de_trimestres_isolados_nao_sustenta_projecao():
         sugerir_premissas(analisar(tri))
 
     # E o ano movel, que tem o mesmo rotulo, **passa** -- ele e a saida indicada.
-    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025, anos_de_itr=ITRS_NO_RECORTE)
     sugestao = sugerir_premissas(analisar(movel))
     assert sugestao.operacionais.receita_base > 0
 
@@ -1220,3 +1231,29 @@ def test_o_par_a_a_passa_a_existir_dentro_do_ano_movel():
 
     assert not np.isfinite(um.mediana("Crescimento da receita"))
     assert np.isfinite(dois.mediana("Crescimento da receita"))
+
+
+def test_o_padrao_de_producao_le_tres_itrs():
+    """O padrão é **três**, e a diferença para dois foi medida.
+
+    Medido em 25 companhias, contra a série anual de 2021-2025 — que é a leitura
+    que o próprio app recomenda para tendência:
+
+        2 ITRs   5 colunas   span 1,25 ano   distância 15,4 p.p.   9,2s
+        3 ITRs   8 colunas   span 2,25 anos  distância 10,2 p.p.  11,4s
+
+    E a premissa muda: |CAGR(3) − CAGR(2)| tem mediana de 4,2 p.p., passa de
+    5 p.p. em 12 das 25. Acrescentar história **não custa atualidade**: ela está
+    na última coluna, que não se move.
+
+    O teste lê a assinatura em vez de importar de verdade — o recorte só tem dois
+    ITRs, e pedir três aqui faria o leitor **baixar** o de 2023 da CVM.
+    """
+    import inspect
+
+    from valuation.importacao.cvm import importar_ltm_rolante
+
+    padrao = inspect.signature(importar_ltm_rolante).parameters["anos_de_itr"].default
+    assert padrao == 3
+    # E o recorte tem menos que isso, que e por que os testes o fixam.
+    assert ITRS_NO_RECORTE < padrao

@@ -32,15 +32,30 @@ problemas: list[str] = []
 MARCAS_CRUAS = ("**", "###", "<div", "<span")
 
 
-def esperar(pg, ms: int = 2500) -> None:
-    """Espera o Streamlit terminar de desenhar, e não um tempo fixo."""
+def esperar(pg, ms: int = 2500, onde: str = "") -> None:
+    """Espera o Streamlit terminar de desenhar, e não um tempo fixo.
+
+    **O `except` daqui engolia o caso que mais importa.** Quando o app nao
+    termina dentro do prazo, a varredura seguia adiante e lia telas em meio a
+    renderizacao -- devolvendo contagens que parecem perda de conteudo e nao
+    sao. Visto na passada do ano movel: Qualitativo saiu com **1.065**
+    caracteres numa execucao e **3.883** na seguinte, com o mesmo codigo e os
+    mesmos dados, so porque a primeira pegou o app ainda desenhando.
+
+    Contagem que depende da velocidade da maquina e pior que contagem nenhuma:
+    ela manda procurar defeito onde nao ha, e treina quem le a ignorar a
+    variacao -- inclusive a verdadeira. Agora vira problema declarado.
+    """
     pg.wait_for_selector("[data-testid='stAppViewContainer']", timeout=60000)
     try:
         pg.wait_for_selector(
             "[data-testid='stStatusWidget']", state="detached", timeout=120000
         )
     except Exception:
-        pass
+        problemas.append(
+            f"[{onde or 'app'}] o Streamlit nao terminou de desenhar em 120s -- "
+            "as contagens abaixo descrevem uma tela pela metade"
+        )
     pg.wait_for_timeout(ms)
 
 
@@ -157,9 +172,9 @@ def percorrer(porta: str, trimestral: bool = False, visao: str = "anual") -> int
             pg.wait_for_timeout(1500)
 
         pg.locator("button", has_text="Importar da CVM").first.click()
-        # O ano movel monta uma coluna por trimestre **de dois ITRs**, cada uma
-        # por `importar_ltm`: e a leitura mais cara das tres.
-        esperar(pg, 60000 if visao == "movel" else 25000)
+        # O ano movel monta uma coluna por trimestre de **tres ITRs**, cada uma
+        # por `importar_ltm`: e de longe a leitura mais cara das tres.
+        esperar(pg, 60000 if visao == "movel" else 25000, onde=f"importar {visao}")
 
         conferir(pg, "Dados")
 
