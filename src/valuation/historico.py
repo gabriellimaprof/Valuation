@@ -640,7 +640,7 @@ def _mediana_descreve_a_tendencia(analise, indicador: str) -> str:
 # `valor_por_acao` sai `None` em todo consumidor de uma vez -- CLI, Excel,
 # relatorio, margem de seguranca e as telas --, em vez de cada um precisar
 # lembrar de conferir.
-VALOR_POR_ACAO_IMPLAUSIVEL = 1_000.0
+from .dcf import VALOR_POR_ACAO_IMPLAUSIVEL  # noqa: E402
 
 
 def acoes_utilizaveis(acoes, patrimonio_liquido) -> bool:

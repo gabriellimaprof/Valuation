@@ -878,16 +878,30 @@ def _acoes_conferidas_no_lucro_por_acao(acoes, linhas, ano) -> tuple[float, str]
         and np.isfinite(float(l.valor))
         and float(l.valor) != 0
     ]
+    # **O lucro se acha pelo rotulo, e nao por codigo fixo.** A primeira versao
+    # procurava `3.11`, e o Itau publica o consolidado em **`3.09`** -- o plano
+    # financeiro desloca a numeracao, que e a armadilha que este projeto ja
+    # documenta. Com o codigo fixo a conferencia nao rodava justamente no maior
+    # banco do pais, cuja contagem esta em milhares.
+    from .esquema import reconhecer
+
     lucro = [
         float(l.valor)
         for l in linhas
-        if l.demonstracao == "dre" and str(l.codigo) == "3.11" and l.ano == ano
-        and l.valor is not None and np.isfinite(float(l.valor))
+        if l.demonstracao == "dre"
+        and l.ano == ano
+        and l.valor is not None
+        and np.isfinite(float(l.valor))
+        and float(l.valor) != 0
+        and reconhecer(l.descricao, None, "dre").chave == "lucro_liquido"
     ]
-    if not lpa or not lucro or not lucro[0]:
+    if not lpa or not lucro:
         return acoes, ""
 
-    razao = abs(lucro[0] / acoes) / max(lpa)
+    # **Mediana e nao maximo.** A companhia publica varias linhas em `3.99` --
+    # ON, PN, basico, diluido --, e a maior delas nem sempre e a representativa:
+    # no Itau o maximo e 16,12 enquanto o LPA de verdade fica perto de 4.
+    razao = abs(lucro[0] / acoes) / float(np.median(lpa))
     if not (RAZAO_DE_ESCALA_MINIMA <= razao <= RAZAO_DE_ESCALA_MAXIMA):
         return acoes, ""
 

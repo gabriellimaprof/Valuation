@@ -288,8 +288,8 @@ def test_o_universo_avisa_quando_fica_para_tras():
     )
     assert atrasado.desatualizado
     assert atrasado.exercicios_atras == 1
-    assert "1 exercício atrás" in atrasado.resumo()
-    assert "python -m valuation.pares" in atrasado.resumo()
+    assert "1 exercício atrás" in atrasado.resumo
+    assert "python -m valuation.pares" in atrasado.resumo
 
 
 def test_universo_na_safra_mais_nova_nao_alarma():
@@ -304,7 +304,7 @@ def test_universo_na_safra_mais_nova_nao_alarma():
         caminho=Path("perfis.csv"),
     )
     assert not em_dia.desatualizado
-    assert "safra mais nova" in em_dia.resumo()
+    assert "safra mais nova" in em_dia.resumo
 
 
 def test_sem_dfp_no_cache_o_universo_nao_e_julgado():

@@ -110,6 +110,16 @@ class SafraDaMedicao:
     def exercicios_atras(self) -> int:
         return max(0, self.ano_mais_novo - self.ano_medido)
 
+    # **Propriedade nas duas classes de safra.** `SafraDaMedicao` e
+    # `pares.SafraDoUniverso` dizem a mesma coisa sobre a mesma safra, e ate aqui
+    # eram **as duas metodos** -- o que nao seria problema se eu nao tivesse
+    # escrito `safra.resumo` sem parenteses ao usar a primeira, e impresso
+    # `<bound method ...>` na tela em vez de um aviso.
+    #
+    # A escolha entre metodo e propriedade e menos importante que ser **a mesma
+    # nas duas**: e por isso que ha teste exigindo a consistencia, e nao por
+    # `@property` ser melhor.
+    @property
     def resumo(self) -> str:
         if not self.desatualizada:
             return (
@@ -259,3 +269,64 @@ def gerar_referencias(perfis: pd.DataFrame, indicadores: list[str] | None = None
         linhas.append(f'    "{indicador}": ({len(serie)}, ({valores})),')
     linhas.append("}")
     return "\n".join(linhas)
+
+
+# ---------------------------------------------------------------------------
+# A unidade de cada indicador
+# ---------------------------------------------------------------------------
+
+# **`BASE` mistura tres unidades, e uma tabela que as junta nao se le.** "Margem
+# EBITDA 0,208" ao lado de "Ciclo 42,505" e de "Divida liquida / EBITDA 2,024"
+# pede que o leitor saiba, de cabeca, qual coluna e fracao, qual e dia e qual e
+# multiplo -- e quem sabe disso nao precisa da tabela.
+#
+# A unidade e **declarada e nao inferida do nome**. Inferir funcionaria hoje
+# ("(dias)" no rotulo, "/ Receita" virando percentual) e quebraria calado no dia
+# em que um indicador novo nao seguisse a convencao de nome. Aqui ele entra sem
+# unidade e o teste reprova, que e o erro visivel.
+PERCENTUAL = "pct"
+DIAS = "dias"
+MULTIPLO = "multiplo"
+
+UNIDADES: dict[str, str] = {
+    "Conversao de caixa (FCO / EBITDA)": PERCENTUAL,
+    "Conversao operacional (CGO / EBITDA)": PERCENTUAL,
+    "Margem EBITDA": PERCENTUAL,
+    "Margem liquida": PERCENTUAL,
+    "Margem EBIT": PERCENTUAL,
+    "Crescimento da receita": PERCENTUAL,
+    "Capex / Receita": PERCENTUAL,
+    "ROIC": PERCENTUAL,
+    "ROE": PERCENTUAL,
+    "Investimento em giro (DFC) / Receita": PERCENTUAL,
+    "Payout (dividendos / lucro)": PERCENTUAL,
+    "Taxa de reinvestimento": PERCENTUAL,
+    "Depreciacao / Receita": PERCENTUAL,
+    "Capital de giro / Receita": PERCENTUAL,
+    "Arrendamento / Divida bruta": PERCENTUAL,
+    # Razao entre duas grandezas de moeda: le-se "2,0 vezes", e nao "200%".
+    "Divida liquida / EBITDA": MULTIPLO,
+    "Divida bruta / Patrimonio liquido": MULTIPLO,
+    "Liquidez corrente": MULTIPLO,
+    "Prazo medio de recebimento (dias)": DIAS,
+    "Prazo medio de estoque (dias)": DIAS,
+    "Prazo medio de pagamento (dias)": DIAS,
+    "Ciclo de conversao de caixa (dias)": DIAS,
+}
+
+
+def unidade(indicador: str) -> str:
+    """A unidade em que o indicador se le. Padrao: multiplo."""
+    return UNIDADES.get(indicador, MULTIPLO)
+
+
+def formatar(indicador: str, valor) -> str:
+    """O valor do indicador escrito na unidade dele."""
+    from . import formato
+
+    tipo = unidade(indicador)
+    if tipo == PERCENTUAL:
+        return formato.pct(valor)
+    if tipo == DIAS:
+        return formato.num(valor, 0, ausente="—") + (" d" if valor is not None else "")
+    return formato.multiplo(valor)

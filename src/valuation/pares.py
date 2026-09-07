@@ -501,6 +501,7 @@ class SafraDoUniverso:
             return 0
         return int(self.ano_mais_novo_disponivel) - int(self.anos[-1])
 
+    @property
     def resumo(self) -> str:
         periodo = f"{self.anos[0]}–{self.anos[-1]}" if self.anos else "desconhecido"
         if not self.desatualizado:

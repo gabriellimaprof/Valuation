@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1159 testes
+pytest                        # 1164 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.159 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.164 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1722,6 +1722,67 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## A base medida ganhou tela
+
+As distribuicoes de `referencias.BASE` sustentavam o balizador, os cortes de
+leitura e os percentis que os sinais citam -- mas **so apareciam uma linha por
+vez**, ao lado do campo que as usava. `referencias.tabela()` existia com a
+docstring "para mostrar na tela ou conferir a mao", e nenhuma tela a usava.
+
+A aba **A base brasileira**, em Historico, mostra as 22 distribuicoes com P5 a
+P95, **a mediana desta companhia ao lado** e o percentil. E a coluna da companhia
+que separa uma tabela de referencia de um despejo de dados: o percentil ja
+existia disperso, e aqui ele fica no mesmo lugar da regua que o produziu.
+
+**`BASE` mistura tres unidades, e isso precisou ser resolvido antes.** "Margem
+EBITDA 0,208" ao lado de "Ciclo 42,505" e de "Divida liquida / EBITDA 2,024" pede
+que o leitor saiba de cabeca qual coluna e fracao, qual e dia e qual e multiplo --
+e quem sabe disso nao precisa da tabela. A unidade e **declarada e nao inferida
+do nome**: inferir funcionaria hoje ("(dias)" no rotulo, "/ Receita" virando
+percentual) e quebraria calado no dia em que um indicador novo nao seguisse a
+convencao. Ha teste exigindo que todo indicador de `BASE` declare a sua, e que
+nao sobre unidade orfa.
+
+Na WEG a aba mostra ROIC no percentil 93, margem EBITDA em 47 e divida liquida /
+EBITDA em 13 -- a leitura que antes exigia abrir tres telas.
+
+**Dois defeitos sairam de olhar a aba renderizada:**
+
+- `safra.resumo` imprimiu **`<bound method ...>`** em vez do aviso. A causa e que
+  `SafraDaMedicao.resumo` e `pares.SafraDoUniverso.resumo` eram **as duas
+  metodos**, e eu escrevi uma sem parenteses. As duas viraram propriedade -- e a
+  escolha entre metodo e propriedade importa menos que ser **a mesma nas duas**,
+  que e o que o teste exige.
+- `rotulo_do_indicador` usado sem import, que o `AppTest` nao pega porque a aba
+  so monta quando alguem clica nela.
+
+## O plano financeiro desloca ate o codigo do lucro
+
+A conferencia da contagem de acoes pelo LPA procurava `3.11` fixo, e **o Itau
+publica o consolidado em `3.09`** -- a armadilha do plano financeiro, de novo. Com
+o codigo fixo a conferencia nao rodava justamente no maior banco do pais, cuja
+contagem esta em milhares: 11.026.524 no arquivo, ~9,8 bilhoes na realidade.
+
+O lucro passou a ser achado **pelo rotulo**, que e a regra que este projeto ja
+adotou para o resto. E o LPA de referencia passou a ser a **mediana** das linhas
+de `3.99` e nao o maximo: a companhia publica varias (ON, PN, basico, diluido), e
+no Itau o maximo e 16,12 enquanto o LPA de verdade fica perto de 4.
+
+**As tres que sobram nao sao corrigiveis, e cada uma tem causa propria:** a PDG
+Realty publica 3.287 acoes com razao de 277.534x (nem mil, nem um milhao); a
+Dexco publica um LPA de 0,0014 que e ele proprio implausivel; e a Platao Capital
+tem 10 acoes. Para elas vale a ultima rede, em `dcf`: valor por acao acima de
+R$ 1.000 sai como **ausente**, e a ausencia atravessa CLI, Excel, relatorio,
+margem e telas de uma vez.
+
+**Essa rede tambem existe para o valuation salvo antes da correcao.** O projeto
+guarda a ponte em disco, entao a contagem ruim volta do arquivo sem passar pelo
+importador -- e a guarda em `sugerir_premissas` so roda quando as premissas sao
+**re-derivadas**.
+
+**E o ITR nao entra nessa historia**: ele nao carrega a contagem de acoes. Nao ha
+valor por acao mil vezes fora ali; ha ausencia dele, que e outra lacuna.
 
 ## A contagem de acoes vem sem escala, e a companhia publica o desmentido
 

@@ -21,6 +21,7 @@ from .. import estado
 from ..componentes import (
     com_rotulos,
     conceito,
+    rotulo_do_indicador,
     em_texto,
     escapar_cifrao,
     etapa,
@@ -96,7 +97,7 @@ def render() -> None:
     tem_arvore = getattr(dfs, "detalhe", None) is not None and not dfs.detalhe.empty
     if tem_arvore:
         rotulos += ["Liquidez e composição"]
-    rotulos += ["Tudo"]
+    rotulos += ["A base brasileira", "Tudo"]
     abas = st.tabs(rotulos)
 
     with abas[0]:
@@ -119,6 +120,8 @@ def render() -> None:
     if tem_arvore:
         with abas[proxima]:
             _liquidez(analise, dfs)
+    with abas[-2]:
+        _base_brasileira(analise)
     with abas[-1]:
         indicadores = analise.indicadores
         indicadores.columns = [str(c) for c in indicadores.columns]
@@ -476,9 +479,9 @@ def _safra_dos_percentis() -> None:
     if safra is None:
         return
     if safra.desatualizada:
-        st.warning(safra.resumo())
+        st.warning(safra.resumo)
     else:
-        st.caption(safra.resumo())
+        st.caption(safra.resumo)
 
 
 COMPOSICOES = (
@@ -1069,6 +1072,64 @@ def _reinvestimento(analise) -> None:
             linhas_percentuais(comparacao, ""),
             comparacao.style.format("{:.1%}", na_rep="—"),
         )
+
+
+def _base_brasileira(analise) -> None:
+    """As distribuições medidas, e onde esta companhia cai em cada uma.
+
+    Elas já sustentavam o balizador, os cortes de leitura e os percentis que os
+    sinais citam — mas **só apareciam uma linha por vez**, ao lado do campo que
+    as usava. Ver a distribuição inteira responde a pergunta que vem antes:
+    *"o que é normal aqui?"*.
+
+    A tabela sozinha seria um despejo de dados. O que a torna útil é a **coluna
+    da companhia** ao lado dos quantis: o percentil já existia disperso, e aqui
+    ele fica no mesmo lugar da régua que o produziu.
+    """
+    from valuation import referencias
+
+    secao(
+        "Onde esta companhia cai na base brasileira",
+        "Os quantis são medidos nas companhias com DFP publicada, uma linha por "
+        "companhia (a mediana do período) e os quantis entre elas.",
+    )
+
+    safra = referencias.safra()
+    if safra is not None:
+        (st.warning if safra.desatualizada else st.caption)(safra.resumo)
+
+    linhas = []
+    for indicador, (n, quantis) in referencias.BASE.items():
+        registro = {"Indicador": rotulo_do_indicador(indicador)}
+        for q, valor in zip(referencias.QUANTIS, quantis):
+            registro[f"P{int(q * 100)}"] = referencias.formatar(indicador, valor)
+        medida = (
+            analise.mediana(indicador)
+            if indicador in analise.indicadores.index
+            else float("nan")
+        )
+        registro["Esta companhia"] = referencias.formatar(indicador, medida)
+        posicao = referencias.posicao(indicador, medida)
+        registro["Percentil"] = (
+            f"{posicao * 100:.0f}".replace(".", ",") if np.isfinite(posicao) else "—"
+        )
+        registro["n"] = f"{n}"
+        linhas.append(registro)
+
+    tabela = pd.DataFrame(linhas).set_index("Indicador")
+    st.html(tabela_de_indicadores(tabela, destaques={"Esta companhia"}))
+    st.caption(
+        "**A companhia entra pela mediana do período importado**, e não pelo "
+        "último exercício: um ano de greve ou de aquisição descreve o ano, e não "
+        "a empresa. Percentil vazio significa que o indicador não pôde ser "
+        "medido nesta companhia — ausência declarada, e não zero."
+    )
+    st.caption(
+        "Bancos e seguradoras **ficam fora da base** de propósito: margem EBITDA "
+        "e capex sobre receita não querem dizer neles o que querem dizer no "
+        "resto, e um percentil contra companhias a que a instituição não "
+        "pertence pareceria informação sem ser."
+    )
 
 
 def _capital_de_giro(analise) -> None:

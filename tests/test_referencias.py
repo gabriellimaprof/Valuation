@@ -101,10 +101,10 @@ def test_a_safra_acusa_quando_a_base_publicada_avancou():
     atrasada = SafraDaMedicao(ano_medido=2024, ano_mais_novo=2025, companhias=447)
     assert atrasada.desatualizada
     assert atrasada.exercicios_atras == 1
-    assert "1 exercício atrás" in atrasada.resumo()
+    assert "1 exercício atrás" in atrasada.resumo
 
     dois = SafraDaMedicao(ano_medido=2023, ano_mais_novo=2025, companhias=447)
-    assert "2 exercícios atrás" in dois.resumo()
+    assert "2 exercícios atrás" in dois.resumo
 
 
 def test_safra_em_dia_nao_vira_alarme():
@@ -114,7 +114,7 @@ def test_safra_em_dia_nao_vira_alarme():
     em_dia = SafraDaMedicao(ano_medido=2025, ano_mais_novo=2025, companhias=447)
     assert not em_dia.desatualizada
     assert em_dia.exercicios_atras == 0
-    assert "mais nova publicada" in em_dia.resumo()
+    assert "mais nova publicada" in em_dia.resumo
 
 
 def test_sem_dfp_no_cache_nao_ha_o_que_afirmar(tmp_path):
@@ -144,3 +144,51 @@ def test_zip_vazio_nao_conta_como_exercicio_publicado(tmp_path):
             zf.writestr(f"dfp_cia_aberta_DRE_con_{ano}.csv", conteudo)
 
     assert _anos_de_dfp_no_cache(tmp_path) == [2024]
+
+
+def test_todo_indicador_publicado_declara_a_unidade():
+    """`BASE` mistura três unidades, e uma tabela que as junta não se lê.
+
+    "Margem EBITDA 0,208" ao lado de "Ciclo 42,505" e de "Dívida líquida /
+    EBITDA 2,024" pede que o leitor saiba de cabeça qual coluna é fração, qual é
+    dia e qual é múltiplo — e quem sabe disso não precisa da tabela.
+
+    A unidade é **declarada e não inferida do nome**. Inferir funcionaria hoje e
+    quebraria calado no dia em que um indicador novo não seguisse a convenção;
+    aqui ele entra sem unidade e este teste reprova.
+    """
+    from valuation import referencias
+
+    faltando = sorted(i for i in referencias.BASE if i not in referencias.UNIDADES)
+    assert not faltando, f"indicadores sem unidade declarada: {faltando}"
+
+    orfas = sorted(i for i in referencias.UNIDADES if i not in referencias.BASE)
+    assert not orfas, f"unidade declarada para indicador que BASE não publica: {orfas}"
+
+
+def test_cada_unidade_se_escreve_do_seu_jeito():
+    """Fração vira percentual, dia vira dia, razão vira múltiplo."""
+    from valuation import referencias
+
+    assert referencias.formatar("Margem EBITDA", 0.208) == "20,8%"
+    assert referencias.formatar("Ciclo de conversao de caixa (dias)", 42.6) == "43 d"
+    assert referencias.formatar("Divida liquida / EBITDA", 2.024) == "2,02x"
+    # Indicador desconhecido nao inventa unidade: cai no multiplo, que e o
+    # formato mais neutro dos tres.
+    assert referencias.formatar("Coisa nova", 1.5) == "1,50x"
+
+
+def test_as_duas_safras_se_chamam_do_mesmo_jeito():
+    """`SafraDaMedicao.resumo` era método e `SafraDoUniverso.resumo`, propriedade.
+
+    As duas dizem a mesma coisa sobre a mesma safra, e chamá-las de formas
+    diferentes rendeu exatamente o defeito que rendeu: `safra.resumo` sem
+    parênteses imprimiu `<bound method ...>` na tela, e não um aviso.
+    """
+    from valuation.pares import SafraDoUniverso
+    from valuation.referencias import SafraDaMedicao
+
+    for classe in (SafraDaMedicao, SafraDoUniverso):
+        assert isinstance(
+            classe.__dict__.get("resumo"), property
+        ), f"{classe.__name__}.resumo precisa ser propriedade, como a irmã"

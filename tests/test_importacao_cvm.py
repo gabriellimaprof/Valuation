@@ -2614,8 +2614,12 @@ def test_a_contagem_de_acoes_em_milhares_e_corrigida_pelo_lucro_por_acao(catalog
 
     def _linhas(lucro, lpa):
         return [
-            LinhaCVM(codigo="3.11", descricao="Lucro", valor=lucro, ano=2025,
-                     demonstracao="dre", escala="UNIDADE", escopo="con"),
+            # O rotulo importa: a conferencia acha o lucro **pelo nome** e nao
+            # pelo codigo, porque o plano financeiro desloca a numeracao -- o
+            # Itau publica o consolidado em `3.09`.
+            LinhaCVM(codigo="3.11", descricao="Lucro/Prejuízo Consolidado do Período",
+                     valor=lucro, ano=2025, demonstracao="dre",
+                     escala="UNIDADE", escopo="con"),
             LinhaCVM(codigo="3.99.01.01", descricao="Lucro por Ação", valor=lpa,
                      ano=2025, demonstracao="dre", escala="UNIDADE", escopo="con"),
         ]
@@ -2657,9 +2661,56 @@ def test_sem_lucro_por_acao_publicado_a_contagem_passa_como_veio(catalogo):
     from valuation.importacao.cvm import LinhaCVM, _acoes_conferidas_no_lucro_por_acao
 
     so_lucro = [
-        LinhaCVM(codigo="3.11", descricao="Lucro", valor=1e9, ano=2025,
-                 demonstracao="dre", escala="UNIDADE", escopo="con")
+        LinhaCVM(codigo="3.11", descricao="Lucro/Prejuízo Consolidado do Período",
+                 valor=1e9, ano=2025, demonstracao="dre",
+                 escala="UNIDADE", escopo="con")
     ]
     acoes, aviso = _acoes_conferidas_no_lucro_por_acao(646_586.0, so_lucro, 2025)
     assert acoes == 646_586.0
     assert aviso == ""
+
+
+def test_o_lucro_e_achado_pelo_rotulo_e_nao_pelo_codigo(catalogo):
+    """O plano financeiro desloca a numeração, e o Itaú caía fora por isso.
+
+    A primeira versão da conferência procurava `3.11` fixo. O Itaú publica o
+    consolidado em **`3.09`** — "Lucro/Prejuízo Consolidado do Período" —, então
+    a conferência não rodava justamente no maior banco do país, cuja contagem
+    está em milhares: 11.026.524 no arquivo, ~9,8 bilhões na realidade.
+    """
+    from valuation.importacao.cvm import LinhaCVM, _acoes_conferidas_no_lucro_por_acao
+
+    no_plano_financeiro = [
+        LinhaCVM(codigo="3.09", descricao="Lucro/Prejuízo Consolidado do Período",
+                 valor=45_849_000_000.0, ano=2025, demonstracao="dre",
+                 escala="UNIDADE", escopo="con"),
+        LinhaCVM(codigo="3.99.01.01", descricao="Lucro por Ação", valor=4.16,
+                 ano=2025, demonstracao="dre", escala="UNIDADE", escopo="con"),
+    ]
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(
+        11_026_524.0, no_plano_financeiro, 2025
+    )
+    assert acoes == 11_026_524_000.0
+    assert "milhares" in aviso
+
+
+def test_a_mediana_do_lpa_resiste_a_linha_atipica(catalogo):
+    """A companhia publica várias linhas em `3.99` — ON, PN, básico, diluído.
+
+    A maior delas nem sempre é a representativa: no Itaú o máximo é 16,12
+    enquanto o LPA de verdade fica perto de 4. Usar o máximo fazia a razão sair
+    quatro vezes menor e cair fora da faixa.
+    """
+    from valuation.importacao.cvm import LinhaCVM, _acoes_conferidas_no_lucro_por_acao
+
+    linhas = [
+        LinhaCVM(codigo="3.09", descricao="Lucro/Prejuízo Consolidado do Período",
+                 valor=45_849_000_000.0, ano=2025, demonstracao="dre",
+                 escala="UNIDADE", escopo="con"),
+    ] + [
+        LinhaCVM(codigo=f"3.99.01.0{i}", descricao="Lucro por Ação", valor=v,
+                 ano=2025, demonstracao="dre", escala="UNIDADE", escopo="con")
+        for i, v in enumerate([4.10, 4.16, 4.20, 16.12], start=1)
+    ]
+    acoes, aviso = _acoes_conferidas_no_lucro_por_acao(11_026_524.0, linhas, 2025)
+    assert acoes == 11_026_524_000.0, "a linha atípica não pode derrubar a conferência"

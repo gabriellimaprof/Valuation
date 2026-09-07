@@ -239,6 +239,15 @@ class ResultadoDCF:
         ).T
 
 
+# Acima disto o "valor por acao" deixou de descrever um papel. O corte sai do
+# patrimonio liquido por acao medido na base de 2025: mediana **R$ 12,87** e P75
+# em **R$ 1.589** -- o salto entre os dois e o que denuncia as duas populacoes.
+# Ver `historico.acoes_utilizaveis`, que aplica a mesma regra ao derivar as
+# premissas, e `importacao.cvm._acoes_conferidas_no_lucro_por_acao`, que corrige
+# a contagem quando a propria companhia publica o lucro por acao que a desmente.
+VALOR_POR_ACAO_IMPLAUSIVEL = 1_000.0
+
+
 def ponte_ev_equity(enterprise_value: float, ponte: PonteValor) -> tuple[float, pd.DataFrame]:
     """Aplica a ponte EV -> Equity Value e devolve o detalhamento auditavel."""
     itens = [
@@ -325,6 +334,18 @@ def avaliar_dcf(
 
     acoes = ponte.acoes_em_circulacao
     valor_acao = equity_value / acoes if acoes else None
+    # **A ultima rede da contagem de acoes**, e ela existe para o valuation
+    # **salvo antes** de a correcao existir: o projeto guarda a ponte em disco,
+    # entao a contagem ruim volta do arquivo sem passar pelo importador.
+    #
+    # A CVM publica a composicao de capital sem coluna de escala, e um quarto da
+    # base informa a quantidade em milhares (medido: 103 de 359 em 2025). Ali o
+    # valor por acao sai mil vezes fora e **parece um preco** -- na Porto Seguro,
+    # R$ 426.236,8. Devolver `None` faz a ausencia atravessar CLI, Excel,
+    # relatorio, margem de seguranca e telas de uma vez, em vez de cada um
+    # precisar lembrar de conferir.
+    if valor_acao is not None and abs(valor_acao) > VALOR_POR_ACAO_IMPLAUSIVEL:
+        valor_acao = None
 
     return ResultadoDCF(
         fluxos=fluxos,

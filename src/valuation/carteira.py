@@ -66,7 +66,7 @@ PERFIS_INCOMPARAVEIS = 5.0
 # de la ele alcanca CLI, Excel, relatorio e margem de seguranca de uma vez.
 # Aqui ele so e reusado, porque um modelo salvo **antes** da guarda existir
 # ainda carrega a contagem ruim na ponte.
-from .historico import VALOR_POR_ACAO_IMPLAUSIVEL  # noqa: E402
+from .dcf import VALOR_POR_ACAO_IMPLAUSIVEL  # noqa: E402
 
 
 VEREDITO_POR_EXTENSO = {
