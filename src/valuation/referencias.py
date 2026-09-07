@@ -401,8 +401,43 @@ SO_NO_EXERCICIO: frozenset[str] = frozenset(
         # estrutura (usar o desvio como criterio faria a lista mudar com a
         # amostra), mas aqui as duas apontam junto.
         "Conversao operacional (CGO / EBITDA)",
+        # ------------------------------------------------------------------
+        # **Os que estavam fora do alcance da lista por nao estarem em `BASE`.**
+        # A lista servia so ao percentil, e percentil so existe para indicador
+        # medido -- entao nome fora de `BASE` nunca entrava aqui. Mas ela
+        # responde uma **segunda** pergunta, que nao depende de haver
+        # distribuicao: a mediana da companhia se compara com uma premissa
+        # anual? Para o Kd a resposta importa, e ela estava faltando.
+        #
+        # Medida a razao entre as duas leituras do **mesmo periodo** (ano movel
+        # rolante de 2025 contra trimestres isolados de 2025), em 60 companhias.
+        # Razao perto de 0,25 e fluxo do periodo sobre estoque: o numerador
+        # encolhe com a coluna e o denominador, que e saldo, nao.
+        "Giro do ativo",  # 0,25x
+        "Giro do capital investido",  # 0,26x
+        "Custo da divida efetivo",  # 0,26x
+        # 0,61x medido, e entra pela **estrutura** e nao pelo numero: juro pago
+        # sobre divida e fluxo sobre estoque igual ao de cima, e o 0,61 e a
+        # irregularidade do desembolso dentro do ano (n=40). Classificar pelo
+        # desvio faria a lista mudar com a amostra.
+        "Custo da divida pelo caixa",
+        "FCO / Passivo circulante",  # 0,45x
+        "Crescimento fundamentado (reinvest. x ROIC)",  # 0,71x -- ROIC x reinvestimento
+        # Estes dois nao sao razao, sao **dinheiro do periodo**: o valor de um
+        # trimestre ao lado de uma premissa anual nao se compara de jeito nenhum.
+        "Reinvestimento",  # 0,40x
+        "Fluxo de caixa livre (FCO - capex)",  # 0,40x
     }
 )
+
+# Medidos e **deixados de fora**, porque a estrutura manda e nao o numero:
+# `Capex / Receita` (1,42x), `Depreciacao / Receita` (1,51x),
+# `Aluguel / Receita` (1,62x) e `Aluguel / EBITDA` (1,34x) sao fluxo sobre fluxo
+# do mesmo periodo, e o que os move e lumpiness dentro do ano -- capex se
+# concentra em trimestres. O desvio de percentil deles na medicao controlada e
+# de 9,1 e 10,1 pontos, dentro da faixa do grupo que atravessa (mediana 1,9,
+# pior caso 17,9). Ficam onde estao, e o numero fica registrado para o dia em
+# que alguem quiser rediscutir.
 
 
 def atravessa_a_frequencia(indicador: str) -> bool:

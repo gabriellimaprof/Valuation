@@ -242,8 +242,24 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
     ):
         assert referencias.atravessa_a_frequencia(atravessa), atravessa
 
-    orfaos = sorted(i for i in referencias.SO_NO_EXERCICIO if i not in referencias.BASE)
-    assert not orfaos, f"indicador listado que BASE não publica: {orfaos}"
+    # **A invariante não é mais "está em `BASE`", e ela era o que mantinha o Kd
+    # fora de alcance.** `BASE` é o conjunto dos indicadores com distribuição
+    # medida, e a lista responde uma segunda pergunta que não depende disso: a
+    # mediana da companhia se compara com uma premissa anual? `Custo da dívida
+    # efetivo` sai a 0,26x numa série trimestral e nunca esteve em `BASE`.
+    #
+    # A checagem que substitui é mais forte: o nome tem de ser um indicador que
+    # `analisar` de fato produz. Isso pega o erro de digitação que a anterior
+    # pegava, e alcança os nomes fora de `BASE`.
+    from pathlib import Path
+
+    from valuation.historico import analisar
+    from valuation.importacao.cvm import importar_cvm
+
+    recorte = Path(__file__).parent / "dados" / "cvm"
+    produzidos = set(analisar(importar_cvm(5410, [2024], cache=recorte)).indicadores.index)
+    orfaos = sorted(i for i in referencias.SO_NO_EXERCICIO if i not in produzidos)
+    assert not orfaos, f"indicador listado que a análise não produz: {orfaos}"
 
 
 def test_a_conversao_operacional_nao_atravessa_a_frequencia():
@@ -285,4 +301,51 @@ def test_estoque_sobre_estoque_atravessa_a_frequencia():
         "Divida bruta / Patrimonio liquido",
         "Arrendamento / Divida bruta",
     ):
+        assert referencias.atravessa_a_frequencia(indicador), indicador
+
+
+def test_fluxo_sobre_estoque_nao_atravessa_ainda_que_fora_da_base():
+    """A lista servia só ao percentil, e por isso o Kd ficava sem guarda.
+
+    Percentil só existe para indicador medido, então nome fora de `BASE` nunca
+    entrava — mas a lista responde uma **segunda** pergunta, que não depende de
+    haver distribuição: a mediana da companhia se compara com uma premissa
+    anual?
+
+    Medida a razão entre as duas leituras do **mesmo período** (ano móvel de
+    2025 contra trimestres isolados de 2025) em 60 companhias, o grupo aparece
+    sozinho: giro do ativo 0,25x, giro do capital investido 0,26x, custo da
+    dívida efetivo 0,26x — o numerador encolhe com a coluna e o denominador, que
+    é saldo, não.
+    """
+    from valuation import referencias
+
+    for indicador in (
+        "Giro do ativo",
+        "Giro do capital investido",
+        "Custo da divida efetivo",
+        "Custo da divida pelo caixa",
+        "FCO / Passivo circulante",
+        "Reinvestimento",
+        "Fluxo de caixa livre (FCO - capex)",
+        "Crescimento fundamentado (reinvest. x ROIC)",
+    ):
+        assert not referencias.atravessa_a_frequencia(indicador), indicador
+
+
+def test_fluxo_sobre_fluxo_do_mesmo_periodo_continua_atravessando():
+    """O controle, e ele importa porque a medição tentou puxar dois para fora.
+
+    `Capex / Receita` move 1,42x e `Depreciacao / Receita` 1,51x entre as duas
+    leituras — mas os dois são fluxo sobre fluxo do mesmo período, e o que os
+    move é lumpiness dentro do ano: capex se concentra em trimestres. O desvio
+    de percentil deles é de 9,1 e 10,1 pontos, dentro da faixa do grupo que
+    atravessa.
+
+    A classificação é **por estrutura e não pelo desvio**. Este teste é o que
+    impede que a próxima medição os arraste para fora.
+    """
+    from valuation import referencias
+
+    for indicador in ("Capex / Receita", "Depreciacao / Receita", "Aluguel / EBITDA"):
         assert referencias.atravessa_a_frequencia(indicador), indicador

@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from . import formato
+from . import referencias
 from .dcf import valor_terminal_gordon
 from .historico import AnaliseHistorica
 from .qualidade import CGO_BOM
@@ -195,6 +196,16 @@ class Diagnostico:
     """Conjunto de achados de um modelo, do mais grave para o menos."""
 
     achados: list[Achado] = field(default_factory=list)
+    # **O que a frequencia da serie impediu de verificar.** Viaja dentro do
+    # diagnostico, e nao em cada consumidor, porque sao quatro -- a tela, o
+    # relatorio, o material do comite e a barra lateral -- e a regra que cada um
+    # carrega por conta propria e a que um deles esquece. Foi exatamente assim
+    # que a mesa nasceu sem guarda de frequencia.
+    #
+    # Lista de achados menor numa serie trimestral se le como "esta tudo bem", e
+    # o que houve foi o app deixar de verificar. "Sem achado" e "nao verificado"
+    # nao sao a mesma coisa.
+    omitidas: tuple[str, ...] = ()
 
     def __len__(self) -> int:
         return len(self.achados)
@@ -232,6 +243,79 @@ class Diagnostico:
 
 def _ordenar(achados: list[Achado]) -> list[Achado]:
     return sorted(achados, key=lambda a: _ORDEM_SEVERIDADE.get(a.severidade, 9))
+
+
+def _mediana(analise: AnaliseHistorica, indicador: str) -> float:
+    """A mediana da companhia, **ou NaN quando a frequencia nao permite compara-la**.
+
+    Toda verificacao daqui confronta uma premissa -- que e de um exercicio, por
+    construcao -- com o que a companhia entregou. Numa serie trimestral os
+    indicadores que misturam fluxo do periodo com estoque saem a um quarto, e o
+    achado **inverte**: medido na WEG, o ROIC historico e 36,6% na leitura anual
+    e 8,2% na trimestral, entao uma premissa de 15% aparece como "abaixo do
+    historico" num caso e "acima" no outro. Alerta que afirma o contrario do que
+    a empresa entregou e pior que alerta nenhum.
+
+    O Kd e o caso que estava mais escondido, porque ele nem sequer tinha
+    percentil: o achado publicava "a despesa financeira (41,3% da divida)" na
+    leitura anual e **18,8%** na trimestral -- uma taxa de trimestre impressa
+    como taxa ao ano. E os cortes de `DESCOLAMENTO_DO_JURO` foram calibrados em
+    exercicios, entao a distancia encolhe com a coluna e o sinal deixa de
+    disparar: o modo de falha "sinal que nunca acusa" que este projeto ja pagou
+    uma vez.
+
+    Devolver NaN aproveita os `np.isfinite` que ja guardam cada verificacao: o
+    achado simplesmente nao nasce. A ausencia **e declarada** em
+    `verificacoes_omitidas`, porque "sem achado" e "nao verificado" nao sao a
+    mesma coisa.
+    """
+    if not referencias.a_mediana_se_compara(analise, indicador):
+        return float("nan")
+    try:
+        return float(analise.mediana(indicador))
+    except Exception:  # noqa: BLE001 - indicador que a analise nao produziu
+        return float("nan")
+
+
+def _ultimo(analise: AnaliseHistorica, indicador: str) -> float:
+    """O ultimo valor, com a mesma guarda de `_mediana`."""
+    if not referencias.a_mediana_se_compara(analise, indicador):
+        return float("nan")
+    try:
+        return float(analise.ultimo(indicador))
+    except Exception:  # noqa: BLE001
+        return float("nan")
+
+
+def verificacoes_omitidas(analise: AnaliseHistorica | None) -> list[str]:
+    """Quais confrontos com o historico a frequencia da serie impede.
+
+    Existe para a ausencia poder ser dita. Uma lista de achados menor numa serie
+    trimestral se le como "esta tudo bem", e o que houve foi o app deixar de
+    verificar.
+    """
+    if analise is None:
+        return []
+    return [
+        indicador
+        for indicador in INDICADORES_CONFRONTADOS
+        if not referencias.a_mediana_se_compara(analise, indicador)
+    ]
+
+
+# Os indicadores do historico que as verificacoes daqui confrontam com uma
+# premissa. Lista unica, porque `verificacoes_omitidas` tem de dizer exatamente
+# o que `diagnosticar` deixou de fazer -- duas listas divergiriam na primeira
+# verificacao nova.
+INDICADORES_CONFRONTADOS = (
+    "Crescimento da receita",
+    "Conversao de caixa (FCO / EBITDA)",
+    "Conversao operacional (CGO / EBITDA)",
+    "Custo da divida efetivo",
+    "Custo da divida pelo caixa",
+    "ROIC",
+    "Divida liquida / EBITDA",
+)
 
 
 def diagnosticar(
@@ -280,7 +364,10 @@ def diagnosticar(
     if retorno is not None:
         achados += _checar_retorno(resultado, retorno)
 
-    return Diagnostico(achados=_ordenar(achados))
+    return Diagnostico(
+        achados=_ordenar(achados),
+        omitidas=tuple(verificacoes_omitidas(analise)),
+    )
 
 
 def _checar_retorno(resultado: ResultadoValuation, retorno) -> list[Achado]:
@@ -782,7 +869,7 @@ def _checar_contra_historico(
             )
 
     crescimento_projetado = float(np.median(np.diff(proj.receita) / proj.receita[:-1])) if len(proj.receita) > 1 else float("nan")
-    cagr_hist = analise.mediana("Crescimento da receita")
+    cagr_hist = _mediana(analise, "Crescimento da receita")
     if np.isfinite(crescimento_projetado) and np.isfinite(cagr_hist):
         if crescimento_projetado > cagr_hist + 0.05:
             achados.append(
@@ -807,7 +894,7 @@ def _checar_contra_historico(
 
     # --- contraprovas de caixa, quando a origem trouxe a DFC aberta ---------
 
-    conversao = analise.mediana("Conversao de caixa (FCO / EBITDA)")
+    conversao = _mediana(analise, "Conversao de caixa (FCO / EBITDA)")
     if np.isfinite(conversao) and conversao < CONVERSAO_CAIXA_BAIXA:
         # **Antes de acusar a operacao, olhar o degrau de cima.** O FCO e liquido
         # de giro, imposto e juro; o caixa gerado pelas operacoes nao e. Medido
@@ -815,7 +902,7 @@ def _checar_contra_historico(
         # vira caixa, e o que consome esta abaixo da operacao. Um achado que diz
         # "receita reconhecida antes de ser recebida" ali manda o analista
         # procurar no lugar errado.
-        operacional = analise.mediana("Conversao operacional (CGO / EBITDA)")
+        operacional = _mediana(analise, "Conversao operacional (CGO / EBITDA)")
         gera_caixa = np.isfinite(operacional) and operacional >= CGO_BOM
         achados.append(
             Achado(
@@ -879,8 +966,8 @@ def _checar_contra_historico(
             )
         )
 
-    kd_competencia = analise.mediana("Custo da divida efetivo")
-    kd_caixa = analise.mediana("Custo da divida pelo caixa")
+    kd_competencia = _mediana(analise, "Custo da divida efetivo")
+    kd_caixa = _mediana(analise, "Custo da divida pelo caixa")
     if (
         np.isfinite(kd_competencia)
         and np.isfinite(kd_caixa)
@@ -909,7 +996,7 @@ def _checar_contra_historico(
             )
         )
 
-    roic_hist = analise.mediana("ROIC")
+    roic_hist = _mediana(analise, "ROIC")
     roic_perp = resultado.empresa.perpetuidade.roic_perpetuidade
     if roic_perp is not None and np.isfinite(roic_hist) and roic_perp > roic_hist + 0.05:
         achados.append(
@@ -929,7 +1016,7 @@ def _checar_contra_historico(
             )
         )
 
-    alavancagem = analise.ultimo("Divida liquida / EBITDA")
+    alavancagem = _ultimo(analise, "Divida liquida / EBITDA")
     if np.isfinite(alavancagem) and alavancagem > DIVIDA_EBITDA_ALTA:
         achados.append(
             Achado(

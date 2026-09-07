@@ -291,10 +291,5 @@ ROTULOS_DE_INDICADOR = {
 
 
 def rotulo_do_indicador(chave: str) -> str:
-    """O nome do indicador como ele deve aparecer na tela."""
-    return ROTULOS_DE_INDICADOR.get(str(chave), str(chave))
-
-
-def rotulo_do_indicador(chave: str) -> str:
     """O nome do indicador como ele deve aparecer para quem le."""
     return ROTULOS_DE_INDICADOR.get(str(chave), str(chave))

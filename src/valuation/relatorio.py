@@ -907,9 +907,39 @@ def _qualitativo_vrio(vrio, respostas=None) -> list[str]:
     return linhas + _blocos_de_evidencia(vrio, respostas)
 
 
+def _omissoes_por_frequencia(diagnostico) -> list[str]:
+    """As verificacoes que a frequencia da serie impediu, por extenso.
+
+    Vem do proprio diagnostico (`omitidas`), e nao de uma regra repetida aqui:
+    sao quatro consumidores, e a regra que cada um carrega por conta propria e a
+    que um deles esquece.
+    """
+    from .formulas import rotulo_do_indicador
+
+    omitidas = tuple(getattr(diagnostico, "omitidas", ()) or ())
+    if not omitidas:
+        return []
+    quais = ", ".join(rotulo_do_indicador(i) for i in omitidas)
+    return [
+        "",
+        f"**{len(omitidas)} verificações não rodaram.** A série importada é de "
+        "trimestres isolados, e elas confrontam a premissa — que é de um "
+        "exercício — com o histórico da companhia. Num trimestre, um indicador "
+        "que mistura fluxo com estoque sai a um quarto, e o achado inverteria de "
+        f"sinal. Ficaram de fora: {quais}.",
+    ]
+
+
 def _riscos(diagnostico: Diagnostico | None) -> list[str]:
     if diagnostico is None:
         return ["## O que pode dar errado", "", "**Diagnóstico não executado.**"]
+
+    # **O terceiro estado.** "Não executado" e "nenhum achado" já se distinguem
+    # aqui; faltava "executado em parte", que é o que uma série trimestral
+    # produz — parte das verificações confronta a premissa com o histórico, e
+    # numa série de trimestres esse confronto inverte o sinal. Sem esta linha,
+    # um relatório com menos achados se lê como um modelo mais limpo.
+    omitidas = _omissoes_por_frequencia(diagnostico)
 
     if not len(diagnostico):
         return [
@@ -918,6 +948,7 @@ def _riscos(diagnostico: Diagnostico | None) -> list[str]:
             "O diagnóstico automático não encontrou nenhum achado. Isso significa "
             "que o modelo é internamente consistente — não que as premissas estejam "
             "certas.",
+            *omitidas,
         ]
 
     linhas = ["## O que pode dar errado", ""]

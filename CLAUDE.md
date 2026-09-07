@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1185 testes
+pytest                        # 1190 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.185 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.190 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1938,6 +1938,88 @@ ano movel -- "1T26" e o rotulo dos dois.
 
 Conferido no navegador, o laco inteiro: importar trimestral, ver o aviso, clicar
 na saida, o aviso sumir e a projecao derivar do ano movel.
+
+### O diagnostico nao sabia da frequencia, e o Kd era o pior caso
+
+Oito verificacoes de `diagnostico.py` confrontam uma premissa -- que e de um
+exercicio, por construcao -- com a mediana da companhia. Nenhuma delas
+consultava a frequencia da serie, e a tela e alcancavel com serie trimestral (a
+varredura `--trimestral` a percorre).
+
+**O achado inverte.** Medido na WEG, o ROIC historico e **36,6%** na leitura
+anual e **8,2%** na trimestral: uma premissa de 15% aparece como "abaixo do
+historico" num caso e "acima" no outro, e `roic_perpetuo_acima_do_historico` e um
+ALERTA. Alerta que afirma o contrario do que a empresa entregou e pior que
+alerta nenhum.
+
+**O Kd estava mais escondido, porque ele nem percentil tem.** O achado publicava
+"a despesa financeira (**41,3%** da divida) supera o juro efetivamente pago
+(3,5%)" na leitura anual, e **18,8% contra 2,5%** na trimestral -- uma taxa de
+trimestre impressa como taxa ao ano. E `DESCOLAMENTO_DO_JURO` foi calibrado em
+exercicios, entao a distancia encolhe com a coluna e o sinal deixa de disparar:
+o modo de falha "sinal que nunca acusa" que este projeto ja pagou uma vez.
+
+Sete verificacoes passaram a nao rodar numa serie trimestral, e **a ausencia e
+declarada**: `Diagnostico.omitidas` viaja dentro do proprio diagnostico, e nao
+em cada consumidor. Sao quatro -- a tela, o relatorio, o material do comite e a
+barra lateral --, e a regra que cada um carrega por conta propria e a que um
+deles esquece. Foi exatamente assim que a mesa de comparacao nasceu sem guarda.
+
+**E olhar a tela pegou uma contradicao que nenhum teste pegaria**, porque as
+duas pecas estao certas em separado: logo abaixo de "7 verificacoes nao
+rodaram", o app dizia em verde **"Nenhum achado. O modelo passou nas
+verificacoes de consistencia"**. Passou e nao foi testado nao sao a mesma coisa,
+e agora a mensagem muda quando ha omissao.
+
+### A lista de frequencia servia so ao percentil, e o Kd ficava fora dela
+
+`SO_NO_EXERCICIO` tinha uma invariante de teste: todo membro tem de estar em
+`referencias.BASE`. Ela fazia sentido enquanto a lista respondia uma pergunta so
+-- o percentil vale nesta frequencia? --, porque percentil so existe para
+indicador medido.
+
+Mas a lista responde uma **segunda** pergunta, que nao depende de haver
+distribuicao: a mediana da companhia se compara com uma premissa anual? E ai a
+invariante virava o proprio defeito -- `Custo da divida efetivo` nunca esteve em
+`BASE`, entao nao podia entrar na lista, entao nao tinha guarda.
+
+Medida a razao entre as duas leituras do **mesmo periodo** -- ano movel rolante
+de 2025 contra trimestres isolados de 2025, em 60 companhias --, a estrutura
+aparece sozinha:
+
+| Indicador | Razao trimestral / ano movel | Estava na lista? |
+|---|---|---|
+| ROE | 0,24x | sim |
+| ROIC | 0,25x | sim |
+| **Giro do ativo** | **0,25x** | nao -- fora de `BASE` |
+| **Giro do capital investido** | **0,26x** | nao -- fora de `BASE` |
+| **Custo da divida efetivo** | **0,26x** | nao -- fora de `BASE` |
+| **FCO / Passivo circulante** | **0,45x** | nao |
+| **Custo da divida pelo caixa** | **0,61x** | nao |
+| Margens, prazos, liquidez, ciclo | 0,93x a 1,00x | atravessam |
+
+Razao perto de **0,25** e fluxo do periodo sobre estoque: o numerador encolhe
+com a coluna e o denominador, que e saldo, nao. `Custo da divida pelo caixa`
+entra pela **estrutura e nao pelo numero** -- o 0,61 e a irregularidade do
+desembolso dentro do ano (n=40), e classificar pelo desvio faria a lista mudar
+com a amostra.
+
+Entraram tambem `Reinvestimento` (0,40x) e `Fluxo de caixa livre (FCO - capex)`
+(0,40x), que **nao sao razao e sim dinheiro do periodo**: o valor de um trimestre
+ao lado de uma premissa anual nao se compara de jeito nenhum.
+
+A invariante do teste ficou **mais forte** em vez de sumir: o nome tem de ser um
+indicador que `analisar` de fato produz, conferido contra o recorte real. Isso
+pega o erro de digitacao que a anterior pegava, e alcanca os nomes fora de
+`BASE`.
+
+**Dois foram medidos e deixados de fora, e o numero fica registrado.**
+`Capex / Receita` move 1,42x e `Depreciacao / Receita` 1,51x -- mas os dois sao
+fluxo sobre fluxo do mesmo periodo, e o que os move e lumpiness dentro do ano:
+capex se concentra em trimestres. O desvio de percentil deles na medicao
+controlada e de 9,1 e 10,1 pontos, dentro da faixa do grupo que atravessa
+(mediana 1,9; pior caso 17,9). Ha teste travando os dois, porque a proxima
+medicao vai tentar arrasta-los para fora de novo.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

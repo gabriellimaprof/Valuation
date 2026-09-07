@@ -34,6 +34,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import formato
+from .formulas import rotulo_do_indicador
 import pandas as pd
 
 # Paleta fixa, e nao a do tema. Documento impresso tem um modo so, e o papel e
@@ -333,6 +334,21 @@ def _avisos(diagnostico) -> str:
         diagnostico.achados, key=lambda a: ordem.get(getattr(a, "severidade", ""), 3)
     )
     blocos = []
+    # **O terceiro estado, e no papel ele importa mais.** A pagina e o que sobra
+    # depois que a tela fecha: uma lista curta de achados numa serie trimestral
+    # se le como modelo limpo, e o que houve foi o app deixar de verificar.
+    omitidas = tuple(getattr(diagnostico, "omitidas", ()) or ())
+    if omitidas:
+        quais = ", ".join(rotulo_do_indicador(i) for i in omitidas)
+        blocos.append(
+            '<p class="nota"><strong>'
+            f"{len(omitidas)} verificações não rodaram.</strong> A série "
+            "importada é de trimestres isolados, e elas confrontam a premissa — "
+            "que é de um exercício — com o histórico da companhia. Num "
+            "trimestre, um indicador que mistura fluxo com estoque sai a um "
+            "quarto, e o achado inverteria de sinal. Ficaram de fora: "
+            f"{_e(quais)}.</p>"
+        )
     for a in achados:
         severidade = getattr(a, "severidade", "")
         classe = "aviso" if severidade == "erro" else "aviso atencao"

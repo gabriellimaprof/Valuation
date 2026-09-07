@@ -627,3 +627,110 @@ def test_dois_pontos_nao_fazem_tendencia(empresa_exemplo):
     assert "ciclo_alonga_com_receita_parada" not in _codigos(
         diagnosticar(avaliar(empresa_exemplo), analise=analise)
     )
+
+
+def _analise_de(periodicidade, colunas):
+    """Uma análise mínima com a periodicidade declarada."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            c: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "divida_bruta": 400.0,
+                "juros_pagos": 20.0,
+                "despesa_financeira": 40.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+                "caixa_das_operacoes": 150.0,
+                "fluxo_operacional": 120.0,
+            }
+            for c in colunas
+        }
+    )
+    return analisar(
+        Demonstracoes(
+            empresa="T",
+            valores=valores,
+            unidade="R$",
+            periodicidade=periodicidade,
+        )
+    )
+
+
+def test_a_serie_trimestral_omite_os_confrontos_e_diz_quais():
+    """Lista de achados menor não é modelo mais limpo.
+
+    Sete verificações confrontam a premissa — que é de um exercício — com o
+    histórico da companhia. Numa série trimestral, um indicador que mistura
+    fluxo com estoque sai a um quarto e o achado **inverte de sinal**: medido na
+    WEG, o ROIC histórico é 36,6% na leitura anual e 8,2% na trimestral, então
+    uma premissa de 15% aparece como "abaixo do histórico" num caso e "acima" no
+    outro.
+
+    O caso mais escondido era o Kd, que nem percentil tem: o achado publicava
+    "a despesa financeira (41,3% da dívida)" na leitura anual e **18,8%** na
+    trimestral — uma taxa de trimestre impressa como taxa ao ano.
+    """
+    from valuation.diagnostico import verificacoes_omitidas
+
+    anual = _analise_de("anual", [2022, 2023, 2024, 2025])
+    trimestral = _analise_de("trimestral", ["1T25", "2T25", "3T25"])
+
+    assert verificacoes_omitidas(anual) == []
+    omitidas = verificacoes_omitidas(trimestral)
+    assert "ROIC" in omitidas
+    assert "Custo da divida efetivo" in omitidas
+    assert "Custo da divida pelo caixa" in omitidas
+    assert "Crescimento da receita" in omitidas
+    assert len(omitidas) == 7
+
+
+def test_a_omissao_viaja_dentro_do_diagnostico(empresa_exemplo):
+    """Ela mora no `Diagnostico`, e não em cada consumidor.
+
+    São quatro — a tela, o relatório, o material do comitê e a barra lateral —,
+    e a regra que cada um carrega por conta própria é a que um deles esquece.
+    Foi exatamente assim que a mesa de comparação nasceu sem guarda de
+    frequência.
+    """
+    from valuation import avaliar
+    from valuation.diagnostico import diagnosticar
+
+    resultado = avaliar(empresa_exemplo)
+    trimestral = _analise_de("trimestral", ["1T25", "2T25", "3T25"])
+
+    diag = diagnosticar(resultado, trimestral)
+    assert diag.omitidas
+    assert "ROIC" in diag.omitidas
+
+    # E o relatorio e o material do comite dizem, em vez de calar.
+    from valuation.relatorio import _omissoes_por_frequencia
+
+    texto = " ".join(_omissoes_por_frequencia(diag))
+    assert "não rodaram" in texto
+    assert "ROIC" in texto
+
+    from valuation.apresentacao import _avisos
+
+    html = _avisos(diag)
+    assert "não rodaram" in html
+
+
+def test_serie_anual_nao_ganha_aviso_de_omissao(empresa_exemplo):
+    """O controle: a guarda não pode aparecer no caminho normal."""
+    from valuation import avaliar
+    from valuation.apresentacao import _avisos
+    from valuation.diagnostico import diagnosticar
+    from valuation.relatorio import _omissoes_por_frequencia
+
+    diag = diagnosticar(avaliar(empresa_exemplo), _analise_de("anual", [2022, 2023, 2024]))
+    assert diag.omitidas == ()
+    assert _omissoes_por_frequencia(diag) == []
+    assert "não rodaram" not in _avisos(diag)
