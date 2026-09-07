@@ -346,17 +346,24 @@ def formatar(indicador: str, valor) -> str:
 # quarto e a razao quadruplica --, quando e variacao de um periodo contra outro,
 # ou quando o numerador e irregular dentro do ano.
 #
-# Medido na WEG e em mais duas companhias, o desvio medio do percentil entre a
-# leitura anual e a trimestral separa os dois grupos com um vale no meio:
+# Medido em **79 companhias** com as duas leituras (n de 47 a 79 por indicador),
+# o desvio mediano do percentil entre a leitura anual e a trimestral:
 #
-#   ROIC 44 · ROE 36 · Crescimento 33 · Payout 26 · Divida liq/EBITDA 24
-#   Capital de giro/Receita 22 · Invest. em giro 23 · Taxa de reinvest. 15
-#   ---- vale ----
-#   Capex/Receita 9 · Divida bruta/PL 9 · Liquidez 7 · Conversao 5-7
-#   Prazos 5-6 · Margens 0-1
+#   desvio mediano dos que NAO atravessam:  **20 pontos**  (8 indicadores)
+#   desvio mediano dos que atravessam    :   **5 pontos**  (14)
 #
-# A classificacao e **por estrutura e nao pelo desvio medido**: o desvio confirma
-# a regra, e usa-lo como criterio faria a lista mudar com a amostra.
+# A separacao em agregado e de **4x**, e ela confirma a regra. Mas os grupos
+# **se sobrepoem na borda** -- o pior dos que atravessam mede 18 e o melhor dos
+# que nao atravessam mede 15 --, e dizer que ha um vale limpo seria mentir sobre
+# a medicao.
+#
+# A classificacao continua sendo **por estrutura e nao pelo desvio**: usar o
+# desvio como criterio faria a lista mudar com a amostra. Mas a medicao grande
+# pegou **um erro de aplicacao** meu, e ai ela vale -- ver `Conversao de caixa`
+# na lista abaixo, que a estrutura classificava certo e eu classifiquei errado.
+#
+# A primeira medicao usava **3 companhias** (n=2 por indicador), e o vale limpo
+# que ela mostrava era artefato do tamanho.
 SO_NO_EXERCICIO: frozenset[str] = frozenset(
     {
         # Fluxo do periodo sobre estoque: o numerador encolhe com o periodo e o
@@ -372,6 +379,15 @@ SO_NO_EXERCICIO: frozenset[str] = frozenset(
         "Payout (dividendos / lucro)",
         "Investimento em giro (DFC) / Receita",
         "Taxa de reinvestimento",
+        # **Este eu tinha classificado errado.** FCO sobre EBITDA e fluxo sobre
+        # fluxo do mesmo periodo, entao a estrutura dizia que atravessa -- e a
+        # medicao em 79 companhias deu **18 pontos**, o pior do grupo que
+        # supostamente atravessa. A causa e o mesmo criterio que ja estava
+        # escrito duas linhas acima e que eu nao apliquei aqui: o FCO de um
+        # trimestre carrega **imposto e juro pagos**, que sao irregulares dentro
+        # do ano. `Conversao operacional` fica de fora desta lista porque o CGO e
+        # antes dos dois, e mede 11 pontos.
+        "Conversao de caixa (FCO / EBITDA)",
     }
 )
 

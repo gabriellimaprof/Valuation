@@ -134,6 +134,25 @@ def proximo_passo(chave: str, pronto: bool = True, motivo: str = "") -> None:
 
 
 
+def _a_mediana_se_compara(analise, indicador: str) -> bool:
+    """A mediana do periodo importado se compara com uma premissa anual?
+
+    A premissa projetada e sempre de um exercicio. Quando a serie importada e
+    trimestral, os indicadores que misturam fluxo do periodo com estoque saem a
+    um quarto, e a comparacao inverte o sinal do balizador.
+    """
+    from valuation import referencias
+    from valuation.importacao.series import periodo_do_rotulo
+
+    try:
+        colunas = analise.indicadores.columns
+    except AttributeError:
+        return True
+    if not any(periodo_do_rotulo(c) for c in colunas):
+        return True
+    return referencias.atravessa_a_frequencia(indicador)
+
+
 def balizador(
     valor: float,
     indicador: str = "",
@@ -170,13 +189,27 @@ def balizador(
             historico = float(analise.mediana(indicador))
         except Exception:  # noqa: BLE001 - indicador que a analise nao produziu
             historico = float("nan")
-        if np.isfinite(historico):
+        # **A premissa e anual e a mediana pode nao ser.** Numa serie trimestral o
+        # ROIC da companhia sai a um quarto, e comparar a premissa contra ele
+        # **inverte o sinal do balizador**: medido na WEG, 15% de ROIC perpetuo
+        # sai como "21,6% abaixo do historico" na leitura anual e como "5,4%
+        # acima" na trimestral. O balizador passa a dizer o contrario do que a
+        # empresa entregou, que e pior do que nao dizer nada.
+        #
+        # A regra e a mesma da aba da base (`referencias.atravessa_a_frequencia`):
+        # margem e liquidez atravessam, retorno e crescimento nao.
+        if np.isfinite(historico) and _a_mediana_se_compara(analise, indicador):
             anos = analise.anos
             partes.append(
                 f"**{formatar(historico, formato)}** na empresa "
                 f"({anos[0]}–{anos[-1]})"
             )
             partes.append(_comparacao_com_o_historico(valor, historico, formato))
+        elif np.isfinite(historico):
+            partes.append(
+                "sem comparação com a empresa: a série é trimestral e este "
+                "indicador não atravessa a frequência"
+            )
 
     onde = referencias.descrever(indicador, valor) if indicador else ""
     if onde:

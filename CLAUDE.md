@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1169 testes
+pytest                        # 1171 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.169 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.171 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1723,6 +1723,28 @@ A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/0
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
 
+## O balizador dizia o contrario, e o sinal invertia
+
+A mesma mistura de frequencias tinha uma segunda porta, e nela o defeito era
+pior. O **balizador** compara a premissa projetada -- que e sempre de um
+exercicio -- com a mediana da companhia no periodo importado. Numa serie
+trimestral o ROIC da companhia sai a um quarto, e a comparacao **inverte o
+sinal**:
+
+| Premissa de 15% de ROIC perpetuo | O que o balizador dizia |
+|---|---|
+| Serie anual | "21,6% **abaixo** do historico" |
+| Serie trimestral | "5,4% **acima** do historico" |
+
+O mesmo com crescimento: "4,8% abaixo" virava "11,3% acima". O balizador passava
+a dizer o oposto do que a empresa entregou, que e pior do que nao dizer nada.
+
+A guarda e a mesma regra (`atravessa_a_frequencia`), e o que ela suprime e **so a
+ancora da empresa**: o percentil da base continua valendo, porque ali o numero
+comparado e a premissa projetada, que e anual por construcao. E a ancora que some
+**diz por que** -- ancora que desaparece sem explicacao nao se distingue de
+ancora ausente.
+
 ## O percentil nao vale em toda frequencia
 
 A aba nova comparava a serie importada contra percentis medidos em
@@ -1738,18 +1760,28 @@ fluxo do mesmo periodo** (margem, conversao) ou **estoque sobre estoque**
 variacao de um periodo contra outro, ou quando o numerador e irregular dentro do
 ano.
 
-O desvio medido separa os dois grupos com um vale no meio:
+A primeira medicao usava **3 companhias** (n=2 por indicador) e mostrava um vale
+limpo entre os grupos. Refeita em **79 companhias** com as duas leituras (n de 47
+a 79 por indicador), a separacao em agregado se confirma e **o vale nao existe**:
 
-```
-ROIC 44 · ROE 36 · Crescimento 33 · Payout 26 · Div. liq/EBITDA 24
-Capital de giro/Receita 22 · Invest. em giro 23 · Taxa de reinvest. 15
----------------------------- vale ----------------------------
-Capex/Receita 9 · Divida bruta/PL 9 · Liquidez 7 · Conversao 5-7
-Prazos 5-6 · Margens 0-1
-```
+| | Desvio mediano do percentil |
+|---|---|
+| Os que **nao** atravessam (8 indicadores) | **20 pontos** |
+| Os que atravessam (14) | **5 pontos** |
 
-A classificacao e **por estrutura e nao pelo desvio**: o desvio confirma a regra,
-e usa-lo como criterio faria a lista mudar com a amostra. Na tela os oito
+Sao 4x de diferenca, e isso sustenta a regra. Mas os grupos **se sobrepoem na
+borda** -- o pior dos que atravessam mede 18 e o melhor dos que nao atravessam
+mede 15 --, e o vale limpo da primeira medicao era artefato do tamanho da
+amostra.
+
+A classificacao continua sendo **por estrutura e nao pelo desvio**: usa-lo como
+criterio faria a lista mudar com a amostra. Mas a medicao grande pegou **um erro
+de aplicacao meu**: `Conversao de caixa (FCO / EBITDA)` estava classificada como
+"atravessa" -- fluxo sobre fluxo do mesmo periodo, pela estrutura --, e mediu
+**18 pontos**, o pior do grupo. A causa e o criterio que eu ja tinha escrito e
+nao apliquei: o FCO de um trimestre carrega **imposto e juro pagos**, que sao
+irregulares dentro do ano, exatamente como o dividendo do payout. Ela saiu do
+grupo; `Conversao operacional` fica, porque o CGO e antes dos dois e mede 11. Na tela os oito
 indicadores de `SO_NO_EXERCICIO` aparecem **sem percentil** quando a serie e
 trimestral, com o aviso dizendo por que; no material do comite a secao inteira e
 recusada, porque no papel nao ha espaco para explicar linha a linha e meia tabela

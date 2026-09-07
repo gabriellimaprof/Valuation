@@ -216,6 +216,12 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
     for estrutural in ("ROIC", "ROE", "Crescimento da receita", "Divida liquida / EBITDA"):
         assert not referencias.atravessa_a_frequencia(estrutural), estrutural
 
+    # A conversao de **caixa** ficou fora: o FCO de um trimestre carrega imposto
+    # e juro pagos, que sao irregulares dentro do ano -- o mesmo criterio do
+    # payout. A **operacional** fica, porque o CGO e antes dos dois. Medido em 79
+    # companhias: 18 pontos de desvio contra 11.
+    assert not referencias.atravessa_a_frequencia("Conversao de caixa (FCO / EBITDA)")
+
     for atravessa in (
         "Margem EBITDA",
         "Margem liquida",
@@ -223,6 +229,7 @@ def test_nem_todo_indicador_atravessa_a_frequencia():
         "Capex / Receita",
         "Ciclo de conversao de caixa (dias)",
         "Divida bruta / Patrimonio liquido",
+        "Conversao operacional (CGO / EBITDA)",
     ):
         assert referencias.atravessa_a_frequencia(atravessa), atravessa
 

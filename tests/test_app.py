@@ -603,3 +603,62 @@ def test_a_ponte_e_o_resumo_saem_acentuados():
     escaparam = [r for r in rotulos if any(x in r for x in _RADICAIS_SEM_ACENTO)]
     escaparam += [r for r in rotulos if "acao" in r or "perpetuo" in r or "explicitos" in r]
     assert not escaparam, f"rótulos sem acento na ponte ou no resumo: {escaparam}"
+
+
+def test_o_balizador_nao_compara_premissa_anual_com_mediana_trimestral():
+    """O sinal do balizador **inverte** quando as frequências se misturam.
+
+    A premissa projetada é sempre de um exercício. Numa série trimestral o ROIC
+    da companhia sai a um quarto, e medido na WEG: 15% de ROIC perpétuo aparece
+    como "21,6% **abaixo** do histórico" na leitura anual e como "5,4%
+    **acima**" na trimestral. O balizador passa a dizer o contrário do que a
+    empresa entregou, que é pior do que não dizer nada.
+
+    A regra é a mesma da aba da base — margem e liquidez atravessam a
+    frequência, retorno e crescimento não.
+    """
+    import pandas as pd
+
+    from app.componentes import _a_mediana_se_compara
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    def _analise(colunas):
+        valores = pd.DataFrame(
+            {
+                c: {
+                    "receita_liquida": 1000.0,
+                    "custo_produtos_vendidos": 600.0,
+                    "ebit": 200.0,
+                    "patrimonio_liquido": 700.0,
+                    "ativo_total": 1500.0,
+                }
+                for c in colunas
+            }
+        )
+        return analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$"))
+
+    anual = _analise([2023, 2024, 2025])
+    trimestral = _analise(["1T25", "2T25", "3T25"])
+
+    # Na serie anual tudo se compara.
+    for indicador in ("ROIC", "Crescimento da receita", "Margem EBITDA"):
+        assert _a_mediana_se_compara(anual, indicador), indicador
+
+    # Na trimestral, so o que atravessa a frequencia.
+    assert not _a_mediana_se_compara(trimestral, "ROIC")
+    assert not _a_mediana_se_compara(trimestral, "Crescimento da receita")
+    assert _a_mediana_se_compara(trimestral, "Margem EBITDA")
+    assert _a_mediana_se_compara(trimestral, "Liquidez corrente")
+
+
+def test_o_balizador_diz_por_que_a_comparacao_sumiu():
+    """Âncora que some sem explicação é pior que âncora ausente.
+
+    Quem lê precisa distinguir "esta companhia não tem o número" de "o número
+    existe e não se compara com o que você digitou".
+    """
+    import pathlib
+
+    fonte = pathlib.Path("app/componentes.py").read_text(encoding="utf-8")
+    assert "não atravessa a frequência" in fonte

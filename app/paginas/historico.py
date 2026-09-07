@@ -1129,12 +1129,20 @@ def _base_brasileira(analise) -> None:
         registro["_ordem"] = abs(posicao - 0.5) if np.isfinite(posicao) else -1.0
         linhas.append(registro)
 
-    tabela = (
-        pd.DataFrame(linhas)
-        .sort_values("_ordem", ascending=False)
-        .drop(columns="_ordem")
-        .set_index("Indicador")
-    )
+    tabela = pd.DataFrame(linhas).sort_values("_ordem", ascending=False)
+
+    # **O filtro nasce desligado.** Com 22 linhas a tabela inteira cabe, e
+    # esconder por padrao faria o analista procurar o indicador que ele veio
+    # olhar. Ele existe para a leitura oposta -- "onde esta companhia foge do
+    # normal?" --, que e a que se faz depois de ja conhecer a lista.
+    incomuns = int((tabela["_ordem"] >= 0.25).sum())
+    if incomuns and st.toggle(
+        f"Mostrar só onde a companhia é incomum ({incomuns} de {len(tabela)})",
+        help="Fora do intervalo entre os percentis 25 e 75 da base.",
+    ):
+        tabela = tabela[tabela["_ordem"] >= 0.25]
+
+    tabela = tabela.drop(columns="_ordem").set_index("Indicador")
     st.html(tabela_de_indicadores(tabela, destaques={"Esta companhia"}))
     st.caption(
         "Ordenada pela **distância até a mediana da base**: no topo está onde "
