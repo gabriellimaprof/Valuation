@@ -18,7 +18,14 @@ from valuation.dados_setoriais import (
 )
 
 from .. import estado
-from ..componentes import conceito, etapa, formatar, metrica, secao
+from ..componentes import (
+    a_mediana_se_compara,
+    conceito,
+    etapa,
+    formatar,
+    metrica,
+    secao,
+)
 
 
 def render() -> None:
@@ -396,11 +403,30 @@ def _baliza_do_kd(kd: float) -> None:
     ):
         if indicador not in analise.indicadores.index:
             continue
+        # **Juro do período sobre saldo de dívida.** Numa série de trimestres
+        # isolados o numerador é de três meses e o denominador é um saldo, então
+        # o Kd sai a um quarto — medido em 60 companhias, 0,26x na competência —
+        # e a frase o apresenta ao lado de um campo que pede uma **taxa ao ano**.
+        # É o mesmo defeito que o diagnóstico tinha, na tela onde a premissa é
+        # digitada.
+        if not a_mediana_se_compara(analise, indicador):
+            continue
         valor = float(analise.mediana(indicador))
         if np.isfinite(valor):
             partes.append(f"**{formatar(valor, 'pct')}** {rotulo}")
 
     if not partes:
+        # A ausência **diz por quê**: âncora que some sem explicação não se
+        # distingue de âncora que nunca existiu.
+        if analise is not None and getattr(
+            getattr(analise, "demonstracoes", None), "periodicidade", "anual"
+        ) == "trimestral":
+            st.caption(
+                "Sem o Kd da empresa: a série importada é de **trimestres "
+                "isolados**, e o juro pago de três meses sobre o saldo da dívida "
+                "sai a um quarto de uma taxa ao ano. Importe em **Ano móvel "
+                "rolante** ou em **Anual** para vê-lo aqui."
+            )
         return
     st.caption(
         "Na empresa: "
@@ -429,7 +455,14 @@ def _baliza_do_divida_pl(alvo: float) -> None:
     analise = estado.analise()
     if analise is not None:
         try:
-            hoje = float(analise.mediana("Divida bruta / Patrimonio liquido"))
+            hoje = (
+                float(analise.mediana("Divida bruta / Patrimonio liquido"))
+                if a_mediana_se_compara(analise, "Divida bruta / Patrimonio liquido")
+                # Razao entre dois saldos: ela atravessa a frequencia, e a
+                # medicao confirma com 1,00x exato. Passa pela regra assim
+                # mesmo, para o proximo indicador nao entrar aqui sem guarda.
+                else float("nan")
+            )
         except Exception:  # noqa: BLE001 - indicador ausente
             hoje = float("nan")
         if np.isfinite(hoje):

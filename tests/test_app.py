@@ -749,3 +749,76 @@ def test_o_balizador_diz_por_que_a_comparacao_sumiu():
 
     fonte = pathlib.Path("app/componentes.py").read_text(encoding="utf-8")
     assert "não atravessa a frequência" in fonte
+
+
+def test_o_cartao_de_receita_distingue_ano_movel_de_trimestre(monkeypatch):
+    """As duas leituras saíam com **a mesma frase** e números 4x diferentes.
+
+    Medido na WEG:
+
+        ano móvel    "Receita do 2T26"   R$ 40,1 bi
+        trimestral   "Receita do 2T26"   R$ 10,1 bi
+
+    A função já tentava dizer o período, e o fazia **pelo rótulo da coluna** —
+    que é justamente a armadilha que este projeto documenta: o ano móvel rolante
+    tem colunas rotuladas `2T26` cobrindo doze meses. Quem decide é a
+    `periodicidade`, que é declarada por quem monta a série.
+    """
+    import pandas as pd
+
+    from app.paginas import historico as tela
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    rotulos = []
+
+    def _metrica(rotulo, *args, **kwargs):
+        rotulos.append(rotulo)
+
+    monkeypatch.setattr(tela, "metrica", _metrica)
+
+    class _Coluna:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setattr(tela.st, "columns", lambda *a, **k: [_Coluna() for _ in range(4)])
+
+    def _cartoes_de(periodicidade, colunas):
+        rotulos.clear()
+        valores = pd.DataFrame(
+            {
+                c: {
+                    "receita_liquida": 1000.0,
+                    "custo_produtos_vendidos": 600.0,
+                    "ebit": 200.0,
+                    "depreciacao_amortizacao": 50.0,
+                    "ativo_total": 1500.0,
+                    "patrimonio_liquido": 700.0,
+                    "divida_bruta": 400.0,
+                }
+                for c in colunas
+            }
+        )
+        dfs = Demonstracoes(
+            empresa="T", valores=valores, unidade="R$", periodicidade=periodicidade
+        )
+        tela._cartoes(analisar(dfs), dfs)
+        return list(rotulos)
+
+    trimestral = _cartoes_de("trimestral", ["1T26", "2T26"])
+    movel = _cartoes_de("anual", ["1T26", "2T26"])
+    anual = _cartoes_de("anual", [2024, 2025])
+
+    # As duas séries têm **o mesmo rótulo de coluna** e não podem dizer o mesmo.
+    assert trimestral[0] != movel[0]
+    assert trimestral[0] == "Receita do 2T26"
+    assert "12 meses" in movel[0]
+    assert anual[0] == "Receita do último ano"
+
+    # E o ROIC de um trimestre não se anuncia como retorno anual.
+    assert any("por trimestre" in r for r in trimestral)
+    assert not any("por trimestre" in r for r in movel)
+    assert not any("por trimestre" in r for r in anual)

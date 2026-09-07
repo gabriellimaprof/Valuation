@@ -601,13 +601,36 @@ def _comparacao_ano_a_ano(dfs) -> None:
 def _cartoes(analise, dfs) -> None:
     from valuation.importacao.series import periodo_do_rotulo
 
-    # "Receita do último ano" numa série trimestral descreve outra coisa: o
-    # número é de três meses. O rótulo passa a sair da própria coluna.
+    # **A periodicidade decide, e não o rótulo da coluna.** Esta função já
+    # tentava dizer o período e o fazia pelo rótulo — que é justamente a
+    # armadilha: o ano móvel rolante tem colunas rotuladas `2T26` cobrindo
+    # **doze meses**. Medido na WEG, os dois saíam com o mesmo rótulo:
+    #
+    #     ano móvel    "Receita do 2T26"   R$ 40,1 bi
+    #     trimestral   "Receita do 2T26"   R$ 10,1 bi
+    #
+    # Quatro vezes de diferença sob a mesma frase, e nada na tela separando as
+    # duas leituras.
     ultima = list(dfs.valores.columns)[-1] if len(dfs.valores.columns) else None
-    e_trimestre = ultima is not None and periodo_do_rotulo(ultima) is not None
-    rotulo_receita = (
-        f"Receita do {ultima}" if e_trimestre else "Receita do último ano"
-    )
+    e_trimestre = getattr(dfs, "periodicidade", "anual") == "trimestral"
+    if ultima is None:
+        rotulo_receita = "Receita do último ano"
+    elif e_trimestre:
+        rotulo_receita = f"Receita do {ultima}"
+    elif periodo_do_rotulo(ultima) is not None:
+        # Rótulo de trimestre com conteúdo de doze meses: é o ano móvel, e a
+        # frase precisa dizer as duas coisas.
+        rotulo_receita = f"Receita em 12 meses até {ultima}"
+    else:
+        rotulo_receita = "Receita do último ano"
+
+    # Um sufixo para os indicadores que **não atravessam a frequência**: numa
+    # série trimestral o ROIC sai a um quarto, e "ROIC (mediana) 8,2%" se lê
+    # como retorno anual. É o mesmo defeito do rótulo acima, um nível adiante.
+    def _por_periodo(rotulo: str, indicador: str) -> str:
+        if e_trimestre and not referencias.atravessa_a_frequencia(indicador):
+            return f"{rotulo}, por trimestre"
+        return rotulo
 
     colunas = st.columns(4)
     with colunas[0]:
@@ -619,24 +642,32 @@ def _cartoes(analise, dfs) -> None:
         )
     with colunas[1]:
         metrica(
-            "Margem EBITDA (mediana)",
+            _por_periodo("Margem EBITDA (mediana)", "Margem EBITDA"),
             analise.mediana("Margem EBITDA"),
             "pct",
             ajuda="Mediana do período. Resiste melhor a anos atípicos do que a média.",
         )
     with colunas[2]:
         metrica(
-            "ROIC (mediana)",
+            _por_periodo("ROIC (mediana)", "ROIC"),
             analise.mediana("ROIC"),
             "pct",
-            ajuda="Retorno sobre o capital investido, calculado sobre capital médio.",
+            ajuda=(
+                "Retorno sobre o capital investido, calculado sobre capital médio. "
+                "Numa série de trimestres isolados ele é o retorno **do trimestre**: "
+                "o lucro é de três meses e o capital é um saldo."
+            ),
         )
     with colunas[3]:
         metrica(
-            "Dívida líquida / EBITDA",
+            _por_periodo("Dívida líquida / EBITDA", "Divida liquida / EBITDA"),
             analise.ultimo("Divida liquida / EBITDA"),
             "multiplo",
-            ajuda="Quantos anos de EBITDA seriam necessários para quitar a dívida líquida.",
+            ajuda=(
+                "Quantos anos de EBITDA seriam necessários para quitar a dívida "
+                "líquida. Numa série de trimestres isolados o EBITDA é de três "
+                "meses, e o múltiplo sai quatro vezes maior."
+            ),
         )
 
 

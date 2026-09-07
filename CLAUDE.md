@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1192 testes
+pytest                        # 1193 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.192 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.193 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2066,6 +2066,37 @@ safra. A lista exata de colunas virou "os trimestres do exercicio pedido estao
 la, em ordem"; e o piso de `35e9`, que separava ano de trimestre para 2025, virou
 a propriedade que nao precisa de numero magico: **um ano movel supera qualquer
 trimestre isolado da mesma companhia**.
+
+### Duas leituras, a mesma frase, quatro vezes de diferenca
+
+O cartao de receita do Historico ja tentava dizer o periodo -- e decidia **pelo
+rotulo da coluna**, que e exatamente a armadilha que este arquivo documenta. O
+ano movel rolante tem colunas rotuladas `2T26` cobrindo **doze meses**. Medido na
+WEG:
+
+| Leitura | O que a tela escrevia | Valor |
+|---|---|---|
+| ano movel | "Receita do 2T26" | **R$ 40,1 bi** |
+| trimestres isolados | "Receita do 2T26" | **R$ 10,1 bi** |
+
+Quatro vezes de diferenca sob a mesma frase, e nada na tela separando as duas.
+Quem decide passou a ser a `periodicidade`, que e declarada por quem monta a
+serie: agora sai "Receita em 12 meses ate 2T26" contra "Receita do 2T26".
+
+**E o mesmo defeito estava um nivel adiante, nos outros cartoes.** "ROIC
+(mediana) 8,2%" numa serie de trimestres se le como retorno anual -- o numero e
+plausivel e esta errado, que e o pior tipo. Os cartoes de indicador que **nao
+atravessam a frequencia** ganharam o sufixo "por trimestre", e a ajuda diz por
+que: o lucro e de tres meses e o capital e um saldo.
+
+**O Kd da tela de Custo de capital tinha o mesmo problema, e ali doi mais**,
+porque a frase fica ao lado do campo em que o usuario digita uma **taxa ao ano**.
+Medido em 60 companhias, o custo da divida pela competencia sai a **0,26x** numa
+serie trimestral. A frase some, e a ausencia **diz por que** -- ancora que
+desaparece sem explicacao nao se distingue de ancora que nunca existiu.
+
+Junto saiu `premissas._referencia`, funcao morta que ninguem chamava e que
+carregaria o mesmo defeito no dia em que alguem a ligasse.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

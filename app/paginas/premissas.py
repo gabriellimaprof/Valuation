@@ -141,15 +141,6 @@ def _ajustar_horizonte(operacionais, horizonte: int):
     )
 
 
-def _referencia(analise, indicador: str) -> str:
-    if analise is None:
-        return ""
-    valor = analise.mediana(indicador)
-    if not np.isfinite(valor):
-        return ""
-    return f"mediana histórica: {formatar(valor, 'pct')}"
-
-
 def _editor(operacionais, anos: list[int], analise) -> None:
     st.subheader("Direcionadores, ano a ano")
     st.caption("Percentuais em pontos percentuais: digite 12,5 para 12,5%.")
