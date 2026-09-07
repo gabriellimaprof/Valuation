@@ -330,3 +330,52 @@ def formatar(indicador: str, valor) -> str:
     if tipo == DIAS:
         return formato.num(valor, 0, ausente="—") + (" d" if valor is not None else "")
     return formato.multiplo(valor)
+
+
+# ---------------------------------------------------------------------------
+# O percentil nao vale em toda frequencia
+# ---------------------------------------------------------------------------
+
+# **A base e medida em exercicios, e nem todo indicador atravessa a frequencia.**
+# Comparar uma serie trimestral contra ela nao e errado por principio -- e errado
+# para uma parte dos indicadores, e a parte tem regra.
+#
+# Um indicador atravessa quando e **fluxo sobre fluxo do mesmo periodo** (margem,
+# conversao) ou **estoque sobre estoque** (liquidez, divida/PL). Nao atravessa
+# quando mistura fluxo do periodo com estoque -- o denominador anual encolhe a um
+# quarto e a razao quadruplica --, quando e variacao de um periodo contra outro,
+# ou quando o numerador e irregular dentro do ano.
+#
+# Medido na WEG e em mais duas companhias, o desvio medio do percentil entre a
+# leitura anual e a trimestral separa os dois grupos com um vale no meio:
+#
+#   ROIC 44 · ROE 36 · Crescimento 33 · Payout 26 · Divida liq/EBITDA 24
+#   Capital de giro/Receita 22 · Invest. em giro 23 · Taxa de reinvest. 15
+#   ---- vale ----
+#   Capex/Receita 9 · Divida bruta/PL 9 · Liquidez 7 · Conversao 5-7
+#   Prazos 5-6 · Margens 0-1
+#
+# A classificacao e **por estrutura e nao pelo desvio medido**: o desvio confirma
+# a regra, e usa-lo como criterio faria a lista mudar com a amostra.
+SO_NO_EXERCICIO: frozenset[str] = frozenset(
+    {
+        # Fluxo do periodo sobre estoque: o numerador encolhe com o periodo e o
+        # denominador nao.
+        "ROIC",
+        "ROE",
+        "Divida liquida / EBITDA",
+        "Capital de giro / Receita",
+        # Variacao de um periodo contra outro.
+        "Crescimento da receita",
+        # Numerador irregular dentro do ano: um trimestre sem dividendo da
+        # payout zero, e a mediana entre trimestres nao descreve a politica.
+        "Payout (dividendos / lucro)",
+        "Investimento em giro (DFC) / Receita",
+        "Taxa de reinvestimento",
+    }
+)
+
+
+def atravessa_a_frequencia(indicador: str) -> bool:
+    """O percentil deste indicador vale numa serie que nao e anual?"""
+    return indicador not in SO_NO_EXERCICIO

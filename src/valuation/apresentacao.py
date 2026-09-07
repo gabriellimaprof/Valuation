@@ -343,6 +343,75 @@ def _avisos(diagnostico) -> str:
     return "".join(blocos)
 
 
+def _onde_cai_na_base(analise, quantos: int = 8) -> str:
+    """Onde a companhia e incomum, contra as companhias brasileiras medidas.
+
+    E o tipo de ancora que um comite pede: "margem de 22%" nao diz se e boa, e
+    "no percentil 47 de 413 companhias" diz. Nao cabem as 22 linhas da tela --
+    num material impresso a tabela longa vira pagina virada --, entao entram as
+    **mais incomuns**, que sao as que a mesa vai perguntar.
+
+    Recusa a serie trimestral inteira: a base e medida em exercicios, e parte dos
+    indicadores nao atravessa a frequencia. Meia tabela com percentil e meia sem
+    seria pior no papel do que na tela, onde ha espaco para explicar cada linha.
+    """
+    from . import referencias
+    from .importacao.series import periodo_do_rotulo
+
+    if any(periodo_do_rotulo(c) for c in analise.indicadores.columns):
+        return (
+            '<h2>Onde a companhia cai na base brasileira</h2><p class="nota">'
+            "<strong>Não incluído:</strong> a série importada é trimestral, e a "
+            "base de referência é medida em exercícios. Parte dos indicadores "
+            "não atravessa a frequência — ROIC e dívida sobre EBITDA saem a um "
+            "quarto num trimestre —, e uma tabela meio comparável no papel "
+            "engana mais do que ajuda.</p>"
+        )
+
+    linhas = []
+    for indicador, (n, _) in referencias.BASE.items():
+        if indicador not in analise.indicadores.index:
+            continue
+        medida = analise.mediana(indicador)
+        posicao = referencias.posicao(indicador, medida)
+        if not np.isfinite(posicao):
+            continue
+        linhas.append((abs(posicao - 0.5), indicador, medida, posicao, n))
+    if not linhas:
+        return ""
+
+    linhas.sort(reverse=True)
+    quadro = pd.DataFrame(
+        [
+            {
+                "Esta companhia": referencias.formatar(ind, valor),
+                "Mediana da base": referencias.formatar(
+                    ind, referencias.BASE[ind][1][3]
+                ),
+                "Percentil": f"{pos * 100:.0f}".replace(".", ","),
+            }
+            for _, ind, valor, pos, n in linhas[:quantos]
+        ],
+        index=[l[1] for l in linhas[:quantos]],
+    )
+    quadro.index.name = "Indicador"
+
+    safra = referencias.safra()
+    contexto = (
+        f" Percentis de {safra.ano_medido}, medidos em {safra.companhias} companhias."
+        if safra is not None
+        else ""
+    )
+    return (
+        "<h2>Onde a companhia cai na base brasileira</h2>"
+        + _tabela(quadro)
+        + '<p class="nota">As oito linhas em que ela mais se afasta da mediana '
+        "brasileira." + contexto + " Bancos e seguradoras ficam fora da base de "
+        "propósito: margem EBITDA e capex sobre receita não querem dizer neles o "
+        "que querem dizer no resto.</p>"
+    )
+
+
 def montar_html_da_mesa(carteira, data: str = "") -> str:
     """O material de **varios modelos**, para um comite que ve tres companhias.
 
@@ -694,6 +763,9 @@ def montar_html(
             "operação, e aquisição de participação consome o mesmo caixa sem "
             "repor ativo.</p>"
         )
+
+    if analise is not None:
+        partes.append(_onde_cai_na_base(analise))
 
     partes.append("<h2>O que pode derrubar a tese</h2>")
     partes.append(_avisos(diagnostico))

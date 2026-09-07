@@ -192,3 +192,39 @@ def test_as_duas_safras_se_chamam_do_mesmo_jeito():
         assert isinstance(
             classe.__dict__.get("resumo"), property
         ), f"{classe.__name__}.resumo precisa ser propriedade, como a irmã"
+
+
+def test_nem_todo_indicador_atravessa_a_frequencia():
+    """A base é medida em exercícios, e comparar um trimestre contra ela
+    depende do indicador.
+
+    Um indicador atravessa quando é **fluxo sobre fluxo do mesmo período**
+    (margem, conversão) ou **estoque sobre estoque** (liquidez, dívida/PL). Não
+    atravessa quando mistura fluxo do período com estoque — o denominador anual
+    encolhe a um quarto e a razão quadruplica —, quando é variação de um período
+    contra outro, ou quando o numerador é irregular dentro do ano.
+
+    Medido na WEG e em mais duas, o desvio médio do percentil entre a leitura
+    anual e a trimestral separa os grupos com um vale no meio: ROIC 44, ROE 36,
+    Crescimento 33 · **vale** · Capex/Receita 9, Liquidez 7, Margens 0-1.
+
+    A classificação é **por estrutura e não pelo desvio**: o desvio confirma, e
+    usá-lo como critério faria a lista mudar com a amostra.
+    """
+    from valuation import referencias
+
+    for estrutural in ("ROIC", "ROE", "Crescimento da receita", "Divida liquida / EBITDA"):
+        assert not referencias.atravessa_a_frequencia(estrutural), estrutural
+
+    for atravessa in (
+        "Margem EBITDA",
+        "Margem liquida",
+        "Liquidez corrente",
+        "Capex / Receita",
+        "Ciclo de conversao de caixa (dias)",
+        "Divida bruta / Patrimonio liquido",
+    ):
+        assert referencias.atravessa_a_frequencia(atravessa), atravessa
+
+    orfaos = sorted(i for i in referencias.SO_NO_EXERCICIO if i not in referencias.BASE)
+    assert not orfaos, f"indicador listado que BASE não publica: {orfaos}"

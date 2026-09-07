@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1164 testes
+pytest                        # 1169 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.164 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.169 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -1722,6 +1722,54 @@ primeiro suspeito e ela mesma.
 A pegadinha do ITR entra aqui e o conferidor a respeita: para `DT_REFER` de 30/09
 ha duas linhas da mesma conta, e a **isolada e a de menor duracao**. Comparar
 contra a acumulada acusaria a leitura certa por um terco.
+
+## O percentil nao vale em toda frequencia
+
+A aba nova comparava a serie importada contra percentis medidos em
+**exercicios**, e isso nao e errado por principio -- e errado para uma parte dos
+indicadores. Medido na WEG, o percentil do ROIC cai de **94 para 48** quando a
+serie e trimestral, e o do crescimento de 58 para 11: numeros que parecem leitura
+e sao artefato do periodo.
+
+A regra e estrutural. Um indicador atravessa a frequencia quando e **fluxo sobre
+fluxo do mesmo periodo** (margem, conversao) ou **estoque sobre estoque**
+(liquidez, divida/PL). Nao atravessa quando mistura fluxo do periodo com estoque
+-- o denominador anual encolhe a um quarto e a razao quadruplica --, quando e
+variacao de um periodo contra outro, ou quando o numerador e irregular dentro do
+ano.
+
+O desvio medido separa os dois grupos com um vale no meio:
+
+```
+ROIC 44 · ROE 36 · Crescimento 33 · Payout 26 · Div. liq/EBITDA 24
+Capital de giro/Receita 22 · Invest. em giro 23 · Taxa de reinvest. 15
+---------------------------- vale ----------------------------
+Capex/Receita 9 · Divida bruta/PL 9 · Liquidez 7 · Conversao 5-7
+Prazos 5-6 · Margens 0-1
+```
+
+A classificacao e **por estrutura e nao pelo desvio**: o desvio confirma a regra,
+e usa-lo como criterio faria a lista mudar com a amostra. Na tela os oito
+indicadores de `SO_NO_EXERCICIO` aparecem **sem percentil** quando a serie e
+trimestral, com o aviso dizendo por que; no material do comite a secao inteira e
+recusada, porque no papel nao ha espaco para explicar linha a linha e meia tabela
+comparavel engana mais do que ajuda.
+
+Junto vieram duas coisas que a tabela pedia: ela e **ordenada pela distancia ate
+a mediana da base** -- no topo esta onde a companhia e mais incomum, que e o que
+se procura -- e a **safra entra na legenda**, porque quem imprime a tela perde o
+aviso que fica acima dela.
+
+### E o ano-base de uma serie trimestral era o rotulo
+
+Oitavo sitio da familia `int(ano)`, e este estourava no meio da projecao: a
+ultima coluna de uma serie trimestral e `"2T26"`, e `ano_base` a devolvia como
+estava -- entao `projecao` fazia `"2T26" + 1` e quebrava com `TypeError`. O app
+**permite** derivar premissas de uma serie trimestral, entao o caminho era
+alcancavel; ninguem o tinha percorrido ate o fim.
+
+A projecao numera exercicios: dela para a frente o que importa e o ano, e nao o
+trimestre em que a serie parou.
 
 ## A base medida ganhou tela
 

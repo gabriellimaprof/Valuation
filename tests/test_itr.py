@@ -989,3 +989,49 @@ def test_o_de_para_da_serie_compara_codigo_e_nao_a_frase_inteira():
     saida = _mapeamento_da_serie(contas_diferentes, ["conta"], "origem")
     assert "3.11" in saida["conta"] and "3.09" in saida["conta"]
     assert "1T25" in saida["conta"] and "2T25" in saida["conta"]
+
+
+def test_o_ano_base_de_uma_serie_trimestral_e_o_exercicio():
+    """Oitavo sítio de `int(ano)`, e este estourava no meio da projeção.
+
+    Numa série trimestral a última coluna é `"2T26"`, e `ano_base` a devolvia
+    como estava — então `projecao` fazia `"2T26" + 1` e quebrava com
+    `TypeError`. A projeção numera exercícios: dela para a frente o que importa é
+    o ano, e não o trimestre em que a série parou.
+    """
+    from valuation.importacao.cvm import importar_cvm, importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert tri.anos[-1] == "3T25"
+    assert tri.ano_base == 2025, "o ano-base é o exercício, e não o rótulo"
+
+    anual = importar_cvm(WEG, [2024], cache=DADOS)
+    assert anual.ano_base == 2024, "a série anual não muda"
+
+
+def test_o_valuation_de_uma_serie_trimestral_nao_estoura():
+    """A ponta a ponta do defeito acima: importar trimestral e avaliar.
+
+    O app permite derivar premissas de uma série trimestral, e até aqui isso
+    levantava `TypeError` dentro de `projecao` — um erro que só aparece quando
+    alguém percorre o caminho inteiro.
+    """
+    from valuation import avaliar
+    from valuation.historico import analisar, sugerir_premissas
+    from valuation.importacao.cvm import importar_trimestral
+    from valuation.modelo import Empresa
+    from valuation.premissas import PremissasMacro, PremissasPerpetuidade
+
+    dfs = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    s = sugerir_premissas(analisar(dfs))
+    empresa = Empresa(
+        nome=dfs.empresa,
+        operacionais=s.operacionais,
+        ponte=s.ponte,
+        custo_capital=s.custo_capital,
+        macro=PremissasMacro(),
+        perpetuidade=PremissasPerpetuidade(),
+        unidade=dfs.unidade,
+    )
+    resultado = avaliar(empresa)
+    assert resultado.dcf.equity_value == resultado.dcf.equity_value  # nao e NaN

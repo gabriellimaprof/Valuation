@@ -1098,6 +1098,14 @@ def _base_brasileira(analise) -> None:
     if safra is not None:
         (st.warning if safra.desatualizada else st.caption)(safra.resumo)
 
+    # **A base e medida em exercicios, e nem todo indicador atravessa a
+    # frequencia.** Numa serie trimestral o ROIC sai a um quarto e o percentil da
+    # WEG cai de 94 para 48 -- um numero que parece leitura e e artefato do
+    # periodo. A regra e de `referencias`, e a tela so a obedece.
+    from valuation.importacao.series import periodo_do_rotulo
+
+    e_trimestral = any(periodo_do_rotulo(c) for c in analise.indicadores.columns)
+
     linhas = []
     for indicador, (n, quantis) in referencias.BASE.items():
         registro = {"Indicador": rotulo_do_indicador(indicador)}
@@ -1109,21 +1117,47 @@ def _base_brasileira(analise) -> None:
             else float("nan")
         )
         registro["Esta companhia"] = referencias.formatar(indicador, medida)
-        posicao = referencias.posicao(indicador, medida)
+        vale = not e_trimestral or referencias.atravessa_a_frequencia(indicador)
+        posicao = referencias.posicao(indicador, medida) if vale else float("nan")
         registro["Percentil"] = (
             f"{posicao * 100:.0f}".replace(".", ",") if np.isfinite(posicao) else "—"
         )
         registro["n"] = f"{n}"
+        # A distancia para a mediana da base ordena a tabela: quem le quer ver
+        # primeiro onde a companhia esta no extremo, e nao a ordem em que os
+        # indicadores foram medidos.
+        registro["_ordem"] = abs(posicao - 0.5) if np.isfinite(posicao) else -1.0
         linhas.append(registro)
 
-    tabela = pd.DataFrame(linhas).set_index("Indicador")
+    tabela = (
+        pd.DataFrame(linhas)
+        .sort_values("_ordem", ascending=False)
+        .drop(columns="_ordem")
+        .set_index("Indicador")
+    )
     st.html(tabela_de_indicadores(tabela, destaques={"Esta companhia"}))
     st.caption(
-        "**A companhia entra pela mediana do período importado**, e não pelo "
+        "Ordenada pela **distância até a mediana da base**: no topo está onde "
+        "esta companhia é mais incomum. "
+        + (
+            f"Percentis de {safra.ano_medido}, medidos em {safra.companhias} "
+            "companhias. "
+            if safra is not None
+            else ""
+        )
+        + "**A companhia entra pela mediana do período importado**, e não pelo "
         "último exercício: um ano de greve ou de aquisição descreve o ano, e não "
-        "a empresa. Percentil vazio significa que o indicador não pôde ser "
-        "medido nesta companhia — ausência declarada, e não zero."
+        "a empresa."
     )
+    if e_trimestral:
+        st.info(
+            "**Esta é uma série trimestral, e parte dos percentis não vale nela.** "
+            "A base é medida em exercícios: um indicador que divide fluxo do "
+            "período por estoque — ROIC, ROE, dívida líquida sobre EBITDA — sai a "
+            "um quarto num trimestre, e o percentil viraria artefato do período. "
+            "Esses aparecem sem percentil. Margens, prazos e liquidez atravessam "
+            "e continuam comparáveis."
+        )
     st.caption(
         "Bancos e seguradoras **ficam fora da base** de propósito: margem EBITDA "
         "e capex sobre receita não querem dizer neles o que querem dizer no "

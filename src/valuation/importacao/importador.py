@@ -547,8 +547,19 @@ class Demonstracoes:
 
     @property
     def ano_base(self) -> int | None:
-        """Ultimo ano com dados, que e a data-base natural do valuation."""
-        return self.anos[-1] if self.anos else None
+        """O **exercicio** do ultimo periodo, que e a data-base do valuation.
+
+        Numa serie trimestral a ultima coluna e `"2T26"`, e devolve-la aqui
+        fazia `projecao` somar `"2T26" + 1` e estourar com `TypeError` -- o
+        oitavo sitio da familia `int(ano)`. A projecao numera exercicios: dela
+        para a frente o que importa e o ano, e nao o trimestre em que a serie
+        parou.
+        """
+        from .series import ano_do_rotulo
+
+        if not self.anos:
+            return None
+        return ano_do_rotulo(self.anos[-1])
 
     def ebitda(self) -> pd.Series:
         """EBITDA = EBIT + depreciacao e amortizacao.

@@ -236,3 +236,75 @@ def test_a_tabela_repete_o_cabecalho_quando_atravessa_a_pagina():
 
     assert "display: table-header-group" in CSS
     assert "page-break-inside: avoid" in CSS
+
+
+def test_o_material_traz_onde_a_companhia_e_incomum(empresa_exemplo):
+    """"Margem de 22%" não diz se é boa; "no percentil 47 de 413" diz.
+
+    É o tipo de âncora que um comitê pede. Não cabem as 22 linhas da tela — num
+    material impresso a tabela longa vira página virada —, então entram as
+    **mais incomuns**, que são as que a mesa vai perguntar.
+    """
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    anos = [2022, 2023, 2024, 2025]
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0 + 100 * i,
+                "custo_produtos_vendidos": 600.0 + 60 * i,
+                "ebit": 200.0 + 20 * i,
+                "depreciacao_amortizacao": 50.0,
+                "lucro_liquido": 120.0,
+                "lucro_antes_impostos": 170.0,
+                "impostos": 50.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+                "capex": 60.0,
+                "contas_receber": 200.0,
+                "estoques": 150.0,
+                "fornecedores": 100.0,
+            }
+            for i, ano in enumerate(anos)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    pagina = montar_html(avaliar(empresa_exemplo), analise=analise)
+
+    assert "Onde a companhia cai na base brasileira" in pagina
+    assert "Percentil" in pagina
+    assert "Mediana da base" in pagina
+
+
+def test_o_material_recusa_a_tabela_da_base_numa_serie_trimestral(empresa_exemplo):
+    """Meia tabela comparável no papel engana mais do que ajuda.
+
+    A base é medida em exercícios, e parte dos indicadores não atravessa a
+    frequência — ROIC e dívida sobre EBITDA saem a um quarto num trimestre. Na
+    tela há espaço para explicar linha a linha; num material impresso, não.
+    """
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            rotulo: {
+                "receita_liquida": 250.0,
+                "custo_produtos_vendidos": 150.0,
+                "ebit": 50.0,
+                "patrimonio_liquido": 700.0,
+            }
+            for rotulo in ("1T25", "2T25", "3T25")
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    pagina = montar_html(avaliar(empresa_exemplo), analise=analise)
+
+    assert "Onde a companhia cai na base brasileira" in pagina
+    assert "Não incluído" in pagina
+    assert "trimestral" in pagina
