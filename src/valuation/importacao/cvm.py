@@ -3086,6 +3086,7 @@ def importar_trimestral(
         empresa=nome,
         unidade="R$",
         origem=f"CVM ITR — trimestres isolados de {ano} e do exercício anterior",
+        periodicidade="trimestral",
         # **Estes textos vao para a tela**, e por isso vem acentuados. O codigo
         # em volta escreve em ASCII; o que o usuario le, nao.
         avisos=[
@@ -3167,6 +3168,8 @@ def importar_ltm_rolante(
         empresa=nome,
         unidade="R$",
         origem=f"CVM ITR — ano móvel rolante de {ano}",
+        # Rotulo de trimestre, conteudo de doze meses: e **anual**.
+        periodicidade="anual",
         avisos=[
             "**Cada coluna e um ano movel de doze meses**, encerrado no trimestre "
             "que a rotula -- e nao um exercicio social. A serie tira a "

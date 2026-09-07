@@ -43,6 +43,7 @@ import numpy as np
 import pandas as pd
 
 from . import formato
+from . import referencias
 from .historico import AnaliseHistorica, analisar
 from .modelo import ResultadoValuation, avaliar
 from .premissas import Empresa
@@ -84,7 +85,21 @@ def _medio(valores) -> float:
 
 
 def _mediana(analise: AnaliseHistorica | None, indicador: str) -> float:
+    """O que a companhia entregou -- **ou nada, quando a frequencia nao permite**.
+
+    A mesa compara premissa projetada, que e sempre de um exercicio, com a
+    mediana do periodo importado. Um modelo derivado de serie trimestral ao lado
+    de dois anuais mostrava uma distancia que nao fala de premissa nenhuma: ela
+    mede o tamanho do periodo. `Crescimento da receita` e o caso desta mesa --
+    variacao de um trimestre contra outro nao se compara com um crescimento
+    anual, e a distancia sai com o sinal trocado.
+
+    Ausencia aqui e melhor que numero errado: a linha vira "n/d" e as outras
+    tres continuam valendo, em vez de a mesa inteira ser recusada.
+    """
     if analise is None:
+        return float("nan")
+    if not referencias.a_mediana_se_compara(analise, indicador):
         return float("nan")
     try:
         return float(analise.mediana(indicador))

@@ -356,9 +356,8 @@ def _onde_cai_na_base(analise, quantos: int = 8) -> str:
     seria pior no papel do que na tela, onde ha espaco para explicar cada linha.
     """
     from . import referencias
-    from .importacao.series import periodo_do_rotulo
 
-    if any(periodo_do_rotulo(c) for c in analise.indicadores.columns):
+    if getattr(analise.demonstracoes, "periodicidade", "anual") == "trimestral":
         return (
             '<h2>Onde a companhia cai na base brasileira</h2><p class="nota">'
             "<strong>Não incluído:</strong> a série importada é trimestral, e a "

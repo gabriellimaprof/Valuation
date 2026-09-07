@@ -134,6 +134,55 @@ def test_fonte_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
     assert volta.demonstracoes.fonte == fonte
 
 
+def test_periodicidade_sobrevive_a_ida_e_volta(empresa_exemplo, demonstracoes):
+    """Valuation trimestral salvo voltava do disco declarando-se anual.
+
+    O projeto salvo não passa pelo importador ao ser reaberto — ele reconstrói
+    `Demonstracoes` do YAML —, então um campo que não é gravado se perde de vez,
+    e com ele as duas guardas de frequência.
+    """
+    original = type(demonstracoes)(
+        **{**demonstracoes.__dict__, "periodicidade": "trimestral"}
+    )
+    volta = desserializar(
+        serializar(Projeto(empresa=empresa_exemplo, demonstracoes=original))
+    )
+    assert volta.demonstracoes.periodicidade == "trimestral"
+
+
+def test_arquivo_salvo_antes_do_campo_recupera_pela_origem(
+    empresa_exemplo, demonstracoes
+):
+    """O padrão "anual" reporia o defeito para quem já tinha salvo.
+
+    A recuperação **não adivinha pelo rótulo da coluna** — `"1T26"` rotula tanto
+    um trimestre isolado quanto um ano móvel de doze meses encerrado nele, e as
+    duas pedem tratamento oposto. Ela lê a origem, que o próprio app gravou.
+    """
+    import yaml
+
+    def sem_o_campo(origem: str) -> str:
+        original = type(demonstracoes)(
+            **{**demonstracoes.__dict__, "origem": origem}
+        )
+        dados = yaml.safe_load(
+            serializar(Projeto(empresa=empresa_exemplo, demonstracoes=original))
+        )
+        dados["demonstracoes"].pop("periodicidade")
+        return yaml.safe_dump(dados, allow_unicode=True)
+
+    isolados = "CVM ITR — trimestres isolados de 2025 e do exercício anterior"
+    movel = "CVM ITR — ano móvel rolante de 2025"
+    assert desserializar(sem_o_campo(isolados)).demonstracoes.periodicidade == (
+        "trimestral"
+    )
+    # Rotulo de trimestre, conteudo de doze meses: **anual**.
+    assert desserializar(sem_o_campo(movel)).demonstracoes.periodicidade == "anual"
+    assert desserializar(sem_o_campo("cvm.xlsx")).demonstracoes.periodicidade == (
+        "anual"
+    )
+
+
 def test_arquivo_antigo_sem_os_campos_novos_continua_abrindo(projeto):
     """Compatibilidade: quem salvou antes destes campos nao pode ficar preso."""
     volta = desserializar(serializar(projeto))

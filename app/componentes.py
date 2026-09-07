@@ -134,23 +134,16 @@ def proximo_passo(chave: str, pronto: bool = True, motivo: str = "") -> None:
 
 
 
-def _a_mediana_se_compara(analise, indicador: str) -> bool:
-    """A mediana do periodo importado se compara com uma premissa anual?
+def a_mediana_se_compara(analise, indicador: str) -> bool:
+    """Delega para `referencias`, onde a regra mora.
 
-    A premissa projetada e sempre de um exercicio. Quando a serie importada e
-    trimestral, os indicadores que misturam fluxo do periodo com estoque saem a
-    um quarto, e a comparacao inverte o sinal do balizador.
+    Ela tem tres consumidores em duas camadas -- este, a tabela dos
+    direcionadores e a mesa de comparacao, que e motor --, e a copia local que
+    existia aqui era a razao de o terceiro ter nascido sem guarda nenhuma.
     """
     from valuation import referencias
-    from valuation.importacao.series import periodo_do_rotulo
 
-    try:
-        colunas = analise.indicadores.columns
-    except AttributeError:
-        return True
-    if not any(periodo_do_rotulo(c) for c in colunas):
-        return True
-    return referencias.atravessa_a_frequencia(indicador)
+    return referencias.a_mediana_se_compara(analise, indicador)
 
 
 def balizador(
@@ -198,7 +191,7 @@ def balizador(
         #
         # A regra e a mesma da aba da base (`referencias.atravessa_a_frequencia`):
         # margem e liquidez atravessam, retorno e crescimento nao.
-        if np.isfinite(historico) and _a_mediana_se_compara(analise, indicador):
+        if np.isfinite(historico) and a_mediana_se_compara(analise, indicador):
             anos = analise.anos
             partes.append(
                 f"**{formatar(historico, formato)}** na empresa "

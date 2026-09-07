@@ -14,6 +14,7 @@ from valuation.premissas import BASES_DO_MULTIPLO
 
 from .. import estado
 from ..componentes import (
+    a_mediana_se_compara,
     balizador,
     conceito,
     etapa,
@@ -271,11 +272,26 @@ def _balizadores_da_projecao(editada, analise, tem_arrendamento: bool) -> None:
         except Exception:  # noqa: BLE001 - indicador ausente na analise
             historico = float("nan")
         onde = referencias.descrever(indicador, projetado)
+        # **A coluna do percentil continua valendo, e a da empresa nao.** O
+        # numero comparado contra a base e a premissa **projetada**, que e anual
+        # por construcao; a mediana da empresa e do periodo importado, e numa
+        # serie trimestral um indicador que mistura fluxo com estoque sai a
+        # quatro vezes o valor anual. Medido na WEG: capital de giro / receita
+        # aparecia como **152,0%** entregues contra 12,0% projetados -- a
+        # tabela acusava a projecao de ser doze vezes menor do que a empresa
+        # entrega, quando o que muda e o denominador.
+        #
+        # A ausencia **diz por que**: coluna que esvazia sem explicacao nao se
+        # distingue de dado faltando.
+        if not a_mediana_se_compara(analise, indicador):
+            entregue = "série trimestral"
+        else:
+            entregue = formatar(historico, "pct")
         linhas.append(
             {
                 "Direcionador": coluna.replace(" (%)", ""),
                 "Você projetou (média)": formatar(projetado, "pct"),
-                "A empresa entregou (mediana)": formatar(historico, "pct"),
+                "A empresa entregou (mediana)": entregue,
                 "Onde isso cai na base": onde.replace("companhias brasileiras", "companhias")
                 if onde
                 else "—",

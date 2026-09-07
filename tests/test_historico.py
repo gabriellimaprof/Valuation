@@ -10,9 +10,16 @@ from valuation.historico import analisar, crescimento_composto, sugerir_premissa
 from valuation.importacao import Demonstracoes
 
 
-def _demonstracoes(dados: dict[str, list[float]], anos: list[int]) -> Demonstracoes:
+def _demonstracoes(
+    dados: dict[str, list[float]], anos: list[int], periodicidade: str = "anual"
+) -> Demonstracoes:
     valores = pd.DataFrame(dados, index=anos).T
-    return Demonstracoes(empresa="Teste S.A.", valores=valores, unidade="R$ milhoes")
+    return Demonstracoes(
+        empresa="Teste S.A.",
+        valores=valores,
+        unidade="R$ milhoes",
+        periodicidade=periodicidade,
+    )
 
 
 ANOS = [2021, 2022, 2023, 2024]
@@ -405,8 +412,12 @@ def test_o_prazo_medio_usa_a_duracao_do_periodo_e_nao_365_fixo():
     """
     from valuation.historico import NOME_DO_CICLO, dias_do_periodo
 
+    # A duracao vem **declarada**, e nao do rotulo: o ano movel tem rotulo de
+    # trimestre e cobre doze meses, e inferir dali fazia o ciclo da WEG sair em
+    # 43 dias onde ele e 166.
     assert list(dias_do_periodo([2023, 2024])) == [365.0, 365.0]
-    assert list(dias_do_periodo(["1T25", "3T26"])) == [365 / 4, 365 / 4]
+    assert list(dias_do_periodo(["1T25", "3T26"], "trimestral")) == [365 / 4, 365 / 4]
+    assert list(dias_do_periodo(["1T25", "3T26"])) == [365.0, 365.0]
 
     anual = _demonstracoes(
         {
@@ -429,6 +440,7 @@ def test_o_prazo_medio_usa_a_duracao_do_periodo_e_nao_365_fixo():
             "fornecedores": [100.0, 100.0],
         },
         ["1T24", "2T24"],
+        periodicidade="trimestral",
     )
 
     ciclo_anual = analisar(anual).indicadores.loc[NOME_DO_CICLO].iloc[-1]

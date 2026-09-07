@@ -302,7 +302,14 @@ def test_o_material_recusa_a_tabela_da_base_numa_serie_trimestral(empresa_exempl
             for rotulo in ("1T25", "2T25", "3T25")
         }
     )
-    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    analise = analisar(
+        Demonstracoes(
+            empresa="T",
+            valores=valores,
+            unidade="R$ mi",
+            periodicidade="trimestral",
+        )
+    )
     pagina = montar_html(avaliar(empresa_exemplo), analise=analise)
 
     assert "Onde a companhia cai na base brasileira" in pagina

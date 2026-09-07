@@ -134,6 +134,44 @@ def test_modelo_derivado_do_historico_tem_distancia_zero_e_isso_e_um_achado(
     assert "extrapolação" in frases
 
 
+def test_a_mesa_nao_compara_premissa_anual_com_mediana_trimestral(empresa_exemplo):
+    """O terceiro consumidor da regra, e o único que nasceu sem ela.
+
+    O balizador e a tabela dos direcionadores tinham cada um a sua cópia da
+    guarda; a mesa não tinha nenhuma. Uma série trimestral ao lado de duas
+    anuais produzia uma distância de crescimento que mede o **tamanho do
+    período**, e não a premissa — com o sinal trocado.
+
+    A ausência é por indicador, e não por modelo: margem e capex atravessam a
+    frequência e continuam valendo.
+    """
+    from dataclasses import replace as _replace
+
+    import numpy as np
+
+    from valuation.carteira import montar
+
+    tri = _projeto(empresa_exemplo, "Trimestral", [100.0, 110.0, 120.0, 130.0])
+    tri = _replace(
+        tri,
+        demonstracoes=_replace(tri.demonstracoes, periodicidade="trimestral"),
+    )
+    anual = _projeto(empresa_exemplo, "Anual", [100.0, 110.0, 120.0, 130.0])
+
+    premissas = montar([tri, anual]).premissas()
+    coluna = [c for c in premissas.columns if "Trimestral" in str(c)]
+    assert coluna, premissas.columns.tolist()
+
+    linha_crescimento = [i for i in premissas.index if "rescimento" in str(i)][0]
+    linha_margem = [i for i in premissas.index if "argem" in str(i)][0]
+
+    # A guarda e por indicador: crescimento nao atravessa, margem atravessa.
+    entregue = [c for c in coluna if "ntregue" in str(c)]
+    assert entregue, coluna
+    assert np.isnan(premissas.loc[linha_crescimento, entregue[0]])
+    assert np.isfinite(premissas.loc[linha_margem, entregue[0]])
+
+
 def test_a_mesa_avisa_quando_as_unidades_nao_batem(empresa_exemplo):
     """Um modelo em R$ mil ao lado de um em R$ milhões se lê errado por mil vezes.
 

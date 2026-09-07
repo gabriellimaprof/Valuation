@@ -395,3 +395,31 @@ SO_NO_EXERCICIO: frozenset[str] = frozenset(
 def atravessa_a_frequencia(indicador: str) -> bool:
     """O percentil deste indicador vale numa serie que nao e anual?"""
     return indicador not in SO_NO_EXERCICIO
+
+
+def a_mediana_se_compara(analise, indicador: str) -> bool:
+    """A mediana do periodo importado se compara com uma premissa **anual**?
+
+    Mora aqui, e nao no app, porque ha **tres** consumidores e eles nao estao na
+    mesma camada: o balizador ao lado do campo, a tabela dos direcionadores em
+    Premissas e a mesa de comparacao (`carteira.py`), que e motor. Os dois
+    primeiros nasceram com a regra copiada, e o terceiro nasceu **sem** ela --
+    que e o que uma regra copiada sempre acaba produzindo.
+
+    A premissa projetada e sempre de um exercicio. Numa serie trimestral, um
+    indicador que mistura fluxo do periodo com estoque sai a um quarto, e a
+    comparacao **inverte o sinal**: medido na WEG, 15% de ROIC perpetuo aparece
+    como "21,6% abaixo do historico" na leitura anual e como "5,4% acima" na
+    trimestral.
+
+    A **periodicidade e declarada e nao lida do rotulo**: o ano movel rolante
+    tem colunas rotuladas "2T26" cobrindo doze meses, e pelo rotulo ele seria
+    recusado aqui -- justamente a leitura anualizada que o app oferece como
+    saida.
+    """
+    periodicidade = getattr(
+        getattr(analise, "demonstracoes", None), "periodicidade", "anual"
+    )
+    if periodicidade != "trimestral":
+        return True
+    return atravessa_a_frequencia(indicador)

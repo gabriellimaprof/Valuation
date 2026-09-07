@@ -35,7 +35,7 @@ from .premissas import (
 DIAS_NO_ANO = 365
 
 
-def dias_do_periodo(colunas) -> "pd.Series":
+def dias_do_periodo(colunas, periodicidade: str = "anual") -> "pd.Series":
     """Quantos dias cada coluna cobre: 365 num exercicio, 91,25 num trimestre.
 
     **O prazo medio divide um saldo por uma venda diaria**, e a venda diaria sai
@@ -44,21 +44,17 @@ def dias_do_periodo(colunas) -> "pd.Series":
     inteiro: medido na WEG, o ciclo lia **689 dias** contra os 166 do exercicio
     -- quase exatamente 4x, e com cara de numero plausivel, porque dia e dia.
 
-    O rotulo da coluna e quem sabe a duracao, e ele ja e lido em
-    ``series.periodo_do_rotulo``. 365/4 e nao os 89-91 dias reais do trimestre:
-    assim quatro trimestres somam o ano, e o prazo trimestral fica comparavel com
-    o anual em vez de oscilar com o calendario.
-    """
-    from .importacao.series import periodo_do_rotulo
+    **A duracao vem declarada e nao do rotulo.** O ano movel rolante tem colunas
+    rotuladas `"2T26"` cobrindo **doze meses**, e inferir "trimestre" dali fazia
+    o ciclo da WEG sair em 43 dias onde ele e 166 -- o mesmo erro de quatro
+    vezes, na direcao oposta.
 
-    return pd.Series(
-        [
-            DIAS_NO_ANO / 4 if periodo_do_rotulo(c) else DIAS_NO_ANO
-            for c in colunas
-        ],
-        index=list(colunas),
-        dtype=float,
-    )
+    365/4 e nao os 89-91 dias reais do trimestre: assim quatro trimestres somam o
+    ano, e o prazo trimestral fica comparavel com o anual em vez de oscilar com o
+    calendario.
+    """
+    dias = DIAS_NO_ANO / 4 if periodicidade == "trimestral" else DIAS_NO_ANO
+    return pd.Series(dias, index=list(colunas), dtype=float)
 
 # Teto do que se pode chamar de custo de divida corporativa no Brasil. A Selic
 # oscilou entre 10% e 14% no periodo coberto pelos dados; um Kd acima disto quase
@@ -213,7 +209,7 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     cpv = d.serie("custo_produtos_vendidos")
     # A duracao da coluna decide o multiplicador do prazo medio, e nao uma
     # constante: numa serie trimestral o denominador e a receita de tres meses.
-    dias = dias_do_periodo(receita.index)
+    dias = dias_do_periodo(receita.index, d.periodicidade)
     depreciacao = d.serie("depreciacao_amortizacao")
     capex = d.serie("capex")
     ativo = d.serie("ativo_total")
@@ -670,6 +666,25 @@ def sugerir_premissas(
     ``crescimento_de_longo_prazo``; margens e intensidade de capital partem da
     mediana historica, que resiste melhor a anos atipicos.
     """
+    # **Serie trimestral nao sustenta projecao, e derivar dela produz um modelo
+    # que parece pronto.** Medido na WEG: a `receita_base` sai de um trimestre
+    # (R$ 10,1 bi contra R$ 40,8 bi), o capital de giro sai a **152% da receita**
+    # contra 36,7%, o crescimento cai de 14,7% para 0,2% -- e o equity value sai
+    # **90,9% menor**. Nenhum numero da erro; todos dao um numero errado.
+    #
+    # A recusa **nomeia a saida**, porque ela existe: o proprio app oferece o
+    # **ano movel rolante**, que sao doze meses encerrados em cada trimestre. Ele
+    # e a anualizacao certa desta serie, e multiplicar o trimestre por quatro
+    # seria inventar uma que ignora sazonalidade tendo a boa a um clique.
+    if analise.demonstracoes.periodicidade == "trimestral":
+        raise ValueError(
+            "Esta é uma série de **trimestres isolados**, e ela não sustenta uma "
+            "projeção: a receita-base seria a de três meses, o capital de giro "
+            "sairia quatro vezes maior sobre ela e o crescimento compararia "
+            "trimestres vizinhos. Importe em **Ano móvel rolante** — doze meses "
+            "encerrados em cada trimestre — ou em **Anual**, e derive de lá."
+        )
+
     if horizonte < 1:
         raise ValueError("O horizonte precisa de ao menos um ano.")
 
@@ -1036,7 +1051,9 @@ def ponte_do_ciclo(analise, de=None, para=None) -> "PonteDoCiclo | None":
     )
 
     receita = analise.demonstracoes.serie("receita_liquida")
-    dias = float(dias_do_periodo([para]).iloc[0])
+    dias = float(
+        dias_do_periodo([para], analise.demonstracoes.periodicidade).iloc[0]
+    )
     receita_final = float(receita.get(para, float("nan")))
     diaria = receita_final / dias if np.isfinite(receita_final) else float("nan")
 
@@ -1063,5 +1080,5 @@ def caixa_preso_no_ciclo(analise) -> pd.Series:
         return pd.Series(dtype="float64")
     ciclo = indicadores.loc[NOME_DO_CICLO]
     receita = analise.demonstracoes.serie("receita_liquida").reindex(ciclo.index)
-    dias = dias_do_periodo(ciclo.index)
+    dias = dias_do_periodo(ciclo.index, analise.demonstracoes.periodicidade)
     return ciclo * (receita / dias)

@@ -1009,20 +1009,24 @@ def test_o_ano_base_de_uma_serie_trimestral_e_o_exercicio():
     assert anual.ano_base == 2024, "a série anual não muda"
 
 
-def test_o_valuation_de_uma_serie_trimestral_nao_estoura():
-    """A ponta a ponta do defeito acima: importar trimestral e avaliar.
+def test_o_valuation_do_ano_movel_nao_estoura():
+    """A ponta a ponta do defeito do ano-base: importar ITR e avaliar.
 
-    O app permite derivar premissas de uma série trimestral, e até aqui isso
-    levantava `TypeError` dentro de `projecao` — um erro que só aparece quando
-    alguém percorre o caminho inteiro.
+    O ano móvel tem colunas rotuladas `"3T25"`, e `ano_base` as devolvia como
+    estavam — então `projecao` fazia `"3T25" + 1` e levantava `TypeError`. Um
+    erro que só aparece quando alguém percorre o caminho inteiro.
+
+    A série de trimestres **isolados** não entra aqui: ela é recusada antes, por
+    não sustentar projeção. O ano móvel é a leitura anualizada que a recusa
+    indica, e é ela que precisa chegar ao fim.
     """
     from valuation import avaliar
     from valuation.historico import analisar, sugerir_premissas
-    from valuation.importacao.cvm import importar_trimestral
+    from valuation.importacao.cvm import importar_ltm_rolante
     from valuation.modelo import Empresa
     from valuation.premissas import PremissasMacro, PremissasPerpetuidade
 
-    dfs = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    dfs = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
     s = sugerir_premissas(analisar(dfs))
     empresa = Empresa(
         nome=dfs.empresa,
@@ -1035,3 +1039,111 @@ def test_o_valuation_de_uma_serie_trimestral_nao_estoura():
     )
     resultado = avaliar(empresa)
     assert resultado.dcf.equity_value == resultado.dcf.equity_value  # nao e NaN
+
+
+def test_a_periodicidade_sobrevive_a_troca_de_unidade():
+    """O caminho real do app passa por `escalar`, e ele descartava o campo.
+
+    A tela de Dados converte para R$ milhões logo depois de importar, e
+    `escalar` reconstruía o objeto **campo a campo** — então a série trimestral
+    chegava ao resto do app declarando-se anual. As duas guardas de frequência
+    ficavam inertes exatamente no caminho que elas protegem: a projeção derivava
+    premissas de trimestres e o balizador comparava premissa anual com mediana
+    trimestral.
+
+    Cópia campo a campo é bomba-relógio: funciona até alguém acrescentar um
+    campo, e o defeito nasce longe da linha que o causou.
+    """
+    from valuation.importacao.cvm import importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    assert tri.escalar(1e6, "R$ milhões").periodicidade == "trimestral"
+
+
+def test_nenhum_campo_se_perde_numa_troca_de_unidade():
+    """A guarda geral, e não só a do campo que se perdeu desta vez.
+
+    Todo campo de `Demonstracoes` que `escalar` não muda de propósito — só
+    `valores`, `unidade` e `avisos` mudam — tem de sair do outro lado igual. O
+    teste acima trava um campo; este trava a **propriedade**, e por isso pega o
+    próximo campo antes de ele existir.
+    """
+    import dataclasses
+
+    from valuation.importacao.cvm import importar_trimestral
+    from valuation.importacao.importador import Demonstracoes
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    escalada = tri.escalar(1e6, "R$ milhões")
+    esperado_diferente = {"valores", "unidade", "avisos", "detalhe"}
+    for campo in dataclasses.fields(Demonstracoes):
+        if campo.name in esperado_diferente:
+            continue
+        assert getattr(escalada, campo.name) == getattr(tri, campo.name), (
+            f"`escalar` perdeu o campo {campo.name!r}"
+        )
+
+
+def test_a_periodicidade_e_declarada_e_nao_lida_do_rotulo():
+    """O rótulo mente nas duas direções, e o ano móvel é a prova.
+
+    O **ano móvel rolante** tem colunas rotuladas `"2T26"` e cada uma cobre
+    **doze meses**. Inferir "trimestre" do rótulo fazia o ciclo de caixa da WEG
+    sair em **43 dias** onde ele é 166 — quatro vezes menor, o mesmo erro que a
+    série isolada tinha na direção oposta.
+
+    Quem monta a série sabe quanto cada coluna cobre, e declara.
+    """
+    from valuation.importacao.cvm import (
+        importar_cvm,
+        importar_ltm_rolante,
+        importar_trimestral,
+    )
+    from valuation.historico import NOME_DO_CICLO, analisar
+
+    anual = importar_cvm(WEG, [2024], cache=DADOS)
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+
+    assert anual.periodicidade == "anual"
+    assert tri.periodicidade == "trimestral"
+    # O rotulo e de trimestre; o conteudo, de doze meses.
+    assert movel.periodicidade == "anual"
+    assert str(movel.valores.columns[-1]).endswith("25")
+
+    # E o ciclo sai na mesma ordem de grandeza nas tres leituras.
+    ciclos = {}
+    for nome, dfs in (("anual", anual), ("tri", tri), ("movel", movel)):
+        serie = analisar(dfs).indicadores.loc[NOME_DO_CICLO].dropna()
+        if len(serie):
+            ciclos[nome] = float(serie.iloc[-1])
+    assert len(ciclos) >= 2
+    assert max(ciclos.values()) / min(ciclos.values()) < 2.0, (
+        f"as leituras discordam por mais de 2x: {ciclos}"
+    )
+
+
+def test_serie_de_trimestres_isolados_nao_sustenta_projecao():
+    """Derivar dela produz um modelo que **parece pronto** e está errado.
+
+    Medido na WEG: a receita-base sairia de um trimestre (R$ 10,1 bi contra
+    R$ 40,8 bi), o capital de giro a **152% da receita** contra 36,7%, o
+    crescimento de 0,2% contra 14,7% — e o equity value **90,9% menor**. Nenhum
+    número dá erro; todos dão um número errado.
+
+    A recusa **nomeia a saída**, porque ela existe: o próprio app oferece o ano
+    móvel rolante, que é a anualização certa desta série.
+    """
+    import pytest
+
+    from valuation.historico import analisar, sugerir_premissas
+    from valuation.importacao.cvm import importar_ltm_rolante, importar_trimestral
+
+    tri = importar_trimestral(WEG, cache=DADOS, ano=2025)
+    with pytest.raises(ValueError, match="Ano móvel rolante"):
+        sugerir_premissas(analisar(tri))
+
+    # E o ano movel, que tem o mesmo rotulo, **passa** -- ele e a saida indicada.
+    movel = importar_ltm_rolante(WEG, cache=DADOS, ano=2025)
+    sugestao = sugerir_premissas(analisar(movel))
+    assert sugestao.operacionais.receita_base > 0

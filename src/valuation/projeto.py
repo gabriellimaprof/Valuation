@@ -110,6 +110,14 @@ def _demonstracoes_para_dados(dfs: Demonstracoes) -> dict[str, Any]:
         "unidade": dfs.unidade,
         "moeda": dfs.moeda,
         "origem": dfs.origem,
+        # **A periodicidade viaja com o arquivo**, e nao se re-deduz do rotulo:
+        # "1T26" rotula tanto um trimestre isolado quanto um ano movel de doze
+        # meses encerrado nele, e as duas series pedem tratamento oposto. Sem
+        # este campo, um valuation trimestral salvo voltava do disco
+        # declarando-se anual, e as duas guardas de frequencia -- a recusa em
+        # `sugerir_premissas` e a supressao da ancora no balizador -- ficavam
+        # inertes justamente no caminho que elas existem para proteger.
+        "periodicidade": dfs.periodicidade,
         "anos": [_periodo(ano) for ano in dfs.anos],
         "valores": {
             str(conta): {
@@ -192,6 +200,7 @@ def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
         origem=dados.get("origem", ""),
         unidade=dados.get("unidade", "unidades monetarias"),
         moeda=dados.get("moeda", "BRL"),
+        periodicidade=_periodicidade(dados),
         mapeamento=dict(dados.get("mapeamento") or {}),
         derivadas=dict(dados.get("derivadas") or {}),
         nao_reconhecidas=[
@@ -207,6 +216,23 @@ def _dados_para_demonstracoes(dados: dict[str, Any]) -> Demonstracoes:
         fonte=dict(dados.get("fonte") or {}),
         detalhe=_dados_para_detalhe(dados.get("detalhe")),
     )
+
+
+def _periodicidade(dados: dict[str, Any]) -> str:
+    """A periodicidade do arquivo, ou a que a origem revela num arquivo antigo.
+
+    Arquivo salvo antes deste campo existir nao o tem, e o padrao "anual"
+    reporia o defeito para ele. A recuperacao **nao adivinha pelo rotulo da
+    coluna** -- ele nao distingue trimestre isolado de ano movel --, e sim le a
+    origem, que o proprio app escreveu: a serie de trimestres se anuncia como
+    "trimestres isolados" e o ano movel, como "ano movel rolante". E leitura de
+    um texto que ja estava gravado, e nao inferencia.
+    """
+    declarada = dados.get("periodicidade")
+    if declarada:
+        return str(declarada)
+    origem = str(dados.get("origem") or "").lower()
+    return "trimestral" if "trimestres isolados" in origem else "anual"
 
 
 def _dados_para_detalhe(linhas: Any) -> pd.DataFrame | None:

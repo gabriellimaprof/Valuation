@@ -1102,9 +1102,7 @@ def _base_brasileira(analise) -> None:
     # frequencia.** Numa serie trimestral o ROIC sai a um quarto e o percentil da
     # WEG cai de 94 para 48 -- um numero que parece leitura e e artefato do
     # periodo. A regra e de `referencias`, e a tela so a obedece.
-    from valuation.importacao.series import periodo_do_rotulo
-
-    e_trimestral = any(periodo_do_rotulo(c) for c in analise.indicadores.columns)
+    e_trimestral = analise.demonstracoes.periodicidade == "trimestral"
 
     linhas = []
     for indicador, (n, quantis) in referencias.BASE.items():

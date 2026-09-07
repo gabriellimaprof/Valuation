@@ -12,7 +12,7 @@ usuario o que entendeu de cada arquivo antes de modelar em cima.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -189,6 +189,17 @@ class Demonstracoes:
     # modelo perde exatamente a parte que o analista usa para entender o numero.
     # Colunas: codigo, rotulo, demonstracao, nivel e uma por ano.
     detalhe: pd.DataFrame | None = None
+    # **Quanto tempo cada coluna cobre -- declarado, e nao inferido do rotulo.**
+    #
+    # O rotulo mente nas duas direcoes. O **ano movel rolante** tem colunas
+    # rotuladas `"2T26"` e cada uma cobre **doze meses**: inferir "trimestre" do
+    # rotulo fez o ciclo de caixa da WEG sair em **43 dias** onde ele e 166,
+    # quatro vezes menor. E a serie **trimestral isolada** tem o mesmo rotulo
+    # cobrindo tres meses, onde inferir "ano" fazia o mesmo erro ao contrario.
+    #
+    # Nenhuma das duas coisas esta no rotulo, e tentar adivinhar pela origem
+    # seria o mesmo defeito com outra roupa. Quem monta a serie sabe, e declara.
+    periodicidade: str = "anual"
 
     def linhas_publicadas(
         self, demonstracao: str | None = None, ocultar_vazias: bool = False
@@ -629,15 +640,26 @@ class Demonstracoes:
         return tabela
 
     def escalar(self, divisor: float, nova_unidade: str) -> "Demonstracoes":
-        """Converte a unidade dos valores (por exemplo, reais para R$ milhoes)."""
+        """Converte a unidade dos valores (por exemplo, reais para R$ milhoes).
+
+        **Usa `replace` e nao reconstroi campo a campo**, e a diferenca custou
+        caro. A versao anterior listava os campos um a um e por isso descartava,
+        calado, qualquer campo acrescentado depois dela -- foi assim que
+        `periodicidade` se perdeu: a tela converte para R$ milhoes logo apos
+        importar, e a serie trimestral chegava ao resto do app declarando-se
+        **anual**. Com isso a projecao derivava premissas de trimestres (capital
+        de giro a 152% da receita) e o balizador comparava a premissa anual com a
+        mediana trimestral, as duas guardas inertes.
+
+        Copia campo a campo e uma bomba-relogio: ela funciona ate alguem
+        acrescentar um campo, e o defeito nasce longe da linha que o causou.
+        """
         if divisor == 0:
             raise ValueError("O divisor de escala nao pode ser zero.")
-        return Demonstracoes(
-            empresa=self.empresa,
+        return replace(
+            self,
             valores=self.valores / divisor,
-            origem=self.origem,
             unidade=nova_unidade,
-            moeda=self.moeda,
             mapeamento=dict(self.mapeamento),
             derivadas=dict(self.derivadas),
             nao_reconhecidas=list(self.nao_reconhecidas),

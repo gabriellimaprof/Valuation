@@ -619,11 +619,11 @@ def test_o_balizador_nao_compara_premissa_anual_com_mediana_trimestral():
     """
     import pandas as pd
 
-    from app.componentes import _a_mediana_se_compara
+    from app.componentes import a_mediana_se_compara
     from valuation.historico import analisar
     from valuation.importacao import Demonstracoes
 
-    def _analise(colunas):
+    def _analise(colunas, periodicidade="anual"):
         valores = pd.DataFrame(
             {
                 c: {
@@ -636,20 +636,107 @@ def test_o_balizador_nao_compara_premissa_anual_com_mediana_trimestral():
                 for c in colunas
             }
         )
-        return analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$"))
+        # A periodicidade e **declarada**: o rotulo nao decide, porque o ano
+        # movel tem rotulo de trimestre e conteudo de doze meses.
+        return analisar(
+            Demonstracoes(
+                empresa="T",
+                valores=valores,
+                unidade="R$",
+                periodicidade=periodicidade,
+            )
+        )
 
     anual = _analise([2023, 2024, 2025])
-    trimestral = _analise(["1T25", "2T25", "3T25"])
+    trimestral = _analise(["1T25", "2T25", "3T25"], periodicidade="trimestral")
 
     # Na serie anual tudo se compara.
     for indicador in ("ROIC", "Crescimento da receita", "Margem EBITDA"):
-        assert _a_mediana_se_compara(anual, indicador), indicador
+        assert a_mediana_se_compara(anual, indicador), indicador
 
     # Na trimestral, so o que atravessa a frequencia.
-    assert not _a_mediana_se_compara(trimestral, "ROIC")
-    assert not _a_mediana_se_compara(trimestral, "Crescimento da receita")
-    assert _a_mediana_se_compara(trimestral, "Margem EBITDA")
-    assert _a_mediana_se_compara(trimestral, "Liquidez corrente")
+    assert not a_mediana_se_compara(trimestral, "ROIC")
+    assert not a_mediana_se_compara(trimestral, "Crescimento da receita")
+    assert a_mediana_se_compara(trimestral, "Margem EBITDA")
+    assert a_mediana_se_compara(trimestral, "Liquidez corrente")
+
+
+def test_a_tabela_dos_direcionadores_respeita_a_frequencia(monkeypatch):
+    """A segunda porta da mesma regra, e ela ficou sem guarda até alguém abrir a tela.
+
+    Medido na WEG com série trimestral: `Capital de giro / receita` aparecia
+    como **152,0% entregues** contra 12,0% projetados — a tabela acusava a
+    projeção de ser doze vezes menor do que a empresa entrega, quando o que
+    muda é o denominador (o saldo é o mesmo, a receita é de três meses).
+
+    A coluna do percentil **continua valendo**: ali o número comparado é a
+    premissa projetada, que é anual por construção.
+    """
+    import pandas as pd
+
+    from app.paginas import premissas as tela
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    def _analise(colunas, periodicidade):
+        valores = pd.DataFrame(
+            {
+                c: {
+                    "receita_liquida": 1000.0,
+                    "custo_produtos_vendidos": 600.0,
+                    "ebit": 200.0,
+                    "depreciacao_amortizacao": 50.0,
+                    "capex": 60.0,
+                    "contas_receber": 400.0,
+                    "estoques": 300.0,
+                    "fornecedores": 200.0,
+                    "ativo_total": 1500.0,
+                    "patrimonio_liquido": 700.0,
+                }
+                for c in colunas
+            }
+        )
+        return analisar(
+            Demonstracoes(
+                empresa="T",
+                valores=valores,
+                unidade="R$",
+                periodicidade=periodicidade,
+            )
+        )
+
+    capturado = {}
+    monkeypatch.setattr(tela, "secao", lambda *a, **k: None)
+    monkeypatch.setattr(tela.st, "html", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tela, "tabela_de_indicadores", lambda quadro: capturado.setdefault("q", quadro)
+    )
+
+    editada = pd.DataFrame(
+        {
+            "Crescimento da receita (%)": [6.0, 6.0],
+            "Margem EBITDA (%)": [20.0, 20.0],
+            "Capital de giro / receita (%)": [12.0, 12.0],
+        }
+    )
+
+    tela._balizadores_da_projecao(
+        editada, _analise(["1T25", "2T25", "3T25"], "trimestral"), False
+    )
+    quadro = capturado["q"]
+    entregue = "A empresa entregou (mediana)"
+    assert quadro.loc["Crescimento da receita", entregue] == "série trimestral"
+    assert quadro.loc["Capital de giro / receita", entregue] == "série trimestral"
+    # Margem atravessa a frequencia: continua com numero.
+    assert "%" in quadro.loc["Margem EBITDA", entregue]
+    # O percentil compara a premissa **projetada**, que e anual: ele fica.
+    assert "percentil" in quadro.loc["Capital de giro / receita", "Onde isso cai na base"]
+
+    capturado.clear()
+    tela._balizadores_da_projecao(
+        editada, _analise([2023, 2024, 2025], "anual"), False
+    )
+    assert "série trimestral" not in capturado["q"][entregue].tolist()
 
 
 def test_o_balizador_diz_por_que_a_comparacao_sumiu():

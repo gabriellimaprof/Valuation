@@ -120,6 +120,7 @@ def montar_serie(
     unidade: str,
     origem: str,
     avisos: list[str] | None = None,
+    periodicidade: str = "anual",
 ) -> Demonstracoes:
     """Junta demonstrações de vários períodos numa tabela com uma coluna cada.
 
@@ -157,6 +158,9 @@ def montar_serie(
         mapeamento=mapeamento,
         avisos=list(avisos or []),
         detalhe=_arvore_da_serie(partes),
+        # Quem monta a serie e quem sabe quanto tempo cada coluna cobre: o ano
+        # movel tem rotulo de trimestre e conteudo de doze meses.
+        periodicidade=periodicidade,
     )
 
 
