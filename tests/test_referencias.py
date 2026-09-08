@@ -128,22 +128,78 @@ def test_sem_dfp_no_cache_nao_ha_o_que_afirmar(tmp_path):
     assert safra(cache=tmp_path) is None
 
 
+def _cache_de_dfp(tmp_path, tamanhos: dict[int, int]):
+    """Um cache com um zip por exercício, do tamanho pedido."""
+    import zipfile
+
+    for ano, tamanho in tamanhos.items():
+        caminho = tmp_path / f"dfp_cia_aberta_{ano}.zip"
+        with zipfile.ZipFile(caminho, "w") as zf:
+            # `writestr` comprime; o que a guarda le e `file_size`, que e o
+            # tamanho **descomprimido** -- entao o conteudo pode ser repetitivo.
+            zf.writestr(f"dfp_cia_aberta_DRE_con_{ano}.csv", "x" * tamanho)
+    return tmp_path
+
+
 def test_zip_vazio_nao_conta_como_exercicio_publicado(tmp_path):
     """Em janeiro o arquivo do exercício já existe e não tem companhia nenhuma.
 
     Contá-lo faria a tela anunciar atraso por um exercício que ainda não saiu —
     é a mesma armadilha de ``_itr_vazio``, e o custo de errar é o mesmo.
     """
-    import zipfile
-
     from valuation.pares import _anos_de_dfp_no_cache
 
-    for ano, conteudo in ((2024, "x" * 5000), (2025, "CNPJ_CIA;DT_REFER\n")):
-        caminho = tmp_path / f"dfp_cia_aberta_{ano}.zip"
-        with zipfile.ZipFile(caminho, "w") as zf:
-            zf.writestr(f"dfp_cia_aberta_DRE_con_{ano}.csv", conteudo)
+    cache = _cache_de_dfp(tmp_path, {2024: 6_000_000, 2025: 20})
+    assert _anos_de_dfp_no_cache(cache) == [2024]
 
-    assert _anos_de_dfp_no_cache(tmp_path) == [2024]
+
+def test_exercicio_pela_metade_tambem_nao_conta(tmp_path):
+    """**O caso que a guarda anterior não alcançava**, e ele estava disparando.
+
+    Em setembro de 2026 o arquivo do exercício de 2026 não está vazio: ele tem
+    as companhias de **exercício deslocado**, as que fecham em março ou junho.
+    Medido no cache: **7 companhias e 95 KB**, contra 340 a 476 companhias e
+    5,1 a 7,1 MB nos dezesseis exercícios publicados.
+
+    O corte era de 2.000 bytes — calibrado para o arquivo vazio de janeiro —, e
+    95 KB passava. A tela anunciava "**os percentis estão 1 exercício atrás**" e
+    continuaria anunciando até 2027, por um exercício com 1,6% da base.
+
+    Alarme que dispara sem motivo treina o leitor a ignorar, inclusive quando
+    ele estiver certo. É o defeito que este projeto já pagou duas vezes, nos dois
+    sentidos.
+    """
+    from valuation.pares import _anos_de_dfp_no_cache
+
+    # As duas populacoes medidas, e a distancia entre elas: mais de uma ordem de
+    # grandeza. O corte de 1 MB fica na terra de ninguem.
+    cache = _cache_de_dfp(tmp_path, {2024: 6_800_000, 2025: 6_400_000, 2026: 95_000})
+    assert _anos_de_dfp_no_cache(cache) == [2024, 2025]
+
+
+def test_a_safra_nao_se_declara_atrasada_por_exercicio_parcial(tmp_path):
+    """A consequência do corte, na frase que o usuário lê."""
+    from valuation.referencias import ANO_MAIS_RECENTE_MEDIDO, safra
+
+    cache = _cache_de_dfp(
+        tmp_path,
+        {ANO_MAIS_RECENTE_MEDIDO: 6_400_000, ANO_MAIS_RECENTE_MEDIDO + 1: 95_000},
+    )
+    medida = safra(cache=cache)
+    assert medida is not None
+    assert not medida.desatualizada
+    assert "atrás" not in medida.resumo
+
+    # **E ela volta a acusar quando o exercicio sai de verdade.** Sem este lado
+    # o teste passaria com uma guarda que nunca deixa nada contar -- que e o
+    # mesmo defeito pelo lado oposto.
+    outro = tmp_path / "exercicio_publicado"
+    outro.mkdir()
+    _cache_de_dfp(
+        outro,
+        {ANO_MAIS_RECENTE_MEDIDO: 6_400_000, ANO_MAIS_RECENTE_MEDIDO + 1: 6_100_000},
+    )
+    assert safra(cache=outro).desatualizada
 
 
 def test_todo_indicador_publicado_declara_a_unidade():
@@ -349,3 +405,49 @@ def test_fluxo_sobre_fluxo_do_mesmo_periodo_continua_atravessando():
 
     for indicador in ("Capex / Receita", "Depreciacao / Receita", "Aluguel / EBITDA"):
         assert referencias.atravessa_a_frequencia(indicador), indicador
+
+
+def test_as_duas_medicoes_de_frequencia_ordenam_diferente():
+    """Por que a classificação é **por estrutura**, com dois números medidos.
+
+    Há duas formas de medir quanto um indicador sofre com a troca de
+    frequência, e elas não são a mesma coisa:
+
+    * **desvio de percentil** — quantos pontos o indicador anda na distribuição
+      da base entre as duas leituras. Mede o efeito sobre a *comparação*.
+    * **razão de nível** — quanto o próprio número encolhe ou cresce. Mede o
+      efeito sobre o *valor*.
+
+    Medidas no mesmo par de leituras (ano móvel contra trimestres isolados do
+    mesmo período), elas **ordenam diferente**:
+
+    | | desvio | razão |
+    |---|---|---|
+    | Taxa de reinvestimento | 6,6p — 6º de 7 | **1,64x — 3º de 7** |
+    | Conversão operacional | **17,9p — 2º de 7** | 1,30x — 6º de 7 |
+    | Investimento em giro | 17,0p | 2,77x |
+    | Liquidez corrente | 0,0p | 1,00x |
+
+    Um indicador pode ficar quieto no percentil e mover 64% no nível — basta que
+    a distribuição da base seja larga o bastante para absorver a diferença. E
+    pode mover pouco no nível e muito no percentil, se a base for apertada ali.
+
+    **Classificar por qualquer uma das duas sozinha erraria**, e em direções
+    opostas: pelo percentil, `Taxa de reinvestimento` passaria (6,6p está na
+    faixa do grupo que atravessa); pela razão, `Conversão operacional` passaria
+    (1,30x é menos que `Capex / Receita`, que atravessa).
+
+    É por isso que a regra deste projeto é classificar pela **estrutura** — os
+    dois misturam fluxo do período com termo irregular dentro do ano — e usar as
+    medições para confirmar, nunca para decidir.
+    """
+    from valuation import referencias
+
+    # Os dois que cada metodo deixaria passar sozinho, e que a estrutura pega.
+    assert not referencias.atravessa_a_frequencia("Taxa de reinvestimento")
+    assert not referencias.atravessa_a_frequencia("Conversao operacional (CGO / EBITDA)")
+    assert not referencias.atravessa_a_frequencia("Investimento em giro (DFC) / Receita")
+
+    # E o controle nos dois metodos ao mesmo tempo: estoque sobre estoque nao se
+    # move nem no percentil (0,0p) nem no nivel (1,00x).
+    assert referencias.atravessa_a_frequencia("Liquidez corrente")

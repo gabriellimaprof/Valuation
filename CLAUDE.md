@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1205 testes
+pytest                        # 1208 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.205 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.208 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2264,6 +2264,81 @@ manda procurar defeito onde nao ha -- gastei uma investigacao inteira atras de
 uma perda de conteudo que nunca existiu -- e treina quem le a ignorar a
 variacao, inclusive a verdadeira. O tempo esgotado virou **problema declarado**,
 com o nome do passo em que aconteceu.
+
+### O app anunciava safra atrasada por um exercicio com sete companhias
+
+`referencias.safra` compara o exercicio medido com o mais novo **ja baixado no
+cache**, e dizia: *"os percentis estao 1 exercicio atras -- eles foram medidos
+ate 2025 e a CVM ja publicou 2026"*. Em setembro de 2026 isso e falso: a DFP do
+exercicio de 2026 so sai em 2027.
+
+A guarda existia e nao alcancava o caso. Ela recusa **zip vazio** -- o arquivo
+de janeiro, que existe sem companhia nenhuma --, com corte em 2.000 bytes. O que
+ha em setembro e outra coisa: as companhias de **exercicio deslocado**, as que
+fecham em marco ou junho. Medido nos 17 exercicios do cache:
+
+| | companhias | tamanho do `DRE_con` |
+|---|---|---|
+| 2010-2025 (dezesseis) | 340 a 476 | 5,1 MB a 7,1 MB |
+| **2026** | **7** | **0,095 MB** |
+
+Duas populacoes separadas por mais de uma ordem de grandeza, e o corte novo fica
+na terra de ninguem: **1 MB e cinco vezes menor que o menor exercicio publicado
+e dez vezes maior que o parcial**. Ele le o metadado do zip, sem descomprimir --
+a verificacao roda a cada abertura de tela.
+
+O custo de errar ja tem nome aqui: o aviso dispararia ate 2027, por um exercicio
+com **1,6% da base**, e alarme que dispara sem motivo treina o leitor a ignorar
+-- inclusive quando ele estiver certo. O teste novo trava os **dois lados**: o
+exercicio parcial nao conta, e o publicado volta a contar. Sem o segundo, uma
+guarda que nunca deixa nada passar tambem passaria.
+
+### O universo regenerado confirmou as distribuicoes publicadas
+
+Regerar o universo era necessario para os oito indicadores novos entrarem no
+arquivo em cache -- eles tinham sido medidos por uma passada avulsa. E a
+regeracao respondeu de graca a pergunta que a safra levanta: **as distribuicoes
+publicadas ainda descrevem a base?**
+
+Medido, refazendo as 421 companhias de 2021-2025 pelo caminho oficial
+(`python -m valuation.pares`): **as 30 distribuicoes de `BASE` reproduzem ate a
+terceira casa decimal**, do `Conversao de caixa` ao `Ciclo de conversao de
+caixa`. Duas conclusoes:
+
+- a base **nao envelheceu**, e o aviso de safra estava errado por outro motivo
+  (acima);
+- a passada avulsa que mediu os oito indicadores novos produziu **exatamente** o
+  que o caminho oficial produz -- a metodologia era a mesma, e nao so parecida.
+
+O arquivo passou de 31 para 38 colunas. `Giro do capital investido` **nao** foi
+acrescentado a `INDICADORES_EXTRA`: ele ja e dimensao de comparacao, e lista-lo
+nas duas duplicaria a coluna.
+
+### As duas medicoes de frequencia ordenam diferente
+
+Ha duas formas de medir quanto um indicador sofre com a troca de frequencia, e
+elas nao sao a mesma coisa: **desvio de percentil** (quantos pontos ele anda na
+distribuicao da base) mede o efeito sobre a *comparacao*; **razao de nivel**
+(quanto o proprio numero encolhe) mede o efeito sobre o *valor*.
+
+Medidas no mesmo par de leituras, elas **discordam**:
+
+| | desvio | razao |
+|---|---|---|
+| Taxa de reinvestimento | 6,6p -- 6o de 7 | **1,64x -- 3o de 7** |
+| Conversao operacional | **17,9p -- 2o de 7** | 1,30x -- 6o de 7 |
+| Investimento em giro | 17,0p | 2,77x |
+| Liquidez corrente | 0,0p | 1,00x |
+
+Um indicador pode ficar quieto no percentil e mover **64% no nivel**, se a
+distribuicao da base for larga o bastante para absorver a diferenca -- e o
+contrario tambem.
+
+**Classificar por qualquer uma das duas sozinha erraria, em direcoes opostas**:
+pelo percentil, `Taxa de reinvestimento` passaria; pela razao, `Conversao
+operacional` passaria. E a melhor defesa que este projeto tem da propria regra --
+classificar pela **estrutura** e usar as medicoes para confirmar, nunca para
+decidir.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

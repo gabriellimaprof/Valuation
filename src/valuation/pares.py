@@ -486,6 +486,32 @@ def universo_mais_proximo(anos: list[int]) -> tuple[Universo, list[int]] | None:
 
 # Um CSV com so o cabecalho tem algumas centenas de bytes. O corte e folgado
 # de proposito: o objetivo e separar 'vazio' de 'publicado', e nao medir.
+# **Quando um exercicio conta como publicado.** O corte anterior era 2.000 bytes
+# e existia para o caso de janeiro: o arquivo do exercicio ja existe e nao tem
+# companhia nenhuma. Ele nao alcanca o caso de **setembro**, em que o arquivo tem
+# as companhias de exercicio deslocado -- as que fecham em marco ou junho -- e
+# mais ninguem.
+#
+# Medido nos 17 exercicios do cache, pelo tamanho do `DRE_con`:
+#
+#     2010-2025   5,1 MB a 7,1 MB     340 a 476 companhias
+#     2026         0,095 MB           **7 companhias**
+#
+# Sao duas populacoes separadas por mais de uma ordem de grandeza, e o corte fica
+# no meio da terra de ninguem: 1 MB e **cinco vezes menor** que o menor exercicio
+# publicado e **dez vezes maior** que o parcial.
+#
+# O custo de errar ja tem nome neste projeto: com 7 de 437 companhias a tela
+# anunciava "**os percentis estao 1 exercicio atras**", e continuaria anunciando
+# ate 2027 -- um alarme que dispara sem motivo treina o leitor a ignorar,
+# inclusive quando ele estiver certo.
+#
+# E o tamanho basta: ele vem do metadado do zip, sem descomprimir nem parsear. A
+# verificacao roda a cada abertura de tela.
+TAMANHO_DE_EXERCICIO_PUBLICADO = 1_000_000
+
+# Mantido pelo caso de janeiro, e porque um arquivo corrompido de 300 bytes nao
+# e a mesma coisa que um exercicio parcial.
 TAMANHO_DE_ARQUIVO_VAZIO = 2_000
 
 
@@ -552,17 +578,19 @@ def _anos_de_dfp_no_cache(cache: Path | None = None) -> list[int]:
         rotulo = arquivo.stem.split("_")[-1]
         if not rotulo.isdigit():
             continue
-        # **Zip vazio nao conta.** Em janeiro o arquivo do exercicio ja existe e
-        # nao tem companhia nenhuma; conta-lo faria a tela anunciar que o
-        # universo esta atrasado por um exercicio que ainda nao foi publicado.
-        # E a mesma armadilha de ``_itr_vazio``, e o custo de errar e o mesmo:
-        # alarme que dispara sem motivo treina o leitor a ignorar.
+        # **Exercicio pela metade nao conta**, e nem so o vazio. Em janeiro o
+        # arquivo existe sem companhia nenhuma; em setembro ele tem as de
+        # exercicio deslocado e mais ninguem -- 7 de 437 na medicao. Contar
+        # qualquer um dos dois faz a tela anunciar atraso por um exercicio que
+        # ainda nao foi publicado. E a mesma armadilha de ``_itr_vazio``, e o
+        # custo de errar e o mesmo: alarme que dispara sem motivo treina o leitor
+        # a ignorar.
         try:
             with zipfile.ZipFile(arquivo) as zf:
                 nome = f"dfp_cia_aberta_DRE_con_{rotulo}.csv"
                 if nome not in zf.namelist():
                     continue
-                if zf.getinfo(nome).file_size <= TAMANHO_DE_ARQUIVO_VAZIO:
+                if zf.getinfo(nome).file_size < TAMANHO_DE_EXERCICIO_PUBLICADO:
                     continue
         except (OSError, zipfile.BadZipFile):
             continue
