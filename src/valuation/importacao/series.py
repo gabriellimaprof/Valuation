@@ -62,6 +62,20 @@ def periodo_do_rotulo(rotulo) -> tuple[int, int] | None:
     return (valor if valor > 1900 else 2000 + valor, numero)
 
 
+def rotulos_de_trimestre(colunas) -> list:
+    """As colunas cujo rotulo se le como trimestre (``3T25``).
+
+    Existe para a tela poder **perguntar**. Numa planilha o app nao sabe o que
+    cada coluna cobre: `1T26` rotula tanto tres meses quanto os doze encerrados
+    neles, e as duas leituras pedem tratamento oposto. Inferir dai e a armadilha
+    que este projeto documenta -- foi assim que o ciclo da WEG saiu em 43 dias
+    onde ele e 166.
+
+    O que a funcao devolve nao decide nada: ela so diz **onde a pergunta cabe**.
+    """
+    return [c for c in colunas if periodo_do_rotulo(c) is not None]
+
+
 def ano_do_rotulo(rotulo) -> int | None:
     """O **exercicio** a que a coluna pertence: ``3T25`` e 2025, ``2024`` e 2024.
 

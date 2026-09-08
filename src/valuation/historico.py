@@ -59,7 +59,40 @@ def dias_do_periodo(colunas, periodicidade: str = "anual") -> "pd.Series":
 # Teto do que se pode chamar de custo de divida corporativa no Brasil. A Selic
 # oscilou entre 10% e 14% no periodo coberto pelos dados; um Kd acima disto quase
 # sempre indica que o numerador nao e juro, e nao que a empresa paga tanto.
+#
+# **Ele vale sobre o juro pago, e o mesmo numero sobre a despesa financeira quer
+# dizer outra coisa.** Medido na safra 2021-2025:
+#
+#     Custo da divida pelo caixa      P50  9,3%   acima de 25%:  2,6% da base
+#     Custo da divida efetivo         P50 18,2%   acima de 25%: 28,2% da base
+#
+# Sao duas distribuicoes diferentes -- a segunda carrega variacao cambial e
+# monetaria de todo o passivo --, e 25% e "implausivel" numa e "quartil alto" na
+# outra. Este projeto ja pagou por juntar duas grandezas num numero so: era o
+# `ALAVANCAGEM_ALTA` medindo D/E e divida/EBITDA com o mesmo 3,5, e que os dois
+# calhassem de ser iguais era coincidencia e nao calibracao.
 KD_MAXIMO_PLAUSIVEL = 0.25
+
+# O mesmo corte sobre a **despesa financeira**, e ele nao pergunta a mesma coisa:
+# nao e "esta divida e cara demais?", e sim "este denominador significa alguma
+# coisa?". Ele exclui 25,8% da base de `qualidade._juros`, e **medi mover e
+# rejeitei**, com o sinal de descolamento do juro como criterio:
+#
+#     corte    exclui   o sinal acusaria   grave
+#     25,0%     25,8%       18,9%           7,7%     <- atual
+#     57,2%      6,9%       36,4%          23,8%     P90 da competencia
+#     100,0%     4,0%       39,3%          26,6%     "acima de 100% nao e taxa"
+#
+# `JURO_DESCOLADO` e `JURO_MUITO_DESCOLADO` sao o P75 e o P90 do descolamento, e
+# foram calibrados **com esta porta no lugar** -- por isso acusam 18,9% e 7,7%,
+# perto do que um quartil e um decil devem acusar. Abri-la faria o sinal disparar
+# em **dois em cada cinco**, que e o defeito que este projeto ja pagou quando o
+# descolamento acusava 82,3%.
+#
+# O corte de 100% e tentador porque e **estrutural** -- acima dele a despesa do
+# ano supera a divida inteira e a razao deixa de ser uma taxa --, e ainda assim
+# nao serve: ele nao mede o que a porta precisa medir, que e denominador pequeno.
+DESPESA_FINANCEIRA_SEM_DENOMINADOR = 0.25
 
 
 def _media_movel_de_saldo(serie: pd.Series) -> pd.Series:
@@ -984,10 +1017,20 @@ def sugerir_premissas(
             f"nominal ({aliquota_ir:.1%}). Considere usar a efetiva na projecao."
         )
 
-    # Acima de KD_MAXIMO_PLAUSIVEL a serie nao esta medindo custo de divida --
-    # sobra de variacao cambial, divida media quase zero, ou os dois. Montar o Kd
-    # sinteticamente e mais honesto que propagar o numero.
-    kd_utilizavel = bool(np.isfinite(kd) and 0 < kd < KD_MAXIMO_PLAUSIVEL)
+    # Acima do teto a serie nao esta medindo custo de divida -- sobra de variacao
+    # cambial, divida media quase zero, ou os dois. Montar o Kd sinteticamente e
+    # mais honesto que propagar o numero.
+    #
+    # **O teto depende de qual serie alimentou o `kd`**: o juro pago e a despesa
+    # financeira tem distribuicoes diferentes, e ate aqui os dois eram medidos
+    # pelo mesmo numero. Hoje os valores coincidem; o que muda e que a proxima
+    # calibracao pode mexer num sem mexer no outro.
+    teto = (
+        KD_MAXIMO_PLAUSIVEL
+        if "juros pagos" in kd_origem
+        else DESPESA_FINANCEIRA_SEM_DENOMINADOR
+    )
+    kd_utilizavel = bool(np.isfinite(kd) and 0 < kd < teto)
     if np.isfinite(kd) and not kd_utilizavel:
         alertas.append(
             f"O custo da divida calculado do historico deu {kd:.1%}, fora do que "

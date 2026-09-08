@@ -451,3 +451,34 @@ def test_as_duas_medicoes_de_frequencia_ordenam_diferente():
     # E o controle nos dois metodos ao mesmo tempo: estoque sobre estoque nao se
     # move nem no percentil (0,0p) nem no nivel (1,00x).
     assert referencias.atravessa_a_frequencia("Liquidez corrente")
+
+
+def test_as_constantes_da_safra_batem_com_o_que_a_base_guarda():
+    """Texto e constante que descrevem a medição envelhecem calados.
+
+    `COMPANHIAS_MEDIDAS` e `ANO_MAIS_RECENTE_MEDIDO` são escritos à mão e
+    alimentam a frase que a tela mostra — *"percentis medidos em 421
+    companhias, exercício 2025"*. Nada os amarrava à medição, então uma safra
+    nova com o número antigo produziria uma frase errada com aparência de
+    correta. É o mesmo defeito da anotação de `DESCOLAMENTO_DO_JURO` que ficou
+    para trás, e custa o mesmo: trabalho gasto confiando no que não se conferiu.
+
+    `BASE` guarda o `n` de cada distribuição, e isso dá a âncora: **nenhum
+    indicador pode ter sido medido em mais companhias do que a safra tem**, e
+    ao menos um chega ao total — quem não depende de conta rara.
+    """
+    import re
+
+    from valuation import referencias
+
+    contagens = [n for n, _ in referencias.BASE.values()]
+    assert max(contagens) <= referencias.COMPANHIAS_MEDIDAS
+    assert max(contagens) == referencias.COMPANHIAS_MEDIDAS, (
+        "nenhum indicador alcança a safra inteira — ou a constante está velha, "
+        "ou a medição perdeu companhias"
+    )
+
+    # E o ano vem do **mesmo texto** que a tela cita, em vez de duas fontes.
+    anos = [int(a) for a in re.findall(r"\b(20\d\d)\b", referencias.MEDIDO_EM)]
+    assert anos, "MEDIDO_EM deixou de nomear os exercícios medidos"
+    assert max(anos) == referencias.ANO_MAIS_RECENTE_MEDIDO

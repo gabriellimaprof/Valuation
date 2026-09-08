@@ -555,28 +555,30 @@ def test_serie_anual_longa_continua_partindo_do_cagr():
     assert "CAGR" in sugestao.justificativas["crescimento_receita"]
 
 
-def test_a_guarda_de_span_protege_o_caminho_da_planilha():
-    """Com três ITRs ela deixou de disparar na CVM, e continua necessária aqui.
+def test_a_guarda_de_span_nao_tem_chamador_no_app_e_isso_esta_certo():
+    """**Eu documentei a planilha como chamadora dela, e estava errado.**
 
-    Medido com o padrão novo: **0 de 57 companhias** produzem span entre 0 e 1
-    ano pelo caminho da CVM — 40 do universo (mínimo 1,50 ano) e 17 de fora dele
-    (mínimo 2,00). As três sem série são holdings e seguradoras sem linha de
-    receita, que falham antes, em `len(valores) < 2`.
+    A afirmação anterior era que a guarda seguia necessária porque o usuário
+    importa planilha e ali é ele quem escreve o cabeçalho. Medido depois: o
+    importador de planilha **recusa cabeçalho de trimestre** — `1T26` não tem
+    quatro dígitos e `1T2026` passou a ser recusado explicitamente. Nenhuma
+    planilha entra com rótulo de trimestre, então nenhuma produz span curto.
 
-    Mas o usuário também importa **planilha**, e ali é ele quem escreve o
-    cabeçalho da coluna. Duas colunas `1T26` e `2T26` cobrem três meses, e sem a
-    guarda o movimento de um trimestre viraria a premissa de crescimento
-    perpétuo.
+    E pelo caminho da CVM são **0 de 57 companhias** com span entre 0 e 1 ano
+    (40 do universo, mínimo 1,50; 17 de fora, mínimo 2,00). A série de
+    trimestres isolados nem chega aqui: `sugerir_premissas` a recusa antes.
 
-    **A periodicidade e o span respondem perguntas diferentes**, e este teste é
-    onde isso fica visível: a planilha se declara `anual` (é o padrão, e o app
-    não tem como saber), então as guardas de *frequência* não disparam — e a de
-    *span* dispara, porque ela lê a distância entre os rótulos. Quanto cada
-    coluna cobre e quanto as colunas distam são coisas distintas.
+    Então a guarda **não tem chamador hoje**, e ela fica assim mesmo: ela custa
+    uma comparação, e é a rede de quem construir uma série nova amanhã. O que
+    não pode ficar é a afirmação errada — anotação errada envelhece igual a
+    número errado, e custa o mesmo.
+
+    O teste continua exercitando a guarda **pela construção direta**, que é o
+    que sobrou: `Demonstracoes` com rótulos de trimestre, montada em memória.
     """
     from valuation.historico import sugerir_premissas
 
-    planilha = _demonstracoes(
+    montada_a_mao = _demonstracoes(
         {
             "receita_liquida": [1000.0, 1030.0],
             "custo_produtos_vendidos": [600.0, 618.0],
@@ -587,9 +589,10 @@ def test_a_guarda_de_span_protege_o_caminho_da_planilha():
         },
         ["1T26", "2T26"],
     )
-    # O importador de planilha nao declara periodicidade: fica no padrao.
-    assert planilha.periodicidade == "anual"
+    # Rotulo de trimestre com periodicidade anual: e a forma do ano movel, e a
+    # unica em que a guarda de span ainda tem o que fazer.
+    assert montada_a_mao.periodicidade == "anual"
 
-    sugestao = sugerir_premissas(analisar(planilha))
+    sugestao = sugerir_premissas(analisar(montada_a_mao))
     assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.045)
     assert "3 meses" in " ".join(sugestao.alertas)

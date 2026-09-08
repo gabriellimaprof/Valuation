@@ -20,6 +20,41 @@ ANO_MAXIMO = 2100
 _SO_NUMERO = re.compile(r"^[\d.,\s()\-+R$US]*$")
 _ANO_EM_TEXTO = re.compile(r"(19|20)\d{2}")
 
+# **Cabecalho de trimestre nao e cabecalho de ano.** `extrair_ano` procura quatro
+# digitos em qualquer lugar do texto, entao `1T2026` casava com `2026` e a coluna
+# entrava como o **exercicio de 2026** -- com o numero de tres meses dentro.
+#
+# O custo era silencioso e grande. Medido com tres colunas `1T2026`, `2T2026` e
+# `3T2026`: elas colapsam numa coluna so, `2026`, com **a receita do primeiro
+# trimestre** apresentada como a do ano. Duas colunas somem e a que fica esta
+# quatro vezes menor, sem aviso nenhum. Com `1T2024`, `1T2025`, `1T2026` saem
+# tres colunas certas no rotulo e cada uma carrega um trimestre isolado.
+#
+# `1T26` ja era recusado, por nao ter quatro digitos -- e a recusa e o
+# comportamento certo. O que faltava era ela alcancar a grafia por extenso.
+#
+# O padrao e estreito de proposito: `T`, `Q` ou `TRI` colados a um digito de 1 a
+# 4, ou `Q1`/`T1` seguido do ano. "Faturamento 2026" e "Ativo 2026" nao casam, e
+# `2024-2026` tampouco.
+_TRIMESTRE_NO_CABECALHO = re.compile(
+    r"(?:(?<![A-Za-z0-9])[1-4]\s*(?:T|Q|TRI)(?![A-Za-z])"
+    r"|(?<![A-Za-z0-9])(?:T|Q)\s*[1-4](?![0-9]))",
+    re.IGNORECASE,
+)
+
+
+def e_cabecalho_de_trimestre(valor) -> bool:
+    """O cabecalho nomeia um **trimestre**, e nao um exercicio?
+
+    Serve para a leitura **recusar** em vez de reduzir ao ano. O app le serie
+    trimestral pela CVM, onde ele sabe quanto cada coluna cobre; numa planilha
+    ele nao sabe, e `1T2026` nao diz se sao tres meses ou os doze encerrados
+    neles -- as duas leituras pedem tratamento oposto.
+    """
+    if valor is None or hasattr(valor, "year"):
+        return False
+    return bool(_TRIMESTRE_NO_CABECALHO.search(str(valor)))
+
 
 def para_numero(valor) -> float:
     """Converte uma celula em numero, tolerando as convencoes de planilha.
@@ -81,6 +116,10 @@ def extrair_ano(valor) -> int | None:
     if hasattr(valor, "year"):
         ano = int(valor.year)
         return ano if ANO_MINIMO <= ano <= ANO_MAXIMO else None
+
+    # Trimestre nao vira ano: `1T2026` nao e o exercicio de 2026.
+    if e_cabecalho_de_trimestre(valor):
+        return None
 
     achados = _ANO_EM_TEXTO.findall(str(valor))
     if not achados:

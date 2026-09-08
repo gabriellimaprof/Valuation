@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import referencias
-from .historico import KD_MAXIMO_PLAUSIVEL, AnaliseHistorica
+from .historico import DESPESA_FINANCEIRA_SEM_DENOMINADOR, AnaliseHistorica
 
 # Faixas de referencia, deliberadamente largas: servem para separar o normal do
 # que precisa de explicacao, nao para reprovar empresa.
@@ -281,13 +281,17 @@ def _juros(analise: AnaliseHistorica) -> Sinal:
             "A DFC não trouxe o juro efetivamente pago.",
         )
 
-    # Acima de KD_MAXIMO_PLAUSIVEL a razao deixou de medir custo de divida: e o
-    # caso da WEG, que tem caixa liquido e cujo denominador minusculo faz a
-    # despesa financeira -- cambio incluso -- dar 45% "da divida". Comparar isso
-    # com o juro pago produz um descolamento de 40 p.p. que nao fala de credito
-    # nenhum, e acusar a companhia por um artefato de denominador seria pior do
-    # que nao medir. Mesmo criterio que ``historico.py`` usa para descartar o Kd.
-    if competencia > KD_MAXIMO_PLAUSIVEL:
+    # Acima do teto a razao deixou de medir custo de divida: e o caso da WEG, que
+    # tem caixa liquido e cujo denominador minusculo faz a despesa financeira --
+    # cambio incluso -- dar 45% "da divida". Comparar isso com o juro pago produz
+    # um descolamento de 40 p.p. que nao fala de credito nenhum, e acusar a
+    # companhia por um artefato de denominador seria pior do que nao medir.
+    #
+    # A constante e a da **despesa financeira** e nao a do juro pago: sao duas
+    # distribuicoes, e o mesmo 25% exclui 28,2% da base numa e 2,6% na outra. O
+    # comentario em `historico.py` traz a medicao de mover este corte, que foi
+    # feita e **rejeitada**.
+    if competencia > DESPESA_FINANCEIRA_SEM_DENOMINADOR:
         return Sinal(
             "juros", SEM_DADOS, "Despesa financeira grande demais para ser custo de dívida",
             f"A despesa financeira equivale a {competencia:.1%} da dívida média, o "

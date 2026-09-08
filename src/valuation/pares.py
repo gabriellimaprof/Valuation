@@ -404,6 +404,32 @@ def construir_universo(
     return Universo(perfis=perfis[[c for c in ordem if c in perfis.columns]], anos=anos)
 
 
+# Quantos exercicios entram numa safra. Cinco e o que `referencias.BASE`
+# publica, e o que as medicoes deste projeto usam; menos que isso deixa a
+# mediana por companhia curta demais para resistir a ano atipico.
+EXERCICIOS_DA_SAFRA = 5
+
+
+def safra_corrente(cache=None) -> list[int]:
+    """Os exercicios da safra mais recente que o cache sustenta.
+
+    **O comando documentado tinha `2020-2024` fixo no `default`**, entao quem
+    seguisse o CLAUDE.md ao pe da letra construia um universo de um ano atras --
+    calado, e com a mesma aparencia do corrente. E o mesmo defeito que a CLI ja
+    cometeu ao nao passar `indicadores_extra`: o caminho documentado produzindo
+    uma base pior que a que estava em cache.
+
+    Escolher pelo cache resolve sozinho e usa a guarda que ja existe:
+    `_anos_de_dfp_no_cache` **exclui exercicio parcial**, entao em setembro de
+    2026 a safra sai 2021-2025 e nao 2022-2026 -- que teria um exercicio com
+    sete companhias dentro.
+    """
+    publicados = _anos_de_dfp_no_cache(cache)
+    if not publicados:
+        return []
+    return publicados[-EXERCICIOS_DA_SAFRA:]
+
+
 # ---------------------------------------------------------------------------
 # Linha de comando: construir o universo leva minutos e nao cabe num botao
 # ---------------------------------------------------------------------------
@@ -418,14 +444,28 @@ def _principal(argumentos: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--anos",
-        default="2020-2024",
-        help="Intervalo de exercicios, como 2020-2024.",
+        default=None,
+        help=(
+            "Intervalo de exercicios, como 2021-2025. Sem isto, usa os "
+            f"{EXERCICIOS_DA_SAFRA} exercicios publicados mais recentes que "
+            "houver no cache."
+        ),
     )
     parser.add_argument("--cache", default=None, help="Pasta do cache da CVM.")
     opcoes = parser.parse_args(argumentos)
 
-    inicio, _, fim = opcoes.anos.partition("-")
-    anos = list(range(int(inicio), int(fim or inicio) + 1))
+    if opcoes.anos:
+        inicio, _, fim = opcoes.anos.partition("-")
+        anos = list(range(int(inicio), int(fim or inicio) + 1))
+    else:
+        anos = safra_corrente(opcoes.cache)
+        if not anos:
+            print(
+                "Nao ha DFP no cache para escolher a safra. Baixe ao menos um "
+                "exercicio, ou passe --anos."
+            )
+            return 2
+        print(f"Safra escolhida pelo cache: {anos[0]}-{anos[-1]}")
     cache = Path(opcoes.cache) if opcoes.cache else None
 
     def progresso(i: int, total: int) -> None:
@@ -439,10 +479,6 @@ def _principal(argumentos: list[str] | None = None) -> int:
     destino = salvar_universo(universo)
     print(f"{len(universo)} companhias medidas -> {destino}")
     return 0
-
-
-if __name__ == "__main__":  # pragma: no cover - ponto de entrada
-    raise SystemExit(_principal())
 
 
 def universos_disponiveis() -> list[tuple[list[int], Path]]:
@@ -612,3 +648,13 @@ def safra_do_universo(anos: list[int], cache: Path | None = None) -> SafraDoUniv
         ano_mais_novo_disponivel=disponiveis[-1] if disponiveis else None,
         caminho=caminho,
     )
+
+
+# **O ponto de entrada fica no fim, e nao no meio.** Ele executa durante a
+# importacao do modulo como `__main__`, entao tudo definido **abaixo** dele ainda
+# nao existe quando `_principal` roda -- e a funcao usa `safra_corrente` e
+# `_anos_de_dfp_no_cache`, que moram la embaixo. Custou um `NameError` numa
+# constante que estava a poucas linhas de distancia, e o proximo a mexer aqui
+# cairia no mesmo.
+if __name__ == "__main__":  # pragma: no cover - ponto de entrada
+    raise SystemExit(_principal())

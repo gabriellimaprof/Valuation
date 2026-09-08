@@ -342,3 +342,49 @@ def test_a_base_de_referencia_nao_pede_indicador_que_o_universo_nao_mede():
         "estes indicadores são publicados em referencias.BASE e o universo não "
         f"os coleta, então refazer a medição os perderia: {faltando}"
     )
+
+
+def _cache_com_dfp(tmp_path, anos, tamanho=6_000_000):
+    import zipfile
+
+    for ano in anos:
+        with zipfile.ZipFile(tmp_path / f"dfp_cia_aberta_{ano}.zip", "w") as zf:
+            zf.writestr(f"dfp_cia_aberta_DRE_con_{ano}.csv", "x" * tamanho)
+    return tmp_path
+
+
+def test_a_safra_do_comando_sai_do_cache_e_nao_de_um_literal(tmp_path):
+    """`--anos` tinha `2020-2024` fixo no `default`.
+
+    Quem seguisse o CLAUDE.md ao pé da letra — ``python -m valuation.pares`` —
+    construía um universo de **um ano atrás**, calado e com a mesma aparência do
+    corrente. É o mesmo defeito que a CLI já cometeu ao não passar
+    `indicadores_extra`: o caminho documentado produzindo uma base pior que a
+    que estava em cache.
+    """
+    from valuation.pares import EXERCICIOS_DA_SAFRA, safra_corrente
+
+    cache = _cache_com_dfp(tmp_path, range(2018, 2026))
+    assert safra_corrente(cache) == [2021, 2022, 2023, 2024, 2025]
+    assert len(safra_corrente(cache)) == EXERCICIOS_DA_SAFRA
+
+
+def test_a_safra_do_comando_ignora_o_exercicio_parcial(tmp_path):
+    """Ela usa a mesma guarda da safra dos percentis, e por isso acerta sozinha.
+
+    Em setembro de 2026 o arquivo do exercício de 2026 já existe com as
+    companhias de exercício deslocado. Sem a guarda, o comando construiria
+    **2022-2026** — com um exercício de sete companhias dentro.
+    """
+    from valuation.pares import safra_corrente
+
+    cache = _cache_com_dfp(tmp_path, range(2018, 2026))
+    _cache_com_dfp(cache, [2026], tamanho=95_000)
+    assert safra_corrente(cache)[-1] == 2025
+
+
+def test_sem_dfp_no_cache_o_comando_nao_inventa_safra(tmp_path):
+    """Construir sobre nada devolveria um universo vazio com cara de universo."""
+    from valuation.pares import safra_corrente
+
+    assert safra_corrente(tmp_path) == []

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1209 testes
+pytest                        # 1235 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.209 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.235 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2365,24 +2365,111 @@ acontecendo e o corte e que tinha ficado para tras. Aqui a condicao **deixou de
 ocorrer nesse caminho**, porque a entrada melhorou -- e a guarda continua sendo
 a rede de quem chega por outra porta.
 
-**E a outra porta e a planilha**, onde e o usuario quem escreve o cabecalho da
-coluna. Duas colunas `1T26` e `2T26` cobrem tres meses, e sem a guarda o
-movimento de um trimestre viraria a premissa de crescimento perpetuo. Ha teste
-nomeando esse chamador.
+**Escrevi que a outra porta era a planilha, e estava errado.** A afirmacao era
+que a guarda seguia necessaria porque ali e o usuario quem escreve o cabecalho.
+Medido depois: o importador de planilha **recusa cabecalho de trimestre** (ver a
+secao seguinte), entao nenhuma planilha entra com rotulo de trimestre e nenhuma
+produz span curto.
 
-Ele tambem deixa visivel uma divisao que so ficou clara aqui: **periodicidade e
-span respondem perguntas diferentes**. A planilha se declara `anual` -- e o
-padrao, e o app nao tem como saber --, entao as guardas de *frequencia* nao
-disparam nela; a de *span* dispara, porque le a distancia entre os rotulos.
-Quanto cada coluna cobre e quanto as colunas distam sao coisas distintas, e o
-ano movel e a prova: doze meses de conteudo, tres de intervalo.
+A guarda **nao tem chamador hoje**, e fica assim mesmo: custa uma comparacao e e
+a rede de quem construir uma serie nova amanha. O que nao pode ficar e a
+afirmacao errada -- anotacao errada envelhece igual a numero errado.
 
-**Em aberto, e nao e defeito de leitura:** planilha com cabecalho trimestral e
-tratada como anual, entao o ROIC dela entra no diagnostico e no balizador sem a
-guarda de frequencia. O app nao consegue distinguir "coluna 1T26 com tres meses"
-de "coluna 1T26 com um ano movel" sem perguntar -- e adivinhar pelo rotulo e
-exatamente a armadilha que este arquivo documenta. Perguntar na tela de Dados
-resolveria, e e decisao de produto e nao de leitura.
+O episodio deixou uma distincao que vale mais que a guarda: **periodicidade e
+span respondem perguntas diferentes**. A primeira diz quanto cada coluna cobre e
+e declarada por quem monta a serie; a segunda diz quanto as colunas distam e sai
+do rotulo. O ano movel e a prova de que sao independentes: doze meses de
+conteudo, tres de intervalo.
+
+### Tres colunas de trimestre viravam uma coluna de ano, calado
+
+Fui investigar se a planilha era mesmo a porta que sobrava para a guarda de span
+e achei outra coisa. `extrair_ano` procura **quatro digitos em qualquer lugar do
+texto** -- e por isso `1T2026` casava com `2026`. Medido com tres colunas
+`1T2026`, `2T2026` e `3T2026`:
+
+| | |
+|---|---|
+| colunas que entram | 3 |
+| colunas que saem | **1**, rotulada `2026` |
+| o que ela contem | a receita do **primeiro trimestre** |
+
+Duas colunas somem e a que fica esta quatro vezes menor, **sem aviso nenhum**. A
+variante `1T2024`, `1T2025`, `1T2026` e menos visivel e igualmente errada: saem
+tres colunas de aparencia correta, cada uma com um trimestre isolado dentro
+apresentado como exercicio.
+
+`1T26` ja era recusado -- por nao ter quatro digitos --, e a recusa e o
+comportamento certo. Faltava ela alcancar a grafia por extenso.
+
+O padrao e **estreito de proposito**, porque uma regra larga transformaria a
+planilha anual de todo mundo num erro de importacao -- muito pior que o defeito
+que ela conserta. Ha teste com as duas listas: `1T2026`, `Q1 2026`, `1Q2026`,
+`T3 2025`, `1 TRI 2026` sao recusados; `Ativo 2026`, `Faturamento 2026`,
+`FY2024`, `2023-2024` e `2024 (R$ mil)` continuam passando.
+
+E a recusa **diz o motivo e nomeia a saida**. "Verifique se a planilha tem
+cabecalho com os exercicios" manda conferir o que o usuario acha que fez -- ele
+pos cabecalho, so que de trimestre. A mensagem agora manda para **Buscar na
+CVM**, que e onde o app sabe quanto cada coluna cobre.
+
+**Uma via foi construida e descartada no caminho.** Eu tinha comecado a por na
+tela de Dados um seletor de "o que cada coluna cobre", para o usuario declarar.
+Ele nao tem uso: com o cabecalho trimestral recusado, nenhuma planilha chega com
+rotulo ambiguo, e controle para caso que nao acontece e o mesmo "campo
+desabilitado" que este projeto ja tirou da tela de Premissas.
+
+### Um teto do Kd para duas grandezas, de novo
+
+`KD_MAXIMO_PLAUSIVEL = 0,25` era aplicado ao juro pago **e** a despesa
+financeira. Medido na safra:
+
+| | mediana | acima de 25% |
+|---|---|---|
+| Custo da divida pelo caixa | 9,3% | **2,6%** da base |
+| Custo da divida efetivo | 18,2% | **28,2%** da base |
+
+Numa e "implausivel"; na outra e quartil alto. E a mesma forma do defeito que
+`ALAVANCAGEM_ALTA` ja teve, medindo D/E e divida/EBITDA com o mesmo 3,5.
+
+**Mover o segundo foi medido e rejeitado**, e o numero e a razao. A porta da
+despesa financeira nao pergunta "esta divida e cara?", e sim "este denominador
+significa alguma coisa?" -- e `JURO_DESCOLADO` e `JURO_MUITO_DESCOLADO` foram
+calibrados **com ela no lugar**:
+
+| corte | exclui | o sinal acusaria | grave |
+|---|---|---|---|
+| **25,0%** | 25,8% | **18,9%** | 7,7% |
+| 57,2% (P90) | 6,9% | 36,4% | 23,8% |
+| 100,0% (estrutural) | 4,0% | **39,3%** | 26,6% |
+
+Os cortes sao o P75 e o P90 do descolamento, entao acusar 18,9% e 7,7% e perto
+do que um quartil e um decil devem acusar. Abrir a porta faria o sinal disparar
+em **dois em cada cinco** -- o defeito que este projeto ja pagou quando o
+descolamento acusava 82,3%.
+
+O corte de 100% e tentador porque e **estrutural** (acima dele a despesa do ano
+supera a divida inteira, e a razao deixa de ser uma taxa) e ainda assim nao
+serve: ele nao mede o que a porta precisa medir, que e denominador pequeno.
+
+Os valores continuam iguais; o que muda e que `DESPESA_FINANCEIRA_SEM_DENOMINADOR`
+tem nome proprio e pode ser calibrada sem arrastar a outra junto.
+
+### O comando documentado construia a safra de um ano atras
+
+`python -m valuation.pares` tinha `--anos` com `default="2020-2024"` fixo. Quem
+seguisse este arquivo ao pe da letra construia um universo de um exercicio atras,
+calado e com a mesma aparencia do corrente -- o mesmo defeito que a CLI ja
+cometeu ao nao passar `indicadores_extra`.
+
+A safra agora sai do cache, e usa a guarda que ja existe: `_anos_de_dfp_no_cache`
+exclui exercicio parcial, entao em setembro de 2026 ela devolve 2021-2025 e nao
+2022-2026 -- que teria dentro um exercicio de sete companhias.
+
+E o **ponto de entrada foi para o fim do arquivo**. Ele estava no meio, e executa
+durante a importacao do modulo como `__main__`: tudo definido abaixo dele ainda
+nao existe quando `_principal` roda. Custou um `NameError` numa constante a
+poucas linhas de distancia.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

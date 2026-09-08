@@ -7,6 +7,8 @@ ver os dois.
 
 from __future__ import annotations
 
+import pathlib
+
 from pathlib import Path
 
 import pandas as pd
@@ -510,3 +512,59 @@ def test_o_ano_movel_e_a_serie_anual_continuam_recebendo_veredito():
     anual = avaliar_qualidade(_analise_com("anual", [2023, 2024, 2025]))
     assert movel.veredito != SEM_DADOS
     assert anual.veredito != SEM_DADOS
+
+
+def test_o_teto_do_juro_pago_e_o_da_despesa_financeira_sao_decisoes_separadas():
+    """Um número servia às duas, e elas não se parecem.
+
+    Medido na safra 2021-2025, com o mesmo corte de 25%:
+
+        Custo da dívida pelo caixa    P50  9,3%   acima de 25%:  **2,6%** da base
+        Custo da dívida efetivo       P50 18,2%   acima de 25%: **28,2%** da base
+
+    Numa é "implausível"; na outra é o quartil alto. É a mesma forma do defeito
+    que este projeto já corrigiu: `ALAVANCAGEM_ALTA` media D/E e dívida/EBITDA
+    com o mesmo 3,5, e que os dois calhassem de ser iguais era coincidência.
+
+    Os valores continuam iguais **hoje** — o que muda é que a próxima calibração
+    pode mexer num sem mexer no outro, em vez de mover os dois sem perceber.
+    Este teste não trava os números: trava que as duas decisões têm nome próprio.
+    """
+    from valuation import historico, qualidade
+
+    assert hasattr(historico, "KD_MAXIMO_PLAUSIVEL")
+    assert hasattr(historico, "DESPESA_FINANCEIRA_SEM_DENOMINADOR")
+
+    # `_juros` julga a **despesa financeira**, e por isso usa a constante dela.
+    fonte = pathlib.Path("src/valuation/qualidade.py").read_text(encoding="utf-8")
+    assert "DESPESA_FINANCEIRA_SEM_DENOMINADOR" in fonte
+    assert "KD_MAXIMO_PLAUSIVEL" not in fonte, (
+        "o teto do juro pago não julga despesa financeira"
+    )
+
+
+def test_a_porta_da_despesa_financeira_protege_o_sinal_de_descolamento():
+    """Afrouxá-la foi medido e **rejeitado**, e o número é a razão.
+
+    A porta parece mal calibrada — 25% exclui 28,2% da base, acima do P75 da
+    própria distribuição. Mas ela não pergunta "esta dívida é cara?", e sim
+    "este denominador significa alguma coisa?", e `JURO_DESCOLADO` e
+    `JURO_MUITO_DESCOLADO` foram calibrados **com ela no lugar**:
+
+        corte     exclui   o sinal acusaria   grave
+        25,0%      25,8%       18,9%           7,7%   <- atual
+        57,2%       6,9%       36,4%          23,8%
+        100,0%      4,0%       39,3%          26,6%
+
+    Os cortes são o P75 e o P90 do descolamento, então acusar 18,9% e 7,7% é
+    perto do que um quartil e um decil devem acusar. Abrir a porta faria o sinal
+    disparar em **dois em cada cinco** — o defeito que este projeto já pagou
+    quando o descolamento acusava 82,3% da base.
+    """
+    from valuation.historico import DESPESA_FINANCEIRA_SEM_DENOMINADOR
+    from valuation.qualidade import JURO_DESCOLADO, JURO_MUITO_DESCOLADO
+
+    # A propriedade, e nao o valor: a porta tem de ficar **bem acima** do
+    # descolamento que ela protege, senao ela deixaria passar justamente as
+    # companhias que o sinal existe para acusar.
+    assert DESPESA_FINANCEIRA_SEM_DENOMINADOR > JURO_MUITO_DESCOLADO > JURO_DESCOLADO

@@ -674,6 +674,27 @@ class Demonstracoes:
         )
 
 
+# Quantas linhas do topo podem conter o cabecalho. `localizar_grade` ja
+# procura numa janela parecida; aqui o numero e folgado de proposito,
+# porque um falso positivo so troca a mensagem de erro por outra.
+LINHAS_DE_CABECALHO = 12
+
+
+def _tem_cabecalho_de_trimestre(abas: dict[str, pd.DataFrame]) -> bool:
+    """Alguma celula das primeiras linhas nomeia um trimestre?
+
+    Olha so o topo de cada aba: o cabecalho mora la, e varrer a planilha inteira
+    acharia "1T" dentro de um rotulo de conta.
+    """
+    from .leitura import e_cabecalho_de_trimestre
+
+    for dados in abas.values():
+        for _, linha in dados.head(LINHAS_DE_CABECALHO).iterrows():
+            if any(e_cabecalho_de_trimestre(celula) for celula in linha):
+                return True
+    return False
+
+
 def _coletar_linhas(
     abas: dict[str, pd.DataFrame],
 ) -> list[tuple[str, str, str | None, dict[int, float]]]:
@@ -1180,6 +1201,20 @@ def importar(
     abas = carregar_abas(caminho)
     coletadas = _coletar_linhas(abas)
     if not coletadas:
+        # **A recusa diz o motivo quando ela sabe qual e.** "Verifique se a
+        # planilha tem cabecalho com os exercicios" manda conferir o que o
+        # usuario acha que fez -- e no caso do cabecalho trimestral ele fez, so
+        # que com trimestres. Sem esta distincao a mensagem parece dizer que o
+        # arquivo esta vazio.
+        if _tem_cabecalho_de_trimestre(abas):
+            raise ValueError(
+                f"A planilha {caminho.name} tem cabecalho de **trimestre** "
+                "(1T2026, Q1 2026), e este caminho le **exercicios**. Um rotulo "
+                "de trimestre nao diz se a coluna cobre tres meses ou os doze "
+                "encerrados neles, e as duas leituras pedem tratamento oposto. "
+                "Para serie trimestral use **Buscar na CVM**, onde o app sabe "
+                "quanto cada coluna cobre."
+            )
         raise ValueError(
             f"Nao encontrei nenhuma tabela com anos em {caminho.name}. "
             "Verifique se a planilha tem uma linha de cabecalho com os exercicios."
