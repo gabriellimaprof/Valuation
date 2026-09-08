@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1208 testes
+pytest                        # 1209 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.208 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.209 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2339,6 +2339,50 @@ pelo percentil, `Taxa de reinvestimento` passaria; pela razao, `Conversao
 operacional` passaria. E a melhor defesa que este projeto tem da propria regra --
 classificar pela **estrutura** e usar as medicoes para confirmar, nunca para
 decidir.
+
+### A guarda de span deixou de disparar na CVM, e isso nao e o mesmo defeito
+
+Com o ano movel lendo tres ITRs, `SPAN_MINIMO_PARA_TENDENCIA` ficou raro -- e
+"sinal que nunca dispara" e um modo de falha que este projeto ja pagou. A
+pergunta merecia medicao e nao intuicao. Medido com o padrao novo:
+
+| | companhias | span minimo |
+|---|---|---|
+| do universo | 40 | **1,50 ano** |
+| **fora** do universo (ITR 2026) | 17 | **2,00 anos** |
+
+**Zero de 57** produzem span entre 0 e 1 ano. Medir so no universo teria
+respondido a pergunta errada: ele exige DFP nos cinco exercicios, entao exclui
+por construcao a companhia recem-listada, que era a suspeita natural. As tres
+sem serie que apareceram fora dele nao tem span curto -- tem serie **nenhuma**:
+SUL 116 com uma coluna, BB Seguridade e IRB com zero, que sao as holdings e
+seguradoras sem linha de receita ja documentadas. Elas falham antes, em
+`len(valores) < 2`.
+
+**Mas isto nao e o defeito do corte que envelheceu.** Quando
+`DESCOLAMENTO_DO_JURO` parou de disparar, a condicao que ele descreve continuava
+acontecendo e o corte e que tinha ficado para tras. Aqui a condicao **deixou de
+ocorrer nesse caminho**, porque a entrada melhorou -- e a guarda continua sendo
+a rede de quem chega por outra porta.
+
+**E a outra porta e a planilha**, onde e o usuario quem escreve o cabecalho da
+coluna. Duas colunas `1T26` e `2T26` cobrem tres meses, e sem a guarda o
+movimento de um trimestre viraria a premissa de crescimento perpetuo. Ha teste
+nomeando esse chamador.
+
+Ele tambem deixa visivel uma divisao que so ficou clara aqui: **periodicidade e
+span respondem perguntas diferentes**. A planilha se declara `anual` -- e o
+padrao, e o app nao tem como saber --, entao as guardas de *frequencia* nao
+disparam nela; a de *span* dispara, porque le a distancia entre os rotulos.
+Quanto cada coluna cobre e quanto as colunas distam sao coisas distintas, e o
+ano movel e a prova: doze meses de conteudo, tres de intervalo.
+
+**Em aberto, e nao e defeito de leitura:** planilha com cabecalho trimestral e
+tratada como anual, entao o ROIC dela entra no diagnostico e no balizador sem a
+guarda de frequencia. O app nao consegue distinguir "coluna 1T26 com tres meses"
+de "coluna 1T26 com um ano movel" sem perguntar -- e adivinhar pelo rotulo e
+exatamente a armadilha que este arquivo documenta. Perguntar na tela de Dados
+resolveria, e e decisao de produto e nao de leitura.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

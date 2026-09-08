@@ -553,3 +553,43 @@ def test_serie_anual_longa_continua_partindo_do_cagr():
     sugestao = sugerir_premissas(analisar(longa))
     assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.10)
     assert "CAGR" in sugestao.justificativas["crescimento_receita"]
+
+
+def test_a_guarda_de_span_protege_o_caminho_da_planilha():
+    """Com três ITRs ela deixou de disparar na CVM, e continua necessária aqui.
+
+    Medido com o padrão novo: **0 de 57 companhias** produzem span entre 0 e 1
+    ano pelo caminho da CVM — 40 do universo (mínimo 1,50 ano) e 17 de fora dele
+    (mínimo 2,00). As três sem série são holdings e seguradoras sem linha de
+    receita, que falham antes, em `len(valores) < 2`.
+
+    Mas o usuário também importa **planilha**, e ali é ele quem escreve o
+    cabeçalho da coluna. Duas colunas `1T26` e `2T26` cobrem três meses, e sem a
+    guarda o movimento de um trimestre viraria a premissa de crescimento
+    perpétuo.
+
+    **A periodicidade e o span respondem perguntas diferentes**, e este teste é
+    onde isso fica visível: a planilha se declara `anual` (é o padrão, e o app
+    não tem como saber), então as guardas de *frequência* não disparam — e a de
+    *span* dispara, porque ela lê a distância entre os rótulos. Quanto cada
+    coluna cobre e quanto as colunas distam são coisas distintas.
+    """
+    from valuation.historico import sugerir_premissas
+
+    planilha = _demonstracoes(
+        {
+            "receita_liquida": [1000.0, 1030.0],
+            "custo_produtos_vendidos": [600.0, 618.0],
+            "ebit": [200.0, 206.0],
+            "depreciacao_amortizacao": [50.0, 51.5],
+            "ativo_total": [1500.0, 1545.0],
+            "patrimonio_liquido": [700.0, 721.0],
+        },
+        ["1T26", "2T26"],
+    )
+    # O importador de planilha nao declara periodicidade: fica no padrao.
+    assert planilha.periodicidade == "anual"
+
+    sugestao = sugerir_premissas(analisar(planilha))
+    assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.045)
+    assert "3 meses" in " ".join(sugestao.alertas)
