@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1252 testes
+pytest                        # 1254 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.252 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.254 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2588,6 +2588,58 @@ pedia `serie("divida_bruta")` -- que nunca esteve no vocabulario nem em
 `valores` -- e caia num ramo de fallback. Os dois davam o mesmo numero, porque
 `divida_bruta()` **e** a soma de curto e longo, entao nada estava errado; o que
 havia era um ramo que parecia preferencia por uma conta melhor que nao existe.
+
+### A conferencia ampliada, e a Cogna confirmando o achado dos minoritarios
+
+Treze companhias, treze setores, exercicio de 2024, contra release e imprensa:
+
+| | Receita publicada | App | Lucro publicado | App |
+|---|---|---|---|---|
+| Ambev | 89,4 bi | 89,45 | 14,8 bi | **14,85** |
+| TIM | 25,448 bi | **25,448** | 3,160 bi | 3,154 |
+| Equatorial | 45,367 bi | **45,367** | 2,522 (aj.) | 3,768 cons. |
+| Ultrapar | 133 bi | 133,5 | 2,526 bi | **2,526** |
+| Simpar | 41,1 bi | 41,06 | 548 (aj.) | 94 cons. |
+| MRV | 9,009 bi | **9,009** | -503,2 | -482 |
+| BRF | 61,4 bi | 61,38 | 3,7 bi | **3,692** |
+| Fleury | 7,68 bi | 7,685 | -- | 604 |
+| B3 | 10,6 bi | 10,57 | -- | 4.577 |
+| **Randoncorp** | 11,9 bi | **11,916** | -- | 692 |
+| **Cogna** | 6,42 bi | 6,39 | **879,9 mi** | **880 (controladores)** |
+| **Guararapes** | 9,6 bi | **9,634** | **235 mi** | **235** |
+| Suzano / Usiminas | -- | -- | -7,0 bi / 3 mi | **-7.045 / 3** |
+
+**A receita bate nas treze.** E a **Cogna** e a confirmacao mais limpa do achado
+dos minoritarios: o lucro publicado de R$ 879,9 mi bate com o
+`lucro_controladores` do app (880) e **nao** com o consolidado (992). A leitura
+estava certa nas duas linhas; o que faltava era saber qual delas o mercado
+chama de "lucro liquido".
+
+### As duas ultimas pontas da cadeia
+
+**`Payout` misturava as duas bases.** O numerador e o que a **listada** paga --
+medido, so **5 de 100** companhias publicam em separado o dividendo aos
+minoritarios das controladas -- e o denominador era o lucro do **grupo**. Medido
+em 95 companhias com lucro positivo nas duas bases: a mediana da diferenca e
+**zero**, mas **11,6% diferem em mais de 10 pontos**. Na Metalurgica Gerdau vai
+de 34,0% para **101,5%** -- a distancia entre "retem dois tercos" e "distribui
+tudo". Entrou `Payout dos controladores`, ao lado e nao no lugar, pela mesma
+razao do ROE: os dois respondem perguntas diferentes.
+
+**E a guarda de nome chegou aos indicadores.** `Demonstracoes.serie` ja recusava
+conta fora do vocabulario; `AnaliseHistorica.linha` ainda devolvia `NaN` para
+indicador inexistente -- `mediana("ROIC ")` com um espaco sobrando era
+indistinguivel de uma holding sem capital investido. O vocabulario aqui e
+`formulas.FORMULAS`, que o projeto **ja exige completo por teste**: 45 verbetes
+para 45 indicadores, conferido. Indicador conhecido e ausente nesta companhia
+continua devolvendo `NaN` -- e o caso das leituras ex-IFRS 16.
+
+Nenhum chamador usava nome invalido, o que e a boa noticia: a guarda entra sem
+consertar nada e fica de rede para o proximo.
+
+**Nao verificado:** o patrimonio liquido nao foi conferido contra release em
+companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
+devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

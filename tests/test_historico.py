@@ -680,3 +680,64 @@ def test_sem_minoritario_as_duas_leituras_coincidem():
     assert float(analise.mediana("ROE dos controladores")) == pytest.approx(
         float(analise.mediana("ROE"))
     )
+
+
+def test_indicador_fora_do_vocabulario_levanta_em_vez_de_devolver_nan():
+    """A mesma regra da conta, um nível acima.
+
+    `mediana("ROIC ")` com um espaço sobrando devolvia `NaN` — indistinguível de
+    uma holding sem capital investido. O vocabulário aqui é `formulas.FORMULAS`,
+    que o projeto já exige completo por teste.
+
+    Indicador **conhecido e ausente nesta companhia** continua devolvendo `NaN`:
+    é o caso das leituras ex-IFRS 16, que só existem onde há arrendamento.
+    """
+    analise = analisar(
+        _demonstracoes(
+            {
+                "receita_liquida": [1000.0, 1100.0],
+                "custo_produtos_vendidos": [600.0, 660.0],
+                "ebit": [200.0, 220.0],
+                "ativo_total": [1500.0, 1600.0],
+                "patrimonio_liquido": [700.0, 750.0],
+            },
+            [2023, 2024],
+        )
+    )
+    assert np.isfinite(analise.mediana("Margem EBIT"))
+
+    with pytest.raises(KeyError, match="nao e um indicador conhecido"):
+        analise.mediana("Margem EBIT ")
+    with pytest.raises(KeyError, match="nao e um indicador conhecido"):
+        analise.ultimo("indicador que nao existe")
+
+
+def test_o_payout_do_controlador_usa_o_lucro_de_quem_recebe():
+    """A última ponta da cadeia que ficava misturada.
+
+    O numerador é o que a **listada** paga — só 5 de 100 companhias publicam em
+    separado o dividendo aos minoritários das controladas — e o denominador do
+    `Payout (dividendos / lucro)` é o lucro do **grupo**.
+
+    Medido em 95 companhias com lucro positivo nas duas bases: a mediana da
+    diferença é **zero**, mas 11,6% diferem em mais de 10 pontos. Na Metalúrgica
+    Gerdau vai de 34,0% para **101,5%** — a distância entre "retém dois terços"
+    e "distribui tudo".
+    """
+    analise = analisar(
+        _demonstracoes(
+            {
+                "receita_liquida": [1000.0, 1000.0],
+                "custo_produtos_vendidos": [600.0, 600.0],
+                "ebit": [200.0, 200.0],
+                "ativo_total": [1500.0, 1500.0],
+                "patrimonio_liquido": [700.0, 700.0],
+                "lucro_liquido": [300.0, 300.0],
+                "lucro_controladores": [100.0, 100.0],
+                "dividendos_pagos": [60.0, 60.0],
+            },
+            [2023, 2024],
+        )
+    )
+    assert float(analise.mediana("Payout (dividendos / lucro)")) == pytest.approx(0.20)
+    assert float(analise.mediana("Payout dos controladores")) == pytest.approx(0.60)

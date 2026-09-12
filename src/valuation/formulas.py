@@ -192,6 +192,16 @@ FORMULAS: dict[str, Formula] = {
         "depois de tirar dali imposto e juro pagos que muitas companhias lançam "
         "dentro da seção de variações.",
     ),
+    "Payout dos controladores": Formula(
+        "Dividendos e JCP pagos ÷ Lucro dos controladores (3.11.01)",
+        "O payout na base de quem compra a ação. O `Payout (dividendos / "
+        "lucro)` ao lado divide pelo lucro **consolidado**, que inclui a parte "
+        "dos minoritários das controladas. Medido em 95 companhias, a mediana "
+        "das duas é a mesma, mas 11,6% diferem em mais de 10 pontos — na "
+        "Metalúrgica Gerdau, 34,0% contra 101,5%. **Ressalva do numerador:** só "
+        "5 de 100 companhias publicam em separado o dividendo pago aos "
+        "minoritários, então nas outras ele pode estar dentro do total.",
+    ),
     "Payout (dividendos / lucro)": Formula(
         "Dividendos pagos (DFC) ÷ Lucro líquido",
         "Sai do caixa que saiu, e não do que foi declarado: dividendo aprovado "
@@ -283,6 +293,7 @@ def formula(indicador: str) -> Formula | None:
 # como veio.
 ROTULOS_DE_INDICADOR = {
     "Margem liquida": "Margem líquida",
+    "Payout dos controladores": "Payout dos controladores",
     "ROE dos controladores": "ROE dos controladores",
     "Lucro dos controladores / Lucro liquido": (
         "Lucro dos controladores / Lucro líquido"

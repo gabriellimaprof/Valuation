@@ -144,7 +144,30 @@ class AnaliseHistorica:
         return list(self.indicadores.columns)
 
     def linha(self, nome: str) -> pd.Series:
+        """A serie de um indicador, com ``NaN`` onde nao ha dado.
+
+        **Indicador que nao existe levanta erro**, pela mesma razao que a conta
+        inexistente em `Demonstracoes.serie`: `NaN` por typo se le como "esta
+        companhia nao tem isso", e um `mediana("ROIC ")` com espaco sobrando
+        devolveria a mesma coisa que uma holding sem capital investido.
+
+        O vocabulario aqui e `formulas.FORMULAS` -- o projeto ja exige verbete
+        para todo indicador publicado, entao a lista existe e esta conferida por
+        teste. Indicador **conhecido e ausente nesta companhia** continua
+        devolvendo `NaN`: e o caso das leituras ex-IFRS 16, que so existem onde
+        ha arrendamento.
+        """
         if nome not in self.indicadores.index:
+            from .formulas import FORMULAS
+
+            if nome not in FORMULAS:
+                proximos = sorted(
+                    outro
+                    for outro in FORMULAS
+                    if nome.strip().lower()[:6] in outro.lower()
+                )[:3]
+                dica = f" Talvez: {', '.join(proximos)}." if proximos else ""
+                raise KeyError(f"'{nome}' nao e um indicador conhecido.{dica}")
             return pd.Series(np.nan, index=self.indicadores.columns, name=nome)
         return self.indicadores.loc[nome]
 
@@ -432,6 +455,19 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         )
     if dividendos.notna().any():
         indicadores["Payout (dividendos / lucro)"] = _divisao_segura(dividendos, lucro)
+        # **A ultima ponta da cadeia que ficava misturada.** O numerador e o que
+        # a **listada** paga -- so 5 de 100 companhias publicam em separado o
+        # dividendo aos minoritarios das controladas --, e o denominador acima e
+        # o lucro do **grupo**. Onde ha minoritario relevante, o payout sai
+        # subestimado.
+        #
+        # Medido em 95 companhias com lucro positivo nas duas bases: a mediana da
+        # diferenca e **zero**, mas 11,6% diferem em mais de 10 pontos. Na
+        # Metalurgica Gerdau vai de 34,0% para **101,5%** -- a distancia entre
+        # "retem dois tercos" e "distribui tudo".
+        indicadores["Payout dos controladores"] = _divisao_segura(
+            dividendos, d.serie("lucro_controladores")
+        )
     if arrendamento.notna().any() and divida_bruta.notna().any():
         indicadores["Arrendamento / Divida bruta"] = _divisao_segura(
             arrendamento, divida_bruta
