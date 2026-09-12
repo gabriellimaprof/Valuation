@@ -52,6 +52,16 @@ FORMULAS: dict[str, Formula] = {
     "Margem EBIT": Formula("EBIT ÷ Receita líquida"),
     "Margem NOPAT": Formula("NOPAT ÷ Receita líquida"),
     "Margem liquida": Formula("Lucro líquido ÷ Receita líquida"),
+    "Lucro dos controladores / Lucro liquido": Formula(
+        "Lucro atribuído aos controladores (3.11.01) ÷ Lucro líquido "
+        "consolidado (3.11)",
+        "Quanto do resultado do grupo chega a quem compra a ação. O "
+        "consolidado soma a parte dos sócios minoritários das controladas, e "
+        "o release costuma publicar o dos controladores — então o número da "
+        "tela pode divergir do que o mercado chama de lucro líquido. Medido em "
+        "415 companhias de 2024: os minoritários passam de 25% do consolidado "
+        "em 13% delas, e em 2,4% os dois nem têm o mesmo sinal.",
+    ),
     "Aliquota efetiva de IR": Formula(
         "Impostos sobre o lucro ÷ LAIR, limitado a [0, 100%]",
         "É a alíquota que a companhia de fato pagou, e costuma ficar abaixo dos "
@@ -263,6 +273,9 @@ def formula(indicador: str) -> Formula | None:
 # como veio.
 ROTULOS_DE_INDICADOR = {
     "Margem liquida": "Margem líquida",
+    "Lucro dos controladores / Lucro liquido": (
+        "Lucro dos controladores / Lucro líquido"
+    ),
     "Aliquota efetiva de IR": "Alíquota efetiva de IR",
     "Depreciacao / Receita": "Depreciação / Receita",
     "Capex / Depreciacao": "Capex / Depreciação",

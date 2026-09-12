@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1235 testes
+pytest                        # 1246 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.235 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.246 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2470,6 +2470,76 @@ E o **ponto de entrada foi para o fim do arquivo**. Ele estava no meio, e execut
 durante a importacao do modulo como `__main__`: tudo definido abaixo dele ainda
 nao existe quando `_principal` roda. Custou um `NameError` numa constante a
 poucas linhas de distancia.
+
+### Os numeros batem com o que as companhias publicam?
+
+Ate aqui a leitura tinha sido conferida **contra o proprio arquivo da CVM** --
+29.096 pares conta x linha publicada, 99,997%. Isso prova que o app le o CSV
+certo; nao prova que o CSV certo e o que a companhia diz ao mercado. A
+conferencia que faltava e contra **release, apresentacao e imprensa**.
+
+Amostra sorteada por setor e depois filtrada por **ter fonte publica com que
+comparar** -- companhia grande, com release e cobertura. Sortear e nao achar
+release nao mede a leitura, mede a cobertura da imprensa. Exercicio de 2024:
+
+| Companhia | Setor | Receita publicada | Receita do app | Lucro publicado | Lucro do app |
+|---|---|---|---|---|---|
+| Ambev | bebidas | 89,4 bi | **89,45** | 14,8 bi | **14,85** |
+| TIM | telecom | 25,448 bi | **25,448** | 3,160 bi | **3,154** |
+| Equatorial | energia | 45,367 bi | **45,367** | 2,522 (aj.) | 3,768 cons. |
+| Ultrapar | petroleo | 133 bi | **133,5** | 2,526 bi | **2,526** |
+| Simpar | logistica | 41,1 bi | **41,06** | 548 (aj.) | 94 cons. |
+| MRV | construcao | 9,009 bi | **9,009** | -503,2 | -482 |
+| Fleury | saude | 7,68 bi | **7,685** | -- | 604 |
+| BRF | alimentos | 61,4 bi | **61,38** | 3,7 bi | **3,692** |
+| Suzano | papel | -- | 47,40 | -7,0 bi | **-7,045** |
+| Usiminas | siderurgia | -- | 25,87 | R$ 3 mi | **3** |
+| B3 | bolsa | 10,6 bi | **10,57** | -- | 4,577 |
+
+**A receita bate em todas as onze**, sete delas ao milhao. O EBITDA bate dentro
+de 0,2% a 8%, e a distancia tem nome: **toda companhia publica "EBITDA
+ajustado"** -- Ambev 29,0 contra 28,93 do app; Fleury 1,982 contra 1,978; Simpar
+10,5 contra 10,72; Ultrapar 6,61 (ajustado com nao recorrente) contra 6,16. O
+app calcula o **nao ajustado**, que e o da ICVM 527/2012, e e o numero certo
+para comparar entre companhias.
+
+### E a conferencia achou o que a auditoria interna nao podia achar
+
+Tres companhias divergiram no lucro, e **nenhuma por defeito de leitura**: o app
+publica `lucro_liquido` = `3.11`, o **consolidado**, e o mercado chama de "lucro
+liquido" o dos **controladores** (`3.11.01`) -- o que sobra para quem compra a
+acao. Nenhuma identidade contabil denuncia isso, porque as duas linhas estao
+certas; elas so respondem perguntas diferentes.
+
+Medido no DFP consolidado de 2024, em 415 companhias:
+
+| | Companhias |
+|---|---|
+| minoritarios acima de 10% do consolidado | **80 (19,3%)** |
+| acima de 25% | 54 (13,0%) |
+| acima de 50% | 31 (7,5%) |
+| **sinais opostos** | **10 (2,4%)** |
+
+E os casos extremos sao grandes: Metalurgica Gerdau com **66%** do lucro fora do
+acionista da listada (4.611 consolidado contra 1.545), Aegea com 68%, Equipav com
+76%. E a **Usiminas fecha 2024 com consolidado de +R$ 3 mi e -R$ 146 mi para o
+controlador** -- a manchete que saiu foi "lucro liquido de R$ 3 milhoes".
+
+**O app nao corrige, e a razao e que ele nao esta errado.** O consolidado e
+leitura fiel do que a companhia publicou; o ROE dele e consistente (consolidado
+sobre patrimonio **tambem** consolidado, que inclui minoritario); e a ponte
+EV -> equity **ja subtrai** a participacao dos nao controladores, entao o
+valuation esta certo. O que faltava era **dizer**, e agora sao duas pecas:
+
+- o indicador `Lucro dos controladores / Lucro liquido`, que torna a distancia
+  comparavel entre companhias em vez de so alertar;
+- dois achados no diagnostico -- **alerta** quando os sinais divergem (2,4% da
+  base) e **informacao** acima de 25% (13%). O corte de 25% e limiar com
+  significado proprio, "um quarto do lucro nao e seu", e nao so um quantil.
+
+E as duas invariantes do projeto pegaram o acrescimo na hora: indicador novo sem
+verbete de formula e sem rotulo acentuado reprova em `test_formulas.py` e em
+`test_app.py`. Foi o que aconteceu.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

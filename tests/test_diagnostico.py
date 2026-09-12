@@ -734,3 +734,87 @@ def test_serie_anual_nao_ganha_aviso_de_omissao(empresa_exemplo):
     assert diag.omitidas == ()
     assert _omissoes_por_frequencia(diag) == []
     assert "não rodaram" not in _avisos(diag)
+
+
+def _com_minoritarios(consolidado: float, controladores: float):
+    """Uma análise com a atribuição do resultado que se quer testar."""
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+                "lucro_liquido": consolidado,
+                "lucro_controladores": controladores,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    return analisar(
+        Demonstracoes(
+            empresa="T", valores=valores, unidade="R$ milhões", periodicidade="anual"
+        )
+    )
+
+
+def test_o_lucro_do_controlador_com_outro_sinal_vira_alerta():
+    """**A leitura inverte**, e a imprensa noticiou o número errado para a ação.
+
+    Medido no DFP consolidado de 2024, em 415 companhias: em **10 (2,4%)** o
+    lucro consolidado e o dos controladores não têm o mesmo sinal. A Usiminas
+    fecha 2024 com consolidado de **+R$ 3 mi** e **−R$ 146 mi** para o
+    controlador — e a manchete foi "lucro líquido de R$ 3 milhões".
+
+    Margem líquida, ROE e P/L sobre o consolidado descrevem o grupo, e não a
+    ação. O app **não corrige** — o consolidado é leitura fiel do que a
+    companhia publicou, e o ROE dele é consistente (consolidado sobre patrimônio
+    consolidado, que também inclui minoritário). O que faltava era dizer.
+    """
+    from valuation.diagnostico import ALERTA, _minoritarios
+
+    achados = _minoritarios(_com_minoritarios(3.4, -145.9))
+    assert len(achados) == 1
+    assert achados[0].codigo == "lucro_do_controlador_tem_outro_sinal"
+    assert achados[0].severidade == ALERTA
+    # O valor sai **com a unidade**: sem ela, "3,4" numa base em reais se lê
+    # como milhões e o alerta erra a ordem de grandeza que ele quer mostrar.
+    assert "R$ milhões" in achados[0].titulo
+
+
+def test_minoritario_relevante_vira_informacao():
+    """Na Metalúrgica Gerdau, **66% do lucro não é do acionista da listada**.
+
+    O corte é 25% e acusa 13% da base — "um quarto do lucro não é seu" é limiar
+    com significado próprio, e não só um quantil.
+    """
+    from valuation.diagnostico import INFORMACAO, _minoritarios
+
+    achados = _minoritarios(_com_minoritarios(4611.0, 1545.0))
+    assert len(achados) == 1
+    assert achados[0].codigo == "lucro_em_boa_parte_dos_minoritarios"
+    assert achados[0].severidade == INFORMACAO
+    assert "66%" in achados[0].titulo
+
+
+def test_sem_minoritario_relevante_nao_ha_achado():
+    """O controle. Na WEG os controladores ficam com 97% — não é notícia."""
+    from valuation.diagnostico import _minoritarios
+
+    assert _minoritarios(_com_minoritarios(1000.0, 970.0)) == []
+
+
+def test_o_indicador_do_controlador_existe_e_e_a_fracao():
+    """Ele torna a distância comparável entre companhias, e não só um aviso."""
+    import numpy as np
+
+    analise = _com_minoritarios(4611.0, 1545.0)
+    valor = float(analise.mediana("Lucro dos controladores / Lucro liquido"))
+    assert np.isclose(valor, 1545.0 / 4611.0, atol=1e-6)

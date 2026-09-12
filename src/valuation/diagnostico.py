@@ -361,6 +361,7 @@ def diagnosticar(
         achados += _checar_equivalencia_no_ebit(analise)
     if analise is not None:
         achados += _checar_contra_historico(resultado, analise)
+        achados += _minoritarios(analise)
     if retorno is not None:
         achados += _checar_retorno(resultado, retorno)
 
@@ -819,6 +820,117 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
             )
         )
 
+    return achados
+
+
+# Quanto do lucro consolidado pode ficar com os minoritarios antes de a leitura
+# mudar. Medido no DFP consolidado de 2024, em 415 companhias:
+#
+#     acima de 10% do consolidado   19,3% da base
+#     acima de 25%                  13,0%
+#     acima de 50%                   7,5%
+#     **sinal diferente**            2,4%  (10 companhias)
+#
+# O corte fica em 25%: acusa 13% da base, e "um quarto do lucro nao e do
+# acionista" e limiar com significado proprio, e nao so um quantil.
+LUCRO_EM_BOA_PARTE_DOS_MINORITARIOS = 0.25
+
+
+def _minoritarios(analise) -> list[Achado]:
+    """O lucro consolidado nao e o do acionista da companhia listada.
+
+    `lucro_liquido` e o `3.11` -- o consolidado, que soma a parte dos socios
+    minoritarios das controladas. Quem compra a acao recebe o `3.11.01`, e o
+    release costuma publicar esse. Onde os dois se afastam, **todo numero de
+    lucro na tela descreve o grupo e nao a listada**: margem liquida, ROE, P/L.
+
+    O caso extremo nao e raro o bastante para ser ignorado: em 10 companhias de
+    415 os dois **nao tem o mesmo sinal**. A Usiminas fecha 2024 com lucro
+    consolidado de +R$ 3 mi e prejuizo de R$ 146 mi para o controlador -- e a
+    imprensa noticiou o +3.
+
+    Nao corrige: o consolidado e a leitura fiel do que a companhia publicou, e o
+    ROE do app e consistente (consolidado sobre patrimonio consolidado, que
+    tambem inclui minoritario). O que faltava era **dizer**.
+    """
+    achados: list[Achado] = []
+
+    def ultimo(chave: str) -> float:
+        """O valor mais recente da conta -- e nao do indicador.
+
+        As duas sao **contas** da DRE, e nao indicadores: elas moram nas
+        demonstracoes. `analise.ultimo` procuraria em `indicadores` e devolveria
+        NaN sempre, calado.
+        """
+        try:
+            serie = analise.demonstracoes.serie(chave).dropna()
+        except Exception:  # noqa: BLE001 - conta ausente na origem
+            return float("nan")
+        return float(serie.iloc[-1]) if len(serie) else float("nan")
+
+    consolidado = ultimo("lucro_liquido")
+    controladores = ultimo("lucro_controladores")
+
+    # **O numero vai com a unidade da propria serie.** Sem ela, "3.362.000,0"
+    # numa base em reais se le como milhoes e o alerta erra a ordem de grandeza
+    # justamente onde ele quer chamar atencao para o valor.
+    unidade = getattr(analise.demonstracoes, "unidade", "") or ""
+
+    def moeda(valor: float) -> str:
+        return f"{_num(valor)} {unidade}".strip()
+    if not (np.isfinite(consolidado) and np.isfinite(controladores)):
+        return achados
+    if abs(consolidado) < 1e-9:
+        return achados
+
+    fora = (consolidado - controladores) / abs(consolidado)
+    if np.sign(consolidado) != np.sign(controladores) and abs(controladores) > 1e-9:
+        achados.append(
+            Achado(
+                codigo="lucro_do_controlador_tem_outro_sinal",
+                severidade=ALERTA,
+                titulo=(
+                    f"O lucro consolidado ({moeda(consolidado)}) e o do "
+                    f"controlador ({moeda(controladores)}) **têm sinais opostos**"
+                ),
+                detalhe=(
+                    "O consolidado soma o resultado dos sócios minoritários das "
+                    "controladas, e aqui ele inverte a leitura: o grupo e o "
+                    "acionista da companhia listada foram para lados diferentes. "
+                    "Margem líquida, ROE e P/L calculados sobre o consolidado "
+                    "descrevem o grupo, e não a ação. Acontece em 10 das 415 "
+                    "companhias medidas."
+                ),
+                acao=(
+                    "Para decidir sobre a ação, use o lucro dos controladores. O "
+                    "app publica os dois na DRE gerencial."
+                ),
+                referencia="CPC 26 / IAS 1 — atribuição do resultado",
+            )
+        )
+    elif abs(fora) > LUCRO_EM_BOA_PARTE_DOS_MINORITARIOS:
+        achados.append(
+            Achado(
+                codigo="lucro_em_boa_parte_dos_minoritarios",
+                severidade=INFORMACAO,
+                titulo=(
+                    f"{_pct(abs(fora), 0)} do lucro consolidado é dos "
+                    "**minoritários** das controladas"
+                ),
+                detalhe=(
+                    f"Consolidado {moeda(consolidado)}, controladores "
+                    f"{moeda(controladores)}. O release e a imprensa costumam "
+                    "publicar o dos controladores, então o número desta tela "
+                    "pode divergir do que o mercado chama de lucro líquido. "
+                    "Passa de um quarto em 13% das companhias medidas."
+                ),
+                acao=(
+                    "Confira contra qual das duas linhas você está comparando "
+                    "antes de concluir que a leitura divergiu."
+                ),
+                referencia="",
+            )
+        )
     return achados
 
 

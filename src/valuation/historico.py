@@ -280,6 +280,19 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         "Margem EBIT": _divisao_segura(ebit, receita),
         "Margem NOPAT": _divisao_segura(nopat, receita),
         "Margem liquida": _divisao_segura(lucro, receita),
+        # **Quanto do lucro e do acionista da listada.** `lucro_liquido` e o
+        # `3.11`, o consolidado -- ele inclui a parte dos socios minoritarios das
+        # controladas, que nao chega a quem compra a acao. O release e a imprensa
+        # costumam publicar o dos controladores (`3.11.01`), e por isso o numero
+        # da tela pode discordar do que o mercado chama de "lucro liquido".
+        #
+        # Medido no DFP consolidado de 2024, em 415 companhias: os minoritarios
+        # passam de 10% do consolidado em **19,3%** delas, de 25% em 13,0%, e em
+        # **10 (2,4%) os dois nem tem o mesmo sinal** -- a Usiminas fecha 2024 com
+        # consolidado de +R$ 3 mi e **-R$ 146 mi** para o controlador.
+        "Lucro dos controladores / Lucro liquido": _divisao_segura(
+            d.serie("lucro_controladores"), lucro
+        ),
         "Aliquota efetiva de IR": aliquota_efetiva,
         # Retorno e sua decomposicao
         "Giro do ativo": _divisao_segura(receita, ativo_medio),
