@@ -836,6 +836,46 @@ def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
 LUCRO_EM_BOA_PARTE_DOS_MINORITARIOS = 0.25
 
 
+def _ponte_com_o_release(analise) -> str:
+    """A divida liquida sem arrendamento, para reconciliar com o que a companhia
+    publica.
+
+    **A divida do app inclui o passivo de arrendamento; a manchete do release
+    quase sempre nao.** Conferido contra o divulgado de 2024: a Suzano publica
+    divida liquida de R$ 79,0 bi e o app le **R$ 86,4 bi** -- a diferenca sao os
+    R$ 7,0 bi de arrendamento, e tirando-os o app da **R$ 79,4 bi**, 0,6% do
+    publicado. Na SmartFit a distancia e de **2,8x** (8,4 contra 3,0), porque ela
+    aluga todas as academias.
+
+    Nenhum dos dois numeros esta errado, e incluir o arrendamento e a escolha
+    certa para valuation -- ele e divida. O que faltava era **a ponte**: sem ela
+    quem confere contra o release conclui que a leitura falhou, e o custo disso
+    e o analista deixar de confiar no resto.
+    """
+    d = getattr(analise, "demonstracoes", None)
+    if d is None:
+        return ""
+    try:
+        liquida = float(d.divida_liquida().dropna().iloc[-1])
+        arrendamento = float(
+            d.serie("arrendamento_curto_prazo")
+            .add(d.serie("arrendamento_longo_prazo"), fill_value=0)
+            .dropna()
+            .iloc[-1]
+        )
+    except Exception:  # noqa: BLE001 - companhia sem uma das contas
+        return ""
+    if not (np.isfinite(liquida) and np.isfinite(arrendamento)) or arrendamento <= 0:
+        return ""
+    unidade = getattr(d, "unidade", "") or ""
+    return (
+        f" **Para reconciliar com o release:** a dívida líquida aqui é "
+        f"{_num(liquida)} {unidade} **com** arrendamento; sem ele são "
+        f"{_num(liquida - arrendamento)} {unidade}, que costuma ser o número da "
+        "manchete."
+    ).rstrip()
+
+
 def _minoritarios(analise) -> list[Achado]:
     """O lucro consolidado nao e o do acionista da companhia listada.
 
@@ -1073,6 +1113,7 @@ def _checar_contra_historico(
                     "Não capitalize o aluguel de novo — contaria a mesma dívida duas "
                     "vezes. Ao comparar múltiplos, confirme que os pares seguem a "
                     "mesma norma."
+                    + _ponte_com_o_release(analise)
                 ),
                 referencia="CPC 06 (R2) / IFRS 16",
             )

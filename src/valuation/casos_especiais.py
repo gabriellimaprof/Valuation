@@ -302,11 +302,13 @@ def ler_leasing(analise: AnaliseHistorica) -> LeasingNoBalanco:
     longo = d.serie("arrendamento_longo_prazo")
     arrendamento = curto.add(longo, fill_value=0).dropna()
 
-    divida = d.serie("divida_bruta").dropna()
-    if divida.empty:
-        divida = (
-            d.serie("divida_curto_prazo").add(d.serie("divida_longo_prazo"), fill_value=0).dropna()
-        )
+    # **A divida vem do metodo, e nao de uma conta com esse nome.**
+    # `divida_bruta` nunca esteve no vocabulario nem em `valores`: a linha
+    # pedia `serie("divida_bruta")`, recebia NaN sempre e caia no ramo de baixo.
+    # Os dois davam o mesmo numero -- o metodo **e** a soma de curto e longo --,
+    # entao nada estava errado; o que havia era um ramo morto que parecia
+    # preferencia por uma conta melhor que nao existe.
+    divida = d.divida_bruta().dropna()
 
     if arrendamento.empty or divida.empty:
         return LeasingNoBalanco(

@@ -542,8 +542,30 @@ class Demonstracoes:
         return chave in self.valores.index and self.valores.loc[chave].notna().any()
 
     def serie(self, chave: str) -> pd.Series:
-        """Serie anual de uma conta, com ``NaN`` onde nao ha dado."""
+        """Serie anual de uma conta, com ``NaN`` onde nao ha dado.
+
+        **Conta que o vocabulario nao conhece levanta erro**, e a distincao e a
+        mesma que este projeto ja aplica a premissa: conta conhecida e ausente
+        naquela companhia devolve `NaN`, porque faltar e leitura honesta; chave
+        **digitada errada** e defeito de quem chamou, e devolver `NaN` ali
+        entrega uma coluna vazia que se le como "a companhia nao publica isto".
+
+        Custou uma medicao inteira: um script pediu `"arrendamento"` -- as
+        chaves sao `arrendamento_curto_prazo` e `arrendamento_longo_prazo` -- e
+        recebeu `NaN` em **20 companhias**, resultado que passaria por achado
+        sobre a base se ninguem conferisse o nome.
+        """
         if chave not in self.valores.index:
+            from .esquema import POR_CHAVE
+
+            if chave not in POR_CHAVE:
+                proximas = sorted(
+                    outra for outra in POR_CHAVE if chave.split("_")[0] in outra
+                )[:4]
+                dica = f" Talvez: {', '.join(proximas)}." if proximas else ""
+                raise KeyError(
+                    f"'{chave}' nao e uma conta do vocabulario.{dica}"
+                )
             return pd.Series(np.nan, index=self.valores.columns, name=chave)
         return self.valores.loc[chave]
 

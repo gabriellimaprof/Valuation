@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1246 testes
+pytest                        # 1252 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.246 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.252 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2540,6 +2540,54 @@ valuation esta certo. O que faltava era **dizer**, e agora sao duas pecas:
 E as duas invariantes do projeto pegaram o acrescimo na hora: indicador novo sem
 verbete de formula e sem rotulo acentuado reprova em `test_formulas.py` e em
 `test_app.py`. Foi o que aconteceu.
+
+### O balanco conferido contra o release, e o IFRS 16 explica a distancia
+
+A DRE ja tinha sido conferida contra release e imprensa. O **balanco** nunca --
+e e nele que o IFRS 16 e o arrendamento fora da subarvore de divida
+apareceriam.
+
+Conferido no divulgado de 2024:
+
+| | Divida liquida publicada | O app le | Sem arrendamento |
+|---|---|---|---|
+| Suzano | R$ 79,0 bi | 86,4 bi | **79,4 bi** |
+| SmartFit | -- | 8,4 bi | **3,0 bi** |
+
+**A diferenca e inteira o arrendamento**, e a reconciliacao fecha em 0,6%: a
+divida do app inclui o passivo de IFRS 16 e a manchete do release quase sempre
+nao. Na SmartFit a distancia e de **2,8x**, porque ela aluga todas as academias.
+
+Nenhum dos dois numeros esta errado, e **incluir o arrendamento e a escolha
+certa para valuation** -- ele e divida, e a decisao ja estava tomada e
+documentada. O que faltava era **a ponte**: sem ela quem confere contra o
+release conclui que a leitura falhou, e o custo disso e o analista deixar de
+confiar no resto. O achado `divida_e_muito_arrendamento` passou a dar os dois
+numeros lado a lado.
+
+### Chave de conta digitada errada devolvia uma coluna de NaN
+
+Este projeto ja legisla o caso para premissa: *"nome digitado errado levanta
+erro -- uma tabela inteira de `NaN` por causa de um typo e pior que nenhuma
+tabela, porque parece resultado"*. A regra nao valia para **conta**:
+`serie("chave_que_nao_existe")` devolvia `NaN` em silencio.
+
+E ela cobrou. Um script da propria conferencia pediu `"arrendamento"` -- as
+chaves sao `arrendamento_curto_prazo` e `arrendamento_longo_prazo` -- e recebeu
+`NaN` em **20 companhias**. Isso passaria por achado sobre a base se ninguem
+conferisse o nome.
+
+A distincao que importa e a mesma de sempre: conta **conhecida e ausente**
+naquela companhia devolve `NaN`, porque faltar e leitura honesta; chave que o
+vocabulario nao conhece e defeito de quem chamou. A mensagem **sugere o nome
+certo**, porque erro sem saida so troca um NaN silencioso por um travamento
+silencioso.
+
+**E a guarda achou codigo morto na primeira execucao.** `casos_especiais.ler_leasing`
+pedia `serie("divida_bruta")` -- que nunca esteve no vocabulario nem em
+`valores` -- e caia num ramo de fallback. Os dois davam o mesmo numero, porque
+`divida_bruta()` **e** a soma de curto e longo, entao nada estava errado; o que
+havia era um ramo que parecia preferencia por uma conta melhor que nao existe.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

@@ -601,3 +601,43 @@ def test_o_lucro_liquido_ausente_vem_da_soma_das_duas_pontas(tmp_path):
     assert float(dfs.valor("operacoes_descontinuadas")) == pytest.approx(-30.0)
     # 100 - 30 = 70, e nao os 100 que a leitura antiga devolveria.
     assert float(dfs.valor("lucro_liquido")) == pytest.approx(70.0)
+
+
+def test_conta_fora_do_vocabulario_levanta_em_vez_de_devolver_nan():
+    """**Typo em nome de conta devolvia uma coluna de NaN**, que parece dado.
+
+    É a mesma regra que este projeto já aplica a premissa: nome digitado errado
+    levanta erro, porque uma tabela inteira de `NaN` por causa de um typo é pior
+    que nenhuma tabela — ela parece resultado.
+
+    A distinção que importa: conta **conhecida e ausente** naquela companhia
+    continua devolvendo `NaN`, porque faltar é leitura honesta. Chave que o
+    vocabulário não conhece é defeito de quem chamou.
+
+    Custou uma medição inteira: um script pediu `"arrendamento"` — as chaves são
+    `arrendamento_curto_prazo` e `arrendamento_longo_prazo` — e recebeu `NaN` em
+    20 companhias, resultado que passaria por achado sobre a base.
+    """
+    import numpy as np
+    import pandas as pd
+    import pytest
+
+    from valuation.importacao import Demonstracoes
+
+    dfs = Demonstracoes(
+        empresa="T",
+        valores=pd.DataFrame({2024: {"receita_liquida": 100.0}}),
+        unidade="R$",
+    )
+
+    # Conta conhecida e presente.
+    assert float(dfs.serie("receita_liquida").iloc[0]) == 100.0
+    # Conta conhecida e **ausente nesta companhia**: NaN, e nao erro.
+    assert np.isnan(float(dfs.serie("dividendos_pagos").iloc[0]))
+    # Chave que o vocabulario nao conhece: erro.
+    with pytest.raises(KeyError, match="nao e uma conta do vocabulario"):
+        dfs.serie("arrendamento")
+    # E a mensagem **sugere o nome certo**, porque o erro sem saida so troca um
+    # NaN silencioso por um travamento silencioso.
+    with pytest.raises(KeyError, match="arrendamento_curto_prazo"):
+        dfs.serie("arrendamento")

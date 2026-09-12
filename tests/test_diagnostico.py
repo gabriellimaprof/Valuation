@@ -818,3 +818,77 @@ def test_o_indicador_do_controlador_existe_e_e_a_fracao():
     analise = _com_minoritarios(4611.0, 1545.0)
     valor = float(analise.mediana("Lucro dos controladores / Lucro liquido"))
     assert np.isclose(valor, 1545.0 / 4611.0, atol=1e-6)
+
+
+def test_o_achado_do_arrendamento_reconcilia_com_o_release():
+    """A dívida do app inclui arrendamento; a manchete do release quase nunca.
+
+    Conferido contra o divulgado de 2024: a Suzano publica dívida líquida de
+    **R$ 79,0 bi** e o app lê **R$ 86,4 bi** — a diferença são os R$ 7,0 bi de
+    arrendamento, e tirando-os o app dá **R$ 79,4 bi**, 0,6% do publicado. Na
+    SmartFit a distância é de **2,8x** (8,4 contra 3,0), porque ela aluga todas
+    as academias.
+
+    Nenhum dos dois está errado, e incluir o arrendamento é a escolha certa para
+    valuation — ele é dívida. O que faltava era a **ponte**: sem ela quem confere
+    contra o release conclui que a leitura falhou, e o custo é o analista deixar
+    de confiar no resto.
+    """
+    import pandas as pd
+
+    from valuation.diagnostico import _ponte_com_o_release
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "ativo_total": 3000.0,
+                "patrimonio_liquido": 1000.0,
+                "divida_curto_prazo": 200.0,
+                "divida_longo_prazo": 800.0,
+                "caixa_equivalentes": 100.0,
+                "arrendamento_curto_prazo": 40.0,
+                "arrendamento_longo_prazo": 260.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    analise = analisar(
+        Demonstracoes(empresa="T", valores=valores, unidade="R$ milhões")
+    )
+
+    ponte = _ponte_com_o_release(analise)
+    # Divida liquida = 1.000 - 100 = 900; sem os 300 de arrendamento, 600.
+    assert "900,0" in ponte
+    assert "600,0" in ponte
+    assert "R$ milhões" in ponte
+
+
+def test_sem_arrendamento_nao_ha_ponte_a_fazer():
+    """Frase que aparece sem ter o que reconciliar é ruído."""
+    import pandas as pd
+
+    from valuation.diagnostico import _ponte_com_o_release
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "ebit": 200.0,
+                "ativo_total": 3000.0,
+                "patrimonio_liquido": 1000.0,
+                "divida_curto_prazo": 200.0,
+                "divida_longo_prazo": 800.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    assert _ponte_com_o_release(analise) == ""
