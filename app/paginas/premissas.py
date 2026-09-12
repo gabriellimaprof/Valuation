@@ -65,6 +65,22 @@ def render() -> None:
 
 
 def _barra_de_acoes(analise) -> None:
+    # **A saida de emergencia vem antes de tudo, inclusive da saida por falta de
+    # historico.** Perder o que se montou era irreversivel -- nao havia como
+    # voltar um passo, e remontar a mao um horizonte inteiro de direcionadores e
+    # o tipo de trabalho que faz o analista desistir da ferramenta.
+    #
+    # Ela nasceu dentro da fila de botoes, depois do `return` abaixo, e ali era
+    # **inalcancavel para quem nao importou demonstracao** -- que e justamente
+    # quem tambem mexe em premissa e tambem pode perde-la. Um teste de tela pegou.
+    if estado.pode_desfazer():
+        canto = st.columns([5, 1])[1]
+        if canto.button(
+            "↩︎ Desfazer", help="Volta as premissas ao estado anterior.", width="stretch"
+        ):
+            estado.desfazer()
+            st.rerun()
+
     if analise is None:
         st.info(
             "Sem histórico importado, estas premissas são apenas um ponto de partida. "

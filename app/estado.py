@@ -39,6 +39,12 @@ CHAVE_ALVO = "alvo"
 CHAVE_CONFIG = "config"
 CHAVE_PASTA = "pasta_temporaria"
 CHAVE_PRECO = "preco_pedido"
+CHAVE_HISTORICO = "premissas_anteriores"
+
+# Quantos passos atras a sessao guarda. **Nao e ilimitado**: cada passo e uma
+# `Empresa` inteira, e o estado da sessao vive na memoria do servidor -- num
+# servidor compartilhado, historico sem teto e vazamento lento.
+PASSOS_GUARDADOS = 20
 
 
 def pasta_temporaria() -> Path:
@@ -96,6 +102,7 @@ def _empresa_inicial() -> Empresa:
 def iniciar() -> None:
     """Garante que a sessao tem todas as chaves esperadas."""
     st.session_state.setdefault(CHAVE_EMPRESA, _empresa_inicial())
+    st.session_state.setdefault(CHAVE_HISTORICO, [])
     st.session_state.setdefault(CHAVE_DFS, None)
     st.session_state.setdefault(CHAVE_COMPARAVEIS, [])
     st.session_state.setdefault(CHAVE_ALVO, None)
@@ -135,7 +142,46 @@ def empresa() -> Empresa:
 
 
 def definir_empresa(nova: Empresa) -> None:
+    """Troca as premissas, **guardando as anteriores**.
+
+    Este e o ponto unico por onde toda mudanca de premissa passa -- `atualizar`,
+    `substituir_bloco`, a adocao do nome da companhia e a abertura de um projeto
+    salvo. Guardar aqui alcanca as quatro sem que nenhuma precise lembrar.
+
+    Existe porque **perder premissas era irreversivel**. Um usuario relatou ter
+    clicado num botao e visto o que tinha montado voltar ao sugerido; seis
+    mecanismos foram medidos atras disso e nenhum reproduziu, o que significa que
+    o caminho ainda esta aberto. Enquanto ele nao aparece, o que da para garantir
+    e que a perda seja **desfazivel** -- e um passo atras vale mais que um
+    diagnostico que ainda nao existe.
+    """
+    atual = st.session_state.get(CHAVE_EMPRESA)
+    # Rerun do Streamlit reescreve o mesmo objeto varias vezes; sem esta guarda o
+    # historico enche de passos identicos e o "desfazer" nao anda.
+    if atual is not None and atual != nova:
+        pilha = st.session_state.setdefault(CHAVE_HISTORICO, [])
+        pilha.append(atual)
+        del pilha[:-PASSOS_GUARDADOS]
     st.session_state[CHAVE_EMPRESA] = nova
+
+
+def pode_desfazer() -> bool:
+    """Ha um estado anterior de premissas guardado nesta sessao?"""
+    return bool(st.session_state.get(CHAVE_HISTORICO))
+
+
+def desfazer() -> bool:
+    """Volta as premissas ao estado anterior. Devolve se havia o que desfazer.
+
+    **Nao guarda o desfeito**: um "refazer" pediria uma segunda pilha e uma tela
+    para navega-la, e o que o caso pede e uma saida de emergencia, nao um editor
+    com historico.
+    """
+    pilha = st.session_state.get(CHAVE_HISTORICO) or []
+    if not pilha:
+        return False
+    st.session_state[CHAVE_EMPRESA] = pilha.pop()
+    return True
 
 
 def atualizar(alteracoes: dict[str, Any]) -> Empresa:
