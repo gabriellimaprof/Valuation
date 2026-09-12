@@ -671,3 +671,30 @@ def pintar_por_intensidade(tabela, cor: str | None = None):
     finitos = valores[np.isfinite(valores)]
     maximo = float(np.max(np.abs(finitos))) if finitos.size else 0.0
     return tabela.style.map(lambda v: tinta_por_intensidade(v, maximo, cor))
+
+
+def outra_leitura_do_preco(destino, preco: float, por_acao: bool, acoes, unidade: str) -> None:
+    """Cotacao e valor de mercado, um ao lado do outro.
+
+    Quem digita a cotacao quer conferir o valor de mercado que ela implica, e
+    quem digita o total quer o preco por acao. Sem isto o usuario sai da tela
+    para multiplicar -- e o numero de acoes ja esta aqui, lido da composicao de
+    capital que a CVM publica junto da DFP.
+
+    **Mora aqui e nao numa tela** porque duas fazem a mesma pergunta: Margem de
+    seguranca e Retorno esperado. Ela nasceu em Margem, e Retorno passou meses
+    sem ela -- que e como o campo de la ficou sendo o unico do app em que se
+    digita uma grandeza sem ver o que ela quer dizer.
+    """
+    if not acoes:
+        return
+    if por_acao:
+        destino.caption(
+            f"Valor de mercado implícito: **{em_texto(preco * acoes, unidade)}** "
+            f"({formatar(acoes, 'numero')} ações em circulação)"
+        )
+    else:
+        destino.caption(
+            rf"Cotação implícita: **R\$ {formatar(preco / acoes, 'numero')}** "
+            f"({formatar(acoes, 'numero')} ações em circulação)"
+        )

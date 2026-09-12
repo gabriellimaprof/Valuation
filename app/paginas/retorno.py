@@ -24,6 +24,7 @@ from ..componentes import (
     formatar,
     grafico,
     metrica,
+    outra_leitura_do_preco,
     tabela_formatada,
 )
 from ..graficos import cascata_ponte, cascata_tsr, tsr_por_preco
@@ -151,26 +152,68 @@ def _decompor(resultado, acionista):
     lucro_saida = float(acionista.lucro_liquido[-1])
     divida_saida = float(acionista.divida_fechamento[-1])
 
-    colunas = st.columns(3)
+    colunas = st.columns([2, 2, 2])
     guardado = estado.preco()
+    acoes = resultado.empresa.ponte.acoes_em_circulacao
+
+    # **O numero que se sabe de cabeca e a cotacao, e nao o equity em R$ milhoes.**
+    # O campo pedia so o total, entao quem queria o retorno ao preco de tela tinha
+    # de converter -- R$ 49,29 por acao vira 206.800 em milhoes -- e e ai que
+    # entra erro de ordem de grandeza. Visto na tela: um equity digitado mil vezes
+    # maior, com P/L de entrada de **35.541x** e TIR de -50,7%, e nada acusando
+    # alem dos proprios numeros absurdos.
+    #
+    # A escolha e a mesma de Margem de seguranca, e o preco viaja entre as duas
+    # pelo `estado`: fazer as telas discordarem sobre o preco seria o pior tipo de
+    # divergencia num material que vai para o cliente.
+    por_acao = colunas[0].radio(
+        "Informar o preço como",
+        ["Cotação (R$/ação)", f"Equity total ({unidade})"],
+        index=0 if acoes and (guardado is None or guardado["por_acao"]) else 1,
+        horizontal=True,
+        disabled=not acoes,
+        help=(
+            None
+            if acoes
+            else "Sem número de ações na ponte, só dá para informar o equity total."
+        ),
+    ) == "Cotação (R$/ação)"
+
+    calculado = float(resultado.equity_value)
+    if por_acao and acoes:
+        calculado = calculado / acoes
+
     padrao = (
         float(guardado["valor"])
-        if guardado and not guardado["por_acao"]
-        else float(resultado.equity_value)
+        if guardado and guardado["por_acao"] == por_acao
+        else calculado
     )
-    preco = colunas[0].number_input(
-        f"Preço de entrada ({unidade})",
+    # **O passo acompanha a grandeza.** Ele era 10,0 fixo: numa cotacao de R$ 49
+    # isso pula um quinto do preco, e num equity de 200 mil os botoes nao chegam
+    # a lugar nenhum. Um por cento do valor mostrado da um passo utilizavel nos
+    # dois casos.
+    passo = max(round(abs(padrao) * 0.01, 2), 0.01) if padrao else 1.0
+    preco = colunas[1].number_input(
+        "Preço de entrada" + (" (R$/ação)" if por_acao else f" ({unidade})"),
         value=padrao,
-        step=10.0,
+        step=passo,
+        min_value=0.0,
         help=(
-            "Por padrão, o valor que o próprio DCF calculou. Troque pelo valor de "
-            "mercado para saber o retorno de comprar ao preço de tela. O número é "
+            "Por padrão, o valor que o próprio DCF calculou. Troque pelo preço de "
+            "mercado para saber o retorno de comprar hoje. O número é "
             "compartilhado com a tela de Margem de segurança."
         ),
     )
+    outra_leitura_do_preco(colunas[1], preco, por_acao, acoes, unidade)
+
     if preco != padrao or guardado is None:
-        estado.definir_preco(preco, por_acao=False)
-    escolha_saida = colunas[1].selectbox("Múltiplo de saída", list(SAIDAS))
+        estado.definir_preco(preco, por_acao=por_acao)
+
+    # A conta daqui para baixo e sempre com o **equity total**: o P/L de entrada
+    # divide pelo lucro da companhia, e nao pelo lucro por acao.
+    if por_acao and acoes:
+        preco = preco * acoes
+    escolha_saida = colunas[2].selectbox("Múltiplo de saída", list(SAIDAS))
     modo = SAIDAS[escolha_saida]
 
     if lucro_entrada <= 0:

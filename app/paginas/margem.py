@@ -16,7 +16,14 @@ from valuation.margem import (
 )
 
 from .. import estado
-from ..componentes import aviso_sem_modelo, em_texto, etapa, formatar, metrica
+from ..componentes import (
+    aviso_sem_modelo,
+    em_texto,
+    etapa,
+    formatar,
+    metrica,
+    outra_leitura_do_preco,
+)
 
 
 def render() -> None:
@@ -124,7 +131,13 @@ def _entrada_do_preco(resultado, empresa):
         colunas[1].caption("Informe o preço para ver a margem.")
         return None, por_acao
 
-    _mostrar_a_outra_leitura(colunas[1], preco, por_acao, resultado, empresa)
+    outra_leitura_do_preco(
+        colunas[1],
+        preco,
+        por_acao,
+        resultado.empresa.ponte.acoes_em_circulacao,
+        empresa.unidade,
+    )
 
     estado.definir_preco(preco, por_acao=por_acao)
     return preco, por_acao
@@ -231,29 +244,6 @@ def _papel_sugerido() -> str:
     except Exception:  # noqa: BLE001 - sugestao nunca derruba a tela
         return ""
     return achados[0] if achados else ""
-
-
-def _mostrar_a_outra_leitura(coluna, preco, por_acao, resultado, empresa) -> None:
-    """Cotação e valor de mercado, um ao lado do outro.
-
-    Quem digita a cotação quer conferir o valor de mercado que ela implica, e
-    quem digita o total quer o preço por ação. Sem isto o usuário sai da tela
-    para multiplicar — e o número de ações já está aqui, lido da composição de
-    capital que a CVM publica junto da DFP.
-    """
-    acoes = resultado.empresa.ponte.acoes_em_circulacao
-    if not acoes:
-        return
-    if por_acao:
-        coluna.caption(
-            f"Valor de mercado implícito: **{em_texto(preco * acoes, empresa.unidade)}** "
-            f"({formatar(acoes, 'numero')} ações em circulação)"
-        )
-    else:
-        coluna.caption(
-            rf"Cotação implícita: **R\$ {formatar(preco / acoes, 'numero')}** "
-            f"({formatar(acoes, 'numero')} ações em circulação)"
-        )
 
 
 def _placar(m, unidade: str, formato: str) -> None:
