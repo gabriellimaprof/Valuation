@@ -247,6 +247,16 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     capex = d.serie("capex")
     ativo = d.serie("ativo_total")
     patrimonio = d.serie("patrimonio_liquido")
+    # **O patrimonio do controlador e a outra metade da cadeia.** A DRE gerencial
+    # ja desce do lucro consolidado ao dos controladores; sem o patrimonio
+    # correspondente nao da para fechar o ROE na base de quem compra a acao.
+    #
+    # Minoritario ausente vale **zero** aqui, e nao "nao sei": a CVM so publica
+    # `2.03.09` quando ha minoritario, e a companhia sem controlada de terceiros
+    # tem o patrimonio inteiro do controlador. Tratar como faltante apagaria o
+    # indicador de quem justamente nao tem o problema.
+    minoritarios = d.serie("minoritarios").reindex(patrimonio.index).fillna(0.0)
+    patrimonio_controladores = patrimonio.sub(minoritarios, fill_value=0.0)
     giro_operacional = d.capital_giro()
     divida_bruta = d.divida_bruta()
     divida_liquida = d.divida_liquida()
@@ -262,6 +272,7 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     capital_investido = divida_liquida.add(patrimonio, fill_value=0)
     capital_medio = _media_movel_de_saldo(capital_investido)
     patrimonio_medio = _media_movel_de_saldo(patrimonio)
+    patrimonio_controladores_medio = _media_movel_de_saldo(patrimonio_controladores)
     ativo_medio = _media_movel_de_saldo(ativo)
     divida_media = _media_movel_de_saldo(divida_bruta)
 
@@ -298,6 +309,17 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         "Giro do ativo": _divisao_segura(receita, ativo_medio),
         "Alavancagem financeira": _divisao_segura(ativo_medio, patrimonio_medio),
         "ROE": _divisao_segura(lucro, patrimonio_medio),
+    # **A leitura do acionista da listada**, ao lado da consolidada. Nao
+    # substitui: as duas respondem perguntas diferentes e as duas sao
+    # internamente consistentes -- consolidado sobre consolidado descreve o
+    # grupo, controlador sobre controlador descreve a acao.
+    #
+    # Medido em 415 companhias de 2024, a **mediana das duas e a mesma** (10,0%)
+    # -- mas 21,2% diferem em mais de 1 p.p., 8,7% em mais de 5, e **13 (3,1%)
+    # trocam de sinal**. Na Marfrig o ROE vai de 17,3% para 53,5%.
+    "ROE dos controladores": _roe_dos_controladores(
+        d.serie("lucro_controladores"), patrimonio_controladores_medio
+    ),
         "Giro do capital investido": _divisao_segura(receita, capital_medio),
         "ROIC": roic,
         # Reinvestimento
@@ -578,6 +600,22 @@ def anos_entre(inicio, fim) -> float:
         return float(int(str(fim).strip()) - int(str(inicio).strip()))
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _roe_dos_controladores(lucro: pd.Series, patrimonio: pd.Series) -> pd.Series:
+    """ROE na base do controlador, **recusando patrimonio nao positivo**.
+
+    Nao e calibracao, e definicao: retorno sobre capital negativo nao e retorno.
+    E o caso existe e nao e raro -- quando o minoritario passa de 100% do
+    patrimonio consolidado, o do controlador fica negativo. Medido em 2024:
+    Minerva com minoritario em **141% do PL** e Metalfrio em 168%, e sem a
+    guarda os dois publicam ROE de 1.024% e 45,5% que nao medem coisa alguma.
+
+    E o mesmo criterio que `KD_MAXIMO_PLAUSIVEL` aplica ao custo da divida:
+    denominador pequeno demais faz a razao deixar de descrever o que o nome dela
+    promete.
+    """
+    return _divisao_segura(lucro, patrimonio.where(patrimonio > 0))
 
 
 def crescimento_composto(serie: pd.Series) -> float:

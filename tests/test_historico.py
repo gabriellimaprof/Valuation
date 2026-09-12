@@ -596,3 +596,87 @@ def test_a_guarda_de_span_nao_tem_chamador_no_app_e_isso_esta_certo():
     sugestao = sugerir_premissas(analisar(montada_a_mao))
     assert sugestao.operacionais.crescimento_receita[0] == pytest.approx(0.045)
     assert "3 meses" in " ".join(sugestao.alertas)
+
+
+def _com_minoritario(lucro_c, lucro_k, pl, minoritario):
+    """Duas colunas iguais, para a media movel do saldo ser o proprio saldo."""
+    return _demonstracoes(
+        {
+            "receita_liquida": [1000.0, 1000.0],
+            "custo_produtos_vendidos": [600.0, 600.0],
+            "ebit": [200.0, 200.0],
+            "depreciacao_amortizacao": [50.0, 50.0],
+            "ativo_total": [3000.0, 3000.0],
+            "lucro_liquido": [lucro_c, lucro_c],
+            "lucro_controladores": [lucro_k, lucro_k],
+            "patrimonio_liquido": [pl, pl],
+            "minoritarios": [minoritario, minoritario],
+        },
+        [2023, 2024],
+    )
+
+
+def test_o_roe_do_controlador_usa_as_duas_pontas_do_controlador():
+    """Lucro dos controladores sobre patrimônio dos controladores.
+
+    O `ROE` do app é consolidado sobre consolidado — internamente consistente, e
+    descreve o **grupo**. O do mercado é o do acionista da listada, e é este.
+    """
+    analise = analisar(_com_minoritario(lucro_c=200.0, lucro_k=120.0, pl=1000.0, minoritario=400.0))
+    # 120 / (1000 - 400) = 20%; o consolidado da 200/1000 = 20% por coincidencia
+    # aritmetica, entao o caso e montado para os dois **discordarem**.
+    assert float(analise.mediana("ROE dos controladores")) == pytest.approx(0.20)
+    assert float(analise.mediana("ROE")) == pytest.approx(0.20)
+
+    # Agora um caso em que discordam: o minoritario leva metade do lucro e um
+    # quinto do patrimonio.
+    outra = analisar(_com_minoritario(lucro_c=200.0, lucro_k=100.0, pl=1000.0, minoritario=200.0))
+    assert float(outra.mediana("ROE")) == pytest.approx(0.20)
+    assert float(outra.mediana("ROE dos controladores")) == pytest.approx(100 / 800)
+
+
+def test_patrimonio_do_controlador_negativo_nao_vira_roe():
+    """**Retorno sobre capital negativo não é retorno**, e o caso é real.
+
+    Quando o minoritário passa de 100% do patrimônio consolidado, o do
+    controlador fica negativo. Medido em 2024: Minerva com minoritário em **141%
+    do PL** e Metalfrio em 168% — sem a guarda os dois publicam ROE de 1.024% e
+    45,5%, números que não medem coisa alguma.
+
+    É o mesmo critério de `KD_MAXIMO_PLAUSIVEL`: denominador pequeno demais faz
+    a razão deixar de descrever o que o nome dela promete.
+    """
+    import numpy as np
+
+    analise = analisar(
+        _com_minoritario(lucro_c=50.0, lucro_k=-30.0, pl=1000.0, minoritario=1400.0)
+    )
+    assert not np.isfinite(float(analise.mediana("ROE dos controladores")))
+    # O consolidado continua existindo: o patrimonio dele e positivo.
+    assert np.isfinite(float(analise.mediana("ROE")))
+
+
+def test_sem_minoritario_as_duas_leituras_coincidem():
+    """O controle. Minoritário ausente vale **zero**, e não "não sei".
+
+    A CVM só publica `2.03.09` quando há minoritário. Tratar a ausência como
+    dado faltante apagaria o indicador justamente de quem não tem o problema.
+    """
+    analise = analisar(
+        _demonstracoes(
+            {
+                "receita_liquida": [1000.0, 1000.0],
+                "custo_produtos_vendidos": [600.0, 600.0],
+                "ebit": [200.0, 200.0],
+                "depreciacao_amortizacao": [50.0, 50.0],
+                "ativo_total": [3000.0, 3000.0],
+                "lucro_liquido": [200.0, 200.0],
+                "lucro_controladores": [200.0, 200.0],
+                "patrimonio_liquido": [1000.0, 1000.0],
+            },
+            [2023, 2024],
+        )
+    )
+    assert float(analise.mediana("ROE dos controladores")) == pytest.approx(
+        float(analise.mediana("ROE"))
+    )

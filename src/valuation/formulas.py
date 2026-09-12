@@ -70,6 +70,16 @@ FORMULAS: dict[str, Formula] = {
     # -- Retorno e sua decomposicao -------------------------------------------
     "Giro do ativo": Formula("Receita líquida ÷ Ativo total médio"),
     "Alavancagem financeira": Formula("Ativo total médio ÷ Patrimônio líquido médio"),
+    "ROE dos controladores": Formula(
+        "Lucro dos controladores (3.11.01) ÷ Patrimônio dos controladores médio "
+        "(2.03 − 2.03.09)",
+        "O retorno sobre o capital de quem compra a ação, que é como o mercado "
+        "calcula ROE. O `ROE` ao lado é o consolidado — as duas pontas incluem "
+        "minoritário — e descreve o grupo. Medido em 415 companhias de 2024, a "
+        "mediana das duas é a mesma (10,0%), mas 21,2% diferem em mais de 1 "
+        "ponto e 3,1% trocam de sinal. Sai vazio quando o patrimônio do "
+        "controlador é negativo: retorno sobre capital negativo não é retorno.",
+    ),
     "ROE": Formula(
         "Lucro líquido ÷ Patrimônio líquido médio",
         "Patrimônio **médio** entre abertura e fechamento, e não o de "
@@ -273,6 +283,7 @@ def formula(indicador: str) -> Formula | None:
 # como veio.
 ROTULOS_DE_INDICADOR = {
     "Margem liquida": "Margem líquida",
+    "ROE dos controladores": "ROE dos controladores",
     "Lucro dos controladores / Lucro liquido": (
         "Lucro dos controladores / Lucro líquido"
     ),
