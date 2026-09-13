@@ -13,6 +13,13 @@ Uso::
 
 Importa a WEG pela própria interface, percorre as doze telas e sai com código 1
 se achou problema. As imagens ficam em ``tools/telas/``.
+
+``--empresa=NOME`` importa outra companhia, e ``--derivar`` clica em "Derivar do
+histórico" depois de importar. **Sem derivar, as telas de valor mostram a
+empresa de partida com o nome da importada**: a WEG percorrida assim nunca teve
+a ponte dela na tela, e o bloco das duas dívidas líquidas nunca foi visto com
+uma companhia de verdade. Com qualquer um dos dois, a imagem é da página
+inteira, e não só do que cabe na janela.
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ from playwright.sync_api import sync_playwright
 SAIDA = Path(__file__).parent / "telas"
 # Prefixo das imagens, para uma passada nao sobrescrever a outra.
 PREFIXO = ""
+EMPRESA = "WEG"
+DERIVAR = False
 problemas: list[str] = []
 
 # Marcas de markdown que, aparecendo no texto renderizado, significam que alguém
@@ -74,6 +83,24 @@ def conferir(pg, nome: str) -> str:
                 f"[{nome}] markdown cru {marca!r}: ...{corpo[max(0, i - 70): i + 70].strip()}..."
             )
 
+    # **Cifrao que virou formula.** O Streamlit le `$...$` como LaTeX, e a
+    # unidade brasileira e "R$ milhoes": duas no mesmo paragrafo fecham um par e
+    # o meio sai como formula, sem os cifroes. Nao ha texto cru para procurar --
+    # o markdown ja foi interpretado --, entao o sinal e o elemento.
+    #
+    # **A primeira versao procurava `.katex` e nunca disparava.** Esta versao do
+    # Streamlit desenha a formula como `<code class="language-math
+    # math-inline">`, e `.katex` nao existe na pagina: as quatro passadas sairam
+    # limpas, e um app de uma linha com a frase crua tambem. O seletor abaixo
+    # foi conferido disparando na frase crua e calando na escapada. O app nao
+    # usa formula de proposito em tela nenhuma.
+    formulas = pg.locator("code.math-inline, code.language-math, .katex")
+    if formulas.count():
+        trecho = " ".join(formulas.first.inner_text()[:80].split())
+        problemas.append(
+            f"[{nome}] cifrao virou formula em {formulas.count()} trecho(s): ...{trecho}..."
+        )
+
     if pg.evaluate(
         "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2"
     ):
@@ -116,10 +143,18 @@ def percorrer(porta: str, trimestral: bool = False, visao: str = "anual") -> int
         print(f"visao desconhecida: {visao!r}. Use uma de {sorted(VISOES)}.")
         return 2
     PREFIXO = f"{visao}_" if visao != "anual" else ""
+    if EMPRESA != "WEG":
+        PREFIXO += "".join(c if c.isalnum() else "_" for c in EMPRESA).strip("_") + "_"
     url = f"http://localhost:{porta}"
     with sync_playwright() as p:
         navegador = p.chromium.launch()
-        pg = navegador.new_page(viewport={"width": 1600, "height": 1400})
+        # **`full_page` nao alcanca o Streamlit**: ele rola dentro de um conteiner
+        # proprio, e para o navegador a pagina tem a altura da janela. A primeira
+        # tentativa capturou as tres companhias cortadas na cascata da ponte --
+        # exatamente acima do que se queria ver. Numa companhia escolhida a
+        # janela e alta, e o que ficaria abaixo da dobra cabe na imagem.
+        altura = 7000 if (EMPRESA != "WEG" or DERIVAR) else 1400
+        pg = navegador.new_page(viewport={"width": 1600, "height": altura})
 
         erros_js: list[str] = []
         pg.on("pageerror", lambda e: erros_js.append(str(e)))
@@ -153,7 +188,7 @@ def percorrer(porta: str, trimestral: bool = False, visao: str = "anual") -> int
         pg.wait_for_timeout(2000)
         campo = pg.locator("input[aria-label='Empresa']").first
         campo.click()
-        campo.fill("WEG")
+        campo.fill(EMPRESA)
         pg.wait_for_timeout(2500)
         pg.keyboard.press("Enter")
         esperar(pg, 4000)
@@ -177,6 +212,10 @@ def percorrer(porta: str, trimestral: bool = False, visao: str = "anual") -> int
         esperar(pg, 60000 if visao == "movel" else 25000, onde=f"importar {visao}")
 
         conferir(pg, "Dados")
+
+        if DERIVAR:
+            pg.locator("button", has_text="Derivar do histórico").first.click()
+            esperar(pg, 6000, onde="derivar do historico")
 
         # A navegação é pelo menu, e **não** por goto: recarregar a página abre
         # outra sessão do Streamlit e o histórico importado se perde. Uma
@@ -227,6 +266,10 @@ if __name__ == "__main__":
     # sessao esconderia qual delas produziu a tela.
     argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
     escolhida = "anual"
+    for opcao in sys.argv[1:]:
+        if opcao.startswith("--empresa="):
+            EMPRESA = opcao.split("=", 1)[1]
+    DERIVAR = "--derivar" in sys.argv
     if "--trimestral" in sys.argv:
         escolhida = "trimestral"
     elif "--movel" in sys.argv:

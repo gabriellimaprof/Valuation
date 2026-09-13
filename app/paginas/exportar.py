@@ -14,7 +14,7 @@ import yaml
 from valuation import biblioteca, exportar_excel
 
 from .. import estado, navegacao
-from ..componentes import aviso_sem_modelo, etapa, secao
+from ..componentes import aviso_sem_modelo, escapar_cifrao, etapa, secao
 
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -194,7 +194,12 @@ def _relatorio(resultado) -> None:
     )
 
     with st.expander("Ver o relatório"):
-        st.markdown(texto)
+        # **O arquivo baixado sai cru; so a tela e escapada.** O relatorio e
+        # markdown do motor, cheio de "R$ milhoes", e dentro do expansor fechado
+        # os pares viravam formula sem ninguem ver -- a varredura acusou na CSN e
+        # na Porto Seguro um trecho de texto vazio, porque o expansor estava
+        # fechado.
+        st.markdown(escapar_cifrao(texto))
 
     _material_do_comite(resultado, analise, qualidade, diagnostico, investimento, banco)
 

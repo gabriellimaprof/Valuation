@@ -977,6 +977,43 @@ def _titulos_que_nao_sao_caixa(analise) -> list[Achado]:
     ]
 
 
+def _capital_irrisorio(analise) -> list[Achado]:
+    """ROIC recusado onde o capital investido nao sustenta a divisao.
+
+    O numero some da tela nesses exercicios, e sumir calado se le como "a
+    companhia nao publicou". Ver `historico.GIRO_DO_CAPITAL_IMPLAUSIVEL`.
+    """
+    anos = tuple(getattr(analise, "capital_irrisorio", ()) or ())
+    if not anos:
+        return []
+    from .historico import GIRO_DO_CAPITAL_IMPLAUSIVEL
+
+    return [
+        Achado(
+            codigo="roic_de_capital_irrisorio",
+            severidade=INFORMACAO,
+            titulo=(
+                f"ROIC vazio em {len(anos)} exercício(s): capital investido abaixo "
+                f"de {_pct(1 / GIRO_DO_CAPITAL_IMPLAUSIVEL, 0)} da receita"
+            ),
+            detalhe=(
+                f"Em {', '.join(str(a) for a in anos)}, o capital investido médio "
+                "ficou tão pequeno perto da receita que o ROIC deixou de medir "
+                "retorno e passou a medir o denominador — na Porto Saúde ele saía "
+                "com 460%. O app deixa o ROIC e o giro do capital vazios nesses "
+                "anos; as medianas, o alerta de perpetuidade e a comparação com a "
+                "base usam os outros."
+            ),
+            acao=(
+                "Para ancorar a perpetuidade, apoie-se na margem, no giro do ativo "
+                "ou no ROE. Capital irrisório costuma ser de quem opera com dinheiro "
+                "de terceiros — seguradora, operadora de saúde, holding — ou de quem "
+                "tem caixa quase igual ao patrimônio."
+            ),
+        )
+    ]
+
+
 def _minoritarios(analise) -> list[Achado]:
     """O lucro consolidado nao e o do acionista da companhia listada.
 
@@ -1221,6 +1258,7 @@ def _checar_contra_historico(
         )
 
     achados += _titulos_que_nao_sao_caixa(analise)
+    achados += _capital_irrisorio(analise)
 
     kd_competencia = _mediana(analise, "Custo da divida efetivo")
     kd_caixa = _mediana(analise, "Custo da divida pelo caixa")

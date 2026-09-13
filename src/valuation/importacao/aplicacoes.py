@@ -161,9 +161,8 @@ DECLARADO_LIVRE = re.compile(r"\blivres?\b")
 # Medido nas 415 companhias de 2024, a regra marca **5**: Porto Seguro,
 # Bradsaude, Hapvida, Qualicorp e Hospital Care Caledonia -- todas de seguro ou
 # saude. Entre as que tem TVM de longo prazo, pega Porto Seguro (11.014),
-# Hapvida (481) e Bradsaude (400 livres, que ficam), **95% do valor**, e deixa
-# passar a **Porto Saude** (674), holding cuja demonstracao nao usa nenhuma das
-# palavras.
+# Hapvida (481) e Bradsaude (400 livres, que ficam), **95% do valor**. A **Porto
+# Saude** (674) passava: ela ja fala a lingua do IFRS 17 -- ver logo abaixo.
 #
 # **Cada metade da regra sozinha erra.** "premio" e "contraprestacao" soltos no
 # passivo marcaram 12 companhias a mais -- "Contraprestacao a Pagar a Clientes"
@@ -173,6 +172,21 @@ DECLARADO_LIVRE = re.compile(r"\blivres?\b")
 RECEITA_DE_SEGURO = re.compile(r"premio|contraprestac")
 CUSTO_DE_SEGURO = re.compile(r"sinistr|eventos indenizaveis|eventos/sinistros")
 PROVISAO_TECNICA = re.compile(r"provis\w* tecnic")
+
+# **E o vocabulario do IFRS 17**, que trocou premio, sinistro e provisao tecnica
+# por receita de seguro e contrato de seguro a partir de 2023. A Porto Saude
+# publica "Receita de seguro" e "Contratos de seguros", e nenhuma das palavras
+# antigas -- por isso passava.
+#
+# Medido nas 415 companhias de 2024: a receita de seguro em `3.01` marca as
+# quatro seguradoras e operadoras (Porto Seguro, Porto Saude, Bradsaude,
+# Hapvida); o passivo de contrato de seguro acrescenta a **Rede D'Or**, dona da
+# SulAmerica, e a Alianca da Bahia. "Seguros" solto e **despesa com apolice
+# contratada** -- geradora, concessionaria, varejo, "Seguros a pagar" -- e nao
+# pode marcar ninguem: por isso a receita exige "receita de" e o passivo exige
+# "contrato".
+RECEITA_DE_SEGURO_IFRS_17 = re.compile(r"receita de (?:contratos? de )?seguros?")
+PASSIVO_DE_CONTRATO_DE_SEGURO = re.compile(r"contratos? de seguros?")
 
 # Diferenca entre o grupo e a soma das subcontas abaixo da qual ela e
 # arredondamento, e nao uma parte que a companhia deixou sem abrir.
@@ -238,7 +252,18 @@ def opera_seguro(detalhe: pd.DataFrame | None) -> bool:
     receita = rotulos[codigos.str.startswith("3.01")].str.contains(RECEITA_DE_SEGURO)
     custo = rotulos[codigos.str.startswith("3.")].str.contains(CUSTO_DE_SEGURO)
     provisao = rotulos[codigos.str.startswith("2.")].str.contains(PROVISAO_TECNICA)
-    return bool((receita.any() and custo.any()) or provisao.any())
+    receita_ifrs_17 = rotulos[codigos.str.startswith("3.01")].str.contains(
+        RECEITA_DE_SEGURO_IFRS_17
+    )
+    passivo_ifrs_17 = rotulos[codigos.str.startswith("2.")].str.contains(
+        PASSIVO_DE_CONTRATO_DE_SEGURO
+    )
+    return bool(
+        (receita.any() and custo.any())
+        or provisao.any()
+        or receita_ifrs_17.any()
+        or passivo_ifrs_17.any()
+    )
 
 
 def _numero(valor) -> float:

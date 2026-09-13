@@ -73,6 +73,23 @@ def dias_do_periodo(colunas, periodicidade: str = "anual") -> "pd.Series":
 # calhassem de ser iguais era coincidencia e nao calibracao.
 KD_MAXIMO_PLAUSIVEL = 0.25
 
+# **Capital investido irrisorio nao da retorno, da divisao.** Quando o capital
+# medio fica abaixo de 5% da receita -- giro acima de 20x --, o ROIC deixa de
+# medir quanto a operacao rende sobre o que se investiu nela e passa a medir o
+# tamanho do denominador: a Porto Saude saia com **460%**, a Sondotecnica com
+# 1.115% em 2025.
+#
+# Medido na safra 2021-2025, companhia-ano: o giro do capital tem mediana de
+# 0,92x, P99 de 12,5x e P99,5 de 21x. Acima de 20x ficam **10 exercicios de 4
+# companhias** -- Porto Saude, Sondotecnica, Celpar e BBM --, e o primeiro abaixo
+# e a BRQ em 2022, com 18,5x. Os ROIC altos de verdade estao muito abaixo do
+# corte: Whirlpool com 12,5x, e Metrocasa e EPR com 4x a 7x e margem de 25% a 42%.
+#
+# Onde isso machucava: o alerta de ROIC de perpetuidade acima do historico
+# compara com a **mediana** do historico, e uma mediana de 460% fazia o alerta
+# nunca disparar.
+GIRO_DO_CAPITAL_IMPLAUSIVEL = 20.0
+
 # O mesmo corte sobre a **despesa financeira**, e ele nao pergunta a mesma coisa:
 # nao e "esta divida e cara demais?", e sim "este denominador significa alguma
 # coisa?". Ele exclui 25,8% da base de `qualidade._juros`, e **medi mover e
@@ -138,6 +155,11 @@ class AnaliseHistorica:
 
     demonstracoes: Demonstracoes
     indicadores: pd.DataFrame
+    # Os exercicios em que ROIC e giro do capital ficaram vazios porque o capital
+    # investido era irrisorio. Viaja com a analise para que a tela e o
+    # diagnostico digam **por que** o numero sumiu -- vazio sem motivo se le
+    # como "nao publicou". Ver `GIRO_DO_CAPITAL_IMPLAUSIVEL`.
+    capital_irrisorio: tuple = ()
 
     @property
     def anos(self) -> list[int]:
@@ -319,6 +341,10 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     reinvestimento = capex.sub(depreciacao, fill_value=0).add(variacao_giro, fill_value=0)
 
     roic = _divisao_segura(nopat, capital_medio)
+    giro_do_capital = _divisao_segura(receita, capital_medio)
+    capital_irrisorio = giro_do_capital > GIRO_DO_CAPITAL_IMPLAUSIVEL
+    roic = roic.mask(capital_irrisorio)
+    giro_do_capital = giro_do_capital.mask(capital_irrisorio)
     taxa_reinvestimento = _divisao_segura(reinvestimento, nopat)
 
     indicadores: dict[str, pd.Series] = {
@@ -358,7 +384,7 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     "ROE dos controladores": _roe_dos_controladores(
         d.serie("lucro_controladores"), patrimonio_controladores_medio
     ),
-        "Giro do capital investido": _divisao_segura(receita, capital_medio),
+        "Giro do capital investido": giro_do_capital,
         "ROIC": roic,
         # Reinvestimento
         "Capex / Receita": _divisao_segura(capex, receita),
@@ -575,7 +601,11 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
 
     tabela = pd.DataFrame(indicadores).T
     tabela.columns = anos
-    return AnaliseHistorica(demonstracoes=demonstracoes, indicadores=tabela)
+    return AnaliseHistorica(
+        demonstracoes=demonstracoes,
+        indicadores=tabela,
+        capital_irrisorio=tuple(capital_irrisorio[capital_irrisorio].index),
+    )
 
 
 # As contas que respondem "como foi o trimestre". Sao poucas de proposito: a

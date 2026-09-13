@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1298 testes
+pytest                        # 1311 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.298 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.311 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,118 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### ROIC vazio onde o capital investido e irrisorio
+
+Com o titulo de longo prazo fora do capital, apareceram os extremos: onde ele e
+quase todo o capital investido, o capital encolhe perto de zero e o ROIC passa a
+medir o denominador. A Porto Saude saia com **460%**, a Sondotecnica com 1.115%
+em 2025. E isso machucava num lugar concreto: o alerta de ROIC de perpetuidade
+acima do historico compara com a **mediana**, e uma mediana de 460% fazia o
+alerta nunca disparar.
+
+**O corte saiu do giro do capital (receita / capital medio), medido por
+companhia-ano na safra 2021-2025:** mediana de 0,92x, P99 de 12,5x, P99,5 de
+21x. Acima de **20x** ficam 10 exercicios de 4 companhias -- Porto Saude,
+Sondotecnica, Celpar e BBM --, e o primeiro abaixo e a BRQ em 2022, com 18,5x.
+Os ROIC altos de verdade ficam longe do corte: Whirlpool com 12,5x, e Metrocasa e
+EPR com 4x a 7x e margem de 25% a 42%. O giro separa as duas populacoes porque
+ROIC = margem x giro, e so a metade do giro explode com o denominador.
+
+Acima do corte, `GIRO_DO_CAPITAL_IMPLAUSIVEL`, ROIC e giro do capital ficam
+**vazios** -- e o crescimento fundamentado, que carrega o ROIC, junto.
+**Vazio sem motivo se le como "nao publicou"**, entao os exercicios viajam em
+`AnaliseHistorica.capital_irrisorio`: o diagnostico abre o achado
+`roic_de_capital_irrisorio`, a tela do historico diz em que anos, e o verbete do
+ROIC ganhou a frase.
+
+**`BASE` foi regenerada de novo, com a guarda**, nas mesmas tres linhas que dependem do capital investido (universo refeito, 421 companhias, 37 minutos); todas as outras reproduziram exatamente. Uma companhia deixa de ter ROIC mediano (397 para 396) e a cauda de cima recua: o P5 vai de -9,1% para -8,6%, o P75 de 16,5% para 16,2%, o P90 de 26,3% para 26,0% e o P95 de 41,2% para 40,8%. O P95 do giro do capital cai de 4,18x para 3,96x. A tabela de "O ROIC na mesma base da ponte", logo abaixo, descreve a base de antes desta guarda.
+
+### A seguradora que ja fala IFRS 17
+
+O sinal de seguradora deixava passar a Porto Saude, e a razao era de vocabulario:
+ela publica **"Receita de seguro", "Despesas de seguro" e "Contratos de
+seguros"** -- a lingua do IFRS 17, que trocou premio, sinistro e provisao tecnica
+a partir de 2023 -- e nenhuma das palavras antigas.
+
+Medido nas 415 companhias de 2024: a receita de seguro em `3.01` marca as quatro
+seguradoras e operadoras (Porto Seguro, Porto Saude, Bradsaude, Hapvida); o
+passivo de contrato de seguro acrescenta a **Rede D'Or**, dona da SulAmerica, e a
+Alianca da Bahia. Com as regras antigas, o sinal marca agora **8** companhias,
+todas de seguro ou saude, e o titulo de longo prazo que abate a divida fica em
+130 companhias e R$ 33,1 bi.
+
+**"Seguros" solto e o falso positivo desta familia**: e despesa com apolice
+contratada -- "Seguros" no custo de geradora e concessionaria, "Seguros
+administrativos" da Eneva, "Indenizacoes - Seguros" da OceanPact, "Seguros a
+pagar", e ate "Contratos de seguros" da Itausa, fora do passivo. Por isso a
+receita exige "receita de" e o passivo exige "contrato".
+
+### O bloco das duas dividas liquidas so com a ponte desta companhia
+
+**Importar nao deriva as premissas** -- e um clique separado, e deve continuar
+sendo --, e ate la a ponte e a da empresa de partida. O bloco das duas dividas
+somava os titulos da companhia importada a divida de outra, e as duas saiam com
+cara de medida. Visto pela propria varredura do navegador, que importava a WEG e
+nunca derivava: a tela de Valor dela mostrou por meses a ponte da empresa de
+exemplo. O bloco agora so aparece quando `estado.modelo_fora_do_historico()` e
+`None`.
+
+E a varredura aprendeu a ver o que nao via: `--empresa=NOME` importa outra
+companhia, e `--derivar` clica em "Derivar do historico". Com qualquer um dos
+dois a janela e alta (7.000 px). **`full_page` nao alcanca o Streamlit**, que rola
+dentro de um conteiner proprio: a primeira passada capturou as tres companhias
+cortadas exatamente na cascata da ponte, acima do que se queria ver.
+
+Com companhia real a varredura enfim viu o bloco. Na **Ultrapar** a ampla da **7.755,6** -- o numero do release, 7.756 --, com a ponte ja nela; na **CSN**, o aviso das "Acoes Usiminas" no circulante; na **Porto Seguro**, as tres linhas de longo prazo como lastro e o achado de ROIC vazio em 2022 e 2023.
+
+**E viu um defeito que nao e desta rodada.** A Porto Seguro lanca o custo principal, "Despesas de seguro" (-21.614), dentro de `3.04.05`, "Outras despesas operacionais" -- que o app trata inteira como item nao recorrente. A margem EBIT recorrente sai em 82% contra 8,8% reportada, a sugestao projeta margem EBITDA de 82%, e o valor por acao sai em R$ 286. Medido nas companhias do sinal de seguradora, so a Porto Seguro lanca o custo ali. **Nao corrigido.**
+
+### O cifrao que virava formula
+
+As passadas com companhia real acharam o que a WEG nunca mostrou: tres textos
+com dois "R$ milhoes" no mesmo paragrafo -- o aviso do TVM circulante na tela de
+Valor, a reconciliacao com o release e o achado dos minoritarios. O Streamlit le
+`$...$` como LaTeX, e o meio da frase saia em fonte de matematica, sem os dois
+cifroes: "Consolidado -1.538,1 R milhoes, controladores -2.591,9 R milhoes".
+
+O app ja tinha `escapar_cifrao`, e ja tinha documentado este defeito -- mas o
+escape era chamado texto a texto, e a tela do Diagnostico desenhava
+`achado.detalhe` cru. Agora ele fica **onde o texto do motor vira markdown**: os
+achados no Diagnostico e no topo da tela de Valor, os sinais do veredito de
+qualidade, o bloco das duas dividas.
+
+**E a varredura passa a acusar -- na segunda tentativa.** Nao ha texto cru para
+procurar, o markdown ja foi interpretado, entao o sinal tem de ser um elemento. A
+primeira versao procurava `.katex`, e as quatro passadas sairam limpas. So que um
+app de uma linha com a frase crua dos minoritarios **tambem** saia limpo: esta
+versao do Streamlit desenha a formula como `<code class="language-math
+math-inline">`, e `.katex` nao existe na pagina. Detector que nunca dispara passa
+em tudo, e passar em tudo parecia o conserto funcionando. O seletor agora e esse
+`code`, conferido disparando na frase crua e calando na escapada.
+
+**E o detector corrigido achou mais dois**, que as passadas com o detector vazio tinham deixado passar: a legenda de venda de ativo do Historico, na WEG e na Porto Seguro, e o relatorio dentro do expansor fechado do Exportar, na CSN e na Porto Seguro -- que aparecia com texto vazio justamente porque o expansor estava fechado. As quatro passadas finais, WEG, Ultrapar, CSN e Porto Seguro, sairam limpas.
+
+**O teste do cifrao nasceu vazio.** O `sed` que corrigia um aviso de escape comeu
+a barra, e `t.replace(r"R$", "")` removia todo cifrao antes de conferir -- o teste
+passava por construcao. So nao ficou assim porque a linha foi relida depois de
+passar.
+
+### A Localiza nao fecha com nenhuma das duas
+
+A divida liquida publicada no fim de 2024 e de **R$ 30,1 bi** (citada por materia
+que resume os slides do 3T25, e nao lida no release). O app:
+
+| Localiza, 2024 | App | Distancia |
+|---|---|---|
+| Padrao | 34.678 | 4,6 bi |
+| Ampla | 33.703 | 3,6 bi |
+| Padrao sem arrendamento | 33.341 | 3,2 bi |
+| Ampla sem arrendamento | 32.366 | 2,3 bi |
+
+A distancia e maior que o CDB vinculado inteiro (974), entao a diferenca esta em
+outra parte da definicao dela, e sem o release nao se sabe qual. Continua **nao
+conferida**, e o tratamento do vinculado segue a Serena.
+
 ### O ROIC na mesma base da ponte
 
 Com a ponte na ampla, o ROIC que ancora a projecao contava o titulo de longo
@@ -2778,8 +2890,8 @@ ali, e a causa dessa falha da varredura nao foi apurada. Refeita com a receita:
 **premio ou contraprestacao em `3.01` e sinistro no custo, ou provisao tecnica
 no passivo** (`aplicacoes.opera_seguro`) marca **5** companhias -- Porto Seguro,
 Bradsaude, Hapvida, Qualicorp e Hospital Care Caledonia --, todas de seguro ou
-saude, e pega 95% do valor das que tem titulo de longo prazo. Deixa passar a
-Porto Saude (674), holding que nao usa nenhuma das palavras.
+saude, e pega 95% do valor das que tem titulo de longo prazo. Deixava passar a
+Porto Saude (674) -- ver "A seguradora que ja fala IFRS 17".
 
 **Cada metade da regra sozinha erra.** "Premio" e "contraprestacao" soltos
 marcaram 12 companhias a mais: "Contraprestacao a Pagar a Clientes" da Frasle,
@@ -2792,8 +2904,7 @@ contra a provisao, nao o balanco inteiro: a Hapvida tem R$ 8,2 bi de TVM
 circulante, e a primeira redacao do achado chamava tudo de lastro. O texto diz
 "parte" e manda a nota de ativos garantidores.
 
-**Nao verificado:** Localiza. O release nao abriu em tres fontes, e o tratamento
-do CDB vinculado segue a Serena por analogia.
+**Nao verificado:** Localiza -- ver "A Localiza nao fecha com nenhuma das duas".
 
 ### O lucro residual do banco partia do patrimonio do grupo
 

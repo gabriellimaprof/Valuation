@@ -152,7 +152,7 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "Margem liquida": (418, (-0.410, -0.161, -0.004, 0.062, 0.140, 0.283, 0.417)),
     "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.092, 0.199, 0.371, 0.515)),
     "Capex / Receita": (391, (0.004, 0.008, 0.022, 0.049, 0.124, 0.291, 0.406)),
-    "ROIC": (397, (-0.091, 0.001, 0.044, 0.101, 0.165, 0.263, 0.412)),
+    "ROIC": (396, (-0.086, 0.001, 0.044, 0.101, 0.162, 0.260, 0.408)),
     "Investimento em giro (DFC) / Receita": (401, (-0.224, -0.077, -0.009, 0.026, 0.078, 0.152, 0.275)),
     "Divida liquida / EBITDA": (405, (-1.482, -0.610, 0.569, 2.024, 3.455, 5.783, 8.014)),
     "Liquidez corrente": (421, (0.324, 0.638, 1.087, 1.546, 2.167, 2.943, 4.022)),
@@ -212,7 +212,7 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # ja publicada por outro caminho e a melhor evidencia de que a metodologia e
     # a mesma.
     "Giro do ativo": (416, (0.079, 0.136, 0.298, 0.516, 0.854, 1.213, 1.558)),
-    "Giro do capital investido": (397, (0.161, 0.248, 0.494, 0.928, 1.650, 2.893, 4.180)),
+    "Giro do capital investido": (396, (0.161, 0.248, 0.492, 0.927, 1.645, 2.819, 3.956)),
     # As **duas** leituras do custo da divida, e a distancia entre elas e a
     # informacao. A mediana da despesa financeira sobre divida da 18,2% e a do
     # juro efetivamente pago da 9,3%: a linha `3.06.02` junta variacao cambial e
@@ -223,7 +223,7 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # Reinvestimento x ROIC: o crescimento que a propria operacao financia. A
     # mediana em **1,4%** diz que a companhia brasileira mediana nao sustenta,
     # so com reinvestimento, nem a inflacao.
-    "Crescimento fundamentado (reinvest. x ROIC)": (374, (-0.113, -0.075, -0.022, 0.014, 0.082, 0.165, 0.255)),
+    "Crescimento fundamentado (reinvest. x ROIC)": (373, (-0.113, -0.075, -0.022, 0.013, 0.081, 0.162, 0.243)),
     "Margem bruta": (418, (0.101, 0.147, 0.244, 0.336, 0.498, 0.678, 0.863)),
     # Mediana em **0,99x**: o estado estacionario e repor o que se gasta.
     "Capex / Depreciacao": (390, (0.095, 0.192, 0.549, 0.993, 1.748, 3.147, 5.724)),

@@ -181,3 +181,48 @@ def test_premio_e_contraprestacao_soltos_nao_fazem_seguradora(linha):
     )
     assert not opera_seguro(arvore)
     assert longo_prazo_que_abate(arvore, [2024])[2024] == pytest.approx(107.0)
+
+
+# ---------------------------------------------------------------------------
+# O vocabulario do IFRS 17
+# ---------------------------------------------------------------------------
+
+
+def test_a_porto_saude_fala_ifrs_17_e_agora_e_seguradora():
+    """"Receita de seguro" e "Contratos de seguros", e nenhuma palavra antiga."""
+    arvore = _arvore(
+        {
+            "1.02.01.03": ("Aplicações Financeiras Avaliadas ao Custo Amortizado", 674.3),
+            "3.01.01": ("Receita de seguro", 6398.2),
+            "3.02.01": ("Despesas de seguro", -5486.0),
+            "2.01.05.02.04": ("Contratos de seguros", 1059.7),
+        }
+    )
+    assert opera_seguro(arvore)
+    assert longo_prazo_que_abate(arvore, [2024])[2024] == 0.0
+
+
+def test_o_passivo_de_contrato_de_seguro_basta():
+    """Rede D'Or, dona da SulAmérica: a receita não diz "seguro", o passivo diz."""
+    arvore = _arvore(
+        {"2.02.02.02.09": ("Passivos de contratos de seguro", 13190.0)}
+    )
+    assert opera_seguro(arvore)
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [
+        # "Seguros" solto e despesa com apolice contratada, medida em 2024.
+        ("3.02.10", "Seguros"),  # Rio Paranapanema, China Three Gorges
+        ("3.04.02.08", "Seguros administrativos"),  # Eneva
+        ("3.04.04.01", "Indenizações - Seguros"),  # OceanPact
+        ("2.01.05.02.08", "Seguros a pagar"),
+        ("1.02.01.10.08", "Indenização de Seguro a Receber"),  # Usiminas
+        ("4.02.05", "Contratos de seguros"),  # Itausa, fora do passivo
+    ],
+)
+def test_seguro_contratado_nao_faz_seguradora(linha):
+    codigo, rotulo = linha
+    assert not opera_seguro(_arvore({codigo: (rotulo, 10.0)}))
+

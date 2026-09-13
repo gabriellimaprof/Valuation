@@ -9,7 +9,7 @@ from valuation.diagnostico import ALERTA, ERRO, INFORMACAO
 from valuation.formulas import rotulo_do_indicador
 
 from .. import estado
-from ..componentes import aviso_sem_modelo, barra_de_severidade, etapa
+from ..componentes import aviso_sem_modelo, barra_de_severidade, escapar_cifrao, etapa
 
 CORES = {ERRO: "🔴", ALERTA: "🟡", INFORMACAO: "🔵"}
 TITULOS = {
@@ -97,10 +97,15 @@ def render() -> None:
         st.subheader(f"{CORES[severidade]} {TITULOS[severidade]}")
         for achado in achados:
             with st.container(border=True):
-                st.markdown(f"**{achado.titulo}**")
-                st.markdown(achado.detalhe)
+                # **O motor escreve "R$ milhoes" e nao conhece o Streamlit.** Dois
+                # cifroes no mesmo paragrafo fecham um par de LaTeX e o trecho do
+                # meio vira formula -- visto na varredura com a CSN: "Consolidado
+                # -1.538,1 R milhoes, controladores -2.591,9 R milhoes", com o
+                # meio em fonte de matematica e os dois cifroes sumidos.
+                st.markdown(f"**{escapar_cifrao(achado.titulo)}**")
+                st.markdown(escapar_cifrao(achado.detalhe))
                 if achado.acao:
-                    st.markdown(f"**O que fazer:** {achado.acao}")
+                    st.markdown(f"**O que fazer:** {escapar_cifrao(achado.acao)}")
                 if achado.referencia:
                     st.caption(f"Referência: {achado.referencia}")
 

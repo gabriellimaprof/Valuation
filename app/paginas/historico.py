@@ -443,7 +443,7 @@ def _qualidade(analise) -> None:
 
     for sinal in qualidade.por_severidade:
         with st.expander(f"{sinal.icone} {sinal.titulo}", expanded=sinal.veredito == RUIM):
-            st.markdown(sinal.detalhe)
+            st.markdown(escapar_cifrao(sinal.detalhe))
             if np.isfinite(sinal.valor):
                 st.caption(f"Medido: {formatar(sinal.valor, 'pct2')}")
 
@@ -941,11 +941,13 @@ def _caixa_livre_com_reciclagem(analise, composicao) -> None:
 
     sem, com = composicao.caixa_livre(float(fco))
     unidade = analise.demonstracoes.unidade
-    st.caption(
+    # Duas moedas na mesma frase: sem o escape, o par de "R$" vira formula.
+    # Achado pela varredura com o detector corrigido, na WEG e na Porto Seguro.
+    st.caption(escapar_cifrao(
         f"**A venda de ativo não abate o capex, mas entrou no caixa.** "
         f"Fluxo livre sem ela: {formatar(sem, 'moeda', unidade)}; "
         f"com ela: **{formatar(com, 'moeda', unidade)}**."
-    )
+    ))
     if sem and abs(composicao.entradas / sem) >= 0.10:
         st.warning(
             "**As entradas do fluxo de investimento valem mais de 10% do fluxo "
@@ -1037,6 +1039,13 @@ def _retorno(analise) -> None:
 
     resultado = estado.resultado()
     roic = analise.linha("ROIC").dropna()
+    irrisorios = getattr(analise, "capital_irrisorio", ())
+    if irrisorios:
+        st.caption(
+            f"ROIC vazio em {', '.join(str(a) for a in irrisorios)}: o capital "
+            "investido médio ficou abaixo de 5% da receita, e ali o ROIC mede o "
+            "tamanho do denominador, e não o retorno."
+        )
     if not roic.empty and resultado is not None:
         wacc = resultado.custo_capital.wacc_brl
         grafico(

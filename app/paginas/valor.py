@@ -16,6 +16,7 @@ from ..componentes import (
     aviso_sem_modelo,
     conceito,
     em_texto,
+    escapar_cifrao,
     etapa,
     formatar,
     grafico,
@@ -48,8 +49,8 @@ def _holding_avisa_antes_do_numero() -> None:
     )
     if achado is None or achado.severidade != ALERTA:
         return
-    st.warning(f"**{achado.titulo}.** {achado.detalhe}")
-    st.caption(achado.acao)
+    st.warning(escapar_cifrao(f"**{achado.titulo}.** {achado.detalhe}"))
+    st.caption(escapar_cifrao(achado.acao))
 
 
 def render() -> None:
@@ -621,7 +622,7 @@ def _arrendamento(ponte, unidade: str) -> None:
             f"arrendamento aumentaria cerca de {formatar(adicao, 'moeda', unidade)}, "
             "que o modelo não desconta de ninguém."
         )
-    st.warning(aviso)
+    st.warning(escapar_cifrao(aviso))
 
 
 def _duas_dividas_liquidas(ponte, unidade: str) -> None:
@@ -639,6 +640,13 @@ def _duas_dividas_liquidas(ponte, unidade: str) -> None:
 
     analise = estado.analise()
     if analise is None:
+        return
+    # **So com a ponte desta companhia.** Importar nao deriva as premissas -- e
+    # um clique separado --, e ate la a ponte e a da empresa de partida. O bloco
+    # somaria os titulos da companhia importada a divida de outra, e as duas
+    # dividas liquidas sairiam com cara de medida. A barra lateral ja diz que os
+    # numeros ainda nao sao desta empresa, e oferece o clique.
+    if estado.modelo_fora_do_historico() is not None:
         return
     linhas = analise.demonstracoes.titulos_e_valores_mobiliarios()
     longo = [l for l in linhas if l.longo_prazo]
@@ -678,7 +686,7 @@ def _duas_dividas_liquidas(ponte, unidade: str) -> None:
         }
         st.markdown(
             "\n".join(
-                f"- `{l.codigo}` {l.rotulo} — {formatar(l.valor, 'moeda', unidade)}: "
+                f"- `{l.codigo}` {l.rotulo} — {em_texto(l.valor, unidade)}: "
                 f"**{situacao.get(l.classe, 'entra')}**. {l.motivo}"
                 for l in longo
             )
@@ -688,7 +696,7 @@ def _duas_dividas_liquidas(ponte, unidade: str) -> None:
             if ponte.aplicacoes_longo_prazo:
                 st.caption(
                     f"A ponte usa a **ampla**: abate "
-                    f"{formatar(ponte.aplicacoes_longo_prazo, 'moeda', unidade)} de "
+                    f"{em_texto(ponte.aplicacoes_longo_prazo, unidade)} de "
                     "TVM de longo prazo."
                 )
                 if st.button("Voltar à dívida líquida padrão"):
@@ -706,7 +714,7 @@ def _duas_dividas_liquidas(ponte, unidade: str) -> None:
 
     if circulante_fora:
         total = sum(l.valor for l in circulante_fora)
-        st.warning(
+        st.warning(escapar_cifrao(
             f"No **circulante**, {formatar(total, 'moeda', unidade)} do TVM não é "
             "caixa, e as duas dívidas líquidas o abatem mesmo assim: "
             + " ".join(
@@ -716,7 +724,7 @@ def _duas_dividas_liquidas(ponte, unidade: str) -> None:
             + " Para tirá-lo, mova o valor de Aplicações para Ativos não "
             "operacionais em *Editar os itens da ponte*: o equity não muda, a "
             "dívida líquida sim."
-        )
+        ))
 
 
 def _editar_ponte(ponte) -> None:

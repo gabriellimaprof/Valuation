@@ -116,7 +116,10 @@ FORMULAS: dict[str, Formula] = {
         "de fechamento infla o ROIC de quem encolheu e deprime o de quem "
         "investiu no fim do exercício.\n\n"
         "É por isso que este ROIC pode não bater com o de um terminal: "
-        "provavelmente ele escolheu diferente em pelo menos uma das três.",
+        "provavelmente ele escolheu diferente em pelo menos uma das três.\n\n"
+        "**Vazio quando o capital é irrisório.** Abaixo de 5% da receita, o "
+        "capital investido deixa de ser base de retorno — a Porto Saúde saía "
+        "com 460% —, e o ROIC e o giro do capital ficam vazios nesses exercícios.",
     ),
     # -- Reinvestimento -------------------------------------------------------
     "Capex / Receita": Formula("Capex ÷ Receita líquida"),

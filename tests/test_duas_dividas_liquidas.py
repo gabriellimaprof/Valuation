@@ -257,7 +257,7 @@ def test_arquivo_antigo_abre_na_divida_liquida_padrao():
 # ---------------------------------------------------------------------------
 
 
-def _tela_da_ponte():
+def _tela_da_ponte(derivar: bool):
     pytest.importorskip("streamlit.testing.v1")
     from streamlit.testing.v1 import AppTest
 
@@ -276,31 +276,63 @@ from app.paginas import valor
 estado.iniciar()
 if st.session_state.get("dfs") is not None:
     estado.definir_demonstracoes(st.session_state.pop("dfs"))
+if st.session_state.pop("derivar", False):
+    estado.derivar_premissas_do_historico()
 valor._duas_dividas_liquidas(estado.empresa().ponte, "R$ milhões")
 """
     teste = AppTest.from_string(script, default_timeout=120)
     teste.session_state["dfs"] = importar_cvm(
         5410, [2024, 2025], cache=DADOS
     ).escalar(1e6, "R$ milhões")
+    teste.session_state["derivar"] = derivar
     teste.run()
     assert not teste.exception, [str(e.value) for e in teste.exception]
     return teste
 
 
+def test_sem_derivar_o_bloco_nao_mistura_duas_empresas():
+    """Importar não deriva a ponte: até o clique, ela é a da empresa de partida.
+
+    O bloco somaria os títulos da WEG à dívida da empresa de exemplo. Visto na
+    varredura do navegador, que importa sem derivar.
+    """
+    teste = _tela_da_ponte(derivar=False)
+    texto = " ".join(str(m.value) for m in teste.markdown)
+    assert "Duas dívidas líquidas" not in texto
+
+
 def test_a_tela_mostra_as_duas_e_troca_com_um_clique():
     from app.estado import CHAVE_EMPRESA
 
-    teste = _tela_da_ponte()
+    teste = _tela_da_ponte(derivar=True)
     texto = " ".join(str(m.value) for m in teste.markdown)
     assert "Duas dívidas líquidas" in texto
     assert "1.02.01.01" in texto
 
-    usar = [b for b in teste.button if "ampla" in b.label]
-    assert usar, [b.label for b in teste.button]
-    usar[0].click().run()
-    assert not teste.exception, [str(e.value) for e in teste.exception]
+    # A ponte sugerida ja vem na ampla.
     ponte = teste.session_state[CHAVE_EMPRESA].ponte
     assert ponte.aplicacoes_longo_prazo == pytest.approx(14.263)
 
     voltar = [b for b in teste.button if "padrão" in b.label]
     assert voltar, [b.label for b in teste.button]
+    voltar[0].click().run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+    assert teste.session_state[CHAVE_EMPRESA].ponte.aplicacoes_longo_prazo == 0.0
+
+    usar = [b for b in teste.button if "ampla" in b.label]
+    assert usar, [b.label for b in teste.button]
+
+
+def test_o_cifrao_do_bloco_nao_vira_formula():
+    """Dois "R$" no mesmo parágrafo fecham um par de LaTeX no Streamlit.
+
+    Visto na varredura da CSN: o aviso do circulante saiu com "860,6 R milhões"
+    e o meio da frase em fonte de matemática. Todo "R$" que chega ao markdown
+    tem de vir escapado.
+    """
+    teste = _tela_da_ponte(derivar=True)
+    textos = [str(m.value) for m in teste.markdown] + [
+        str(c.value) for c in teste.caption
+    ] + [str(w.value) for w in teste.warning]
+    crus = [t for t in textos if "R$" in t.replace(r"R\$", "")]
+    assert not crus, crus
