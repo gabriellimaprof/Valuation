@@ -109,6 +109,10 @@ DIVIDA_PL_ALVO_MAXIMA = 3.0
 # nenhuma, mas ele ja alcanca divida subsidiada e em dolar que e real.
 KD_MINIMO_PLAUSIVEL = 0.03
 
+# Com menos exercicios que isto a mediana nao filtra o ano atipico, e a margem
+# sugerida volta a partir da recorrente. Ver a nota em `sugerir_premissas`.
+EXERCICIOS_PARA_A_MEDIANA_FILTRAR = 3
+
 # O mesmo corte sobre a **despesa financeira**, e ele nao pergunta a mesma coisa:
 # nao e "esta divida e cara demais?", e sim "este denominador significa alguma
 # coisa?". Ele exclui 25,8% da base de `qualidade._juros`, e **medi mover e
@@ -1020,34 +1024,63 @@ def sugerir_premissas(
         f"ate {crescimento_de_longo_prazo:.1%} no ultimo ano projetado."
     )
 
-    # A margem parte da **recorrente**, e nao da reportada. Impairment, venda de
-    # ativo e ganho tributario entram na DRE do SG&A para baixo e contaminam
-    # EBIT e EBITDA por igual; projeta-los como regime e projetar um evento para
-    # sempre. Medido na base: 165 de 172 companhias tem item nao recorrente, com
-    # peso mediano de 17,4% do EBIT. O ajuste vai nos dois sentidos -- quando o
-    # item foi perda, a recorrente e **maior** que a reportada.
+    # **A margem parte da reportada, pela mediana dos exercicios.** Ate aqui ela
+    # partia da recorrente -- que tira impairment, outras receitas e outras
+    # despesas operacionais inteiros --, com o argumento de nao projetar evento
+    # como regime. A medicao desmentiu o argumento. Prevendo a margem EBIT do ano
+    # seguinte pela mediana dos anos anteriores, sem olhar o futuro (2021-2025,
+    # companhias com receita acima de R$ 100 mi e margem entre -100% e 100%: 646
+    # previsoes em 334 companhias), o erro mediano e de **4,2 pp pela reportada**
+    # e 4,6 pp pela recorrente. E a recorrente perde justamente onde a escolha
+    # importa: onde ela difere da reportada em mais de 5 pp (65 companhias), o
+    # erro mediano e **13,3 pp contra 7,8 pp**, e ela acerta melhor em so 41% das
+    # previsoes.
+    #
+    # A razao e dupla. **A mediana ja descarta o ano atipico**, e tirar o evento de
+    # novo e corrigir duas vezes. E metade das companhias com "outras despesas
+    # operacionais" (151 de 298) as publica com o mesmo sinal em todos os anos: e
+    # custo que se repete, e tira-lo projeta uma companhia melhor do que ela e.
+    # Uma recorrente normalizada -- que tira so o desvio do peso tipico do item --
+    # fica no meio (4,5 pp) e nao supera a reportada na mediana.
+    #
+    # Com menos de `EXERCICIOS_PARA_A_MEDIANA_FILTRAR` exercicios a mediana nao
+    # filtra evento nenhum, e ai a recorrente continua sendo o ponto de partida.
     margem_reportada = analise.mediana("Margem EBITDA")
-    margem = analise.mediana("Margem EBITDA recorrente")
-    if np.isfinite(margem) and np.isfinite(margem_reportada):
+    margem_recorrente = analise.mediana("Margem EBITDA recorrente")
+    exercicios = (
+        int(analise.linha("Margem EBITDA").notna().sum())
+        if "Margem EBITDA" in analise.indicadores.index
+        else 0
+    )
+    if np.isfinite(margem_reportada) and exercicios >= EXERCICIOS_PARA_A_MEDIANA_FILTRAR:
+        margem = margem_reportada
+        justificativas["margem_ebitda"] = (
+            f"Mediana historica da margem EBITDA reportada em {exercicios} "
+            f"exercicios: {margem:.1%}, mantida constante no horizonte. A mediana "
+            "ja descarta o ano atipico."
+        )
+        if np.isfinite(margem_recorrente) and abs(margem_recorrente - margem) >= 0.02:
+            alertas.append(
+                f"A margem EBITDA recorrente ({margem_recorrente:.1%}) difere da "
+                f"reportada ({margem:.1%}) em {abs(margem_recorrente - margem):.1%}. "
+                "A sugestao usa a reportada: medido, ela preve melhor o ano "
+                "seguinte, porque parte das outras despesas operacionais se repete. "
+                "Use a recorrente se o item for mesmo evento."
+            )
+    elif np.isfinite(margem_recorrente) and np.isfinite(margem_reportada):
+        margem = margem_recorrente
         diferenca = margem - margem_reportada
         justificativas["margem_ebitda"] = (
             f"Mediana historica da margem EBITDA **recorrente**: {margem:.1%}, "
-            f"contra {margem_reportada:.1%} reportada ({diferenca:+.1%}). Tira "
-            "impairment, outras receitas e outras despesas operacionais, que nao "
-            "se repetem. Mantida constante no horizonte."
+            f"contra {margem_reportada:.1%} reportada ({diferenca:+.1%}). Com menos "
+            f"de {EXERCICIOS_PARA_A_MEDIANA_FILTRAR} exercicios a mediana nao filtra "
+            "o ano atipico, entao sai impairment, outras receitas e outras "
+            "despesas operacionais. Mantida constante no horizonte."
         )
-        if abs(diferenca) >= 0.02:
-            alertas.append(
-                f"A margem EBITDA recorrente ({margem:.1%}) difere da reportada "
-                f"({margem_reportada:.1%}) em {abs(diferenca):.1%}. A sugestao usa a "
-                "recorrente; se o item se repete no seu negocio, volte para a reportada."
-            )
     elif np.isfinite(margem_reportada):
         margem = margem_reportada
         justificativas["margem_ebitda"] = (
-            f"Mediana historica de {margem:.1%}, mantida constante no horizonte. "
-            "A companhia nao publica item nao recorrente, entao reportada e "
-            "recorrente coincidem."
+            f"Mediana historica de {margem:.1%}, mantida constante no horizonte."
         )
     else:
         margem = 0.15

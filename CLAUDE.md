@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1332 testes
+pytest                        # 1333 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.332 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.333 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,54 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### A margem sugerida parte da reportada, e nao da recorrente
+
+A margem que a sugestao projetava era a **recorrente**: tirava impairment, outras
+receitas e outras despesas operacionais inteiros, com o argumento de nao
+projetar evento como regime. Faltava medir o argumento, e a medicao o desmentiu.
+
+**O teste foi prever o ano seguinte**, que e o uso da margem: a mediana dos anos
+anteriores contra a margem EBIT reportada do ano seguinte, sem olhar o futuro,
+2021-2025. Tres preditores -- a reportada, a recorrente de hoje, e uma recorrente
+**normalizada**, que tira so o desvio do item em relacao ao peso tipico dele na
+receita da propria companhia.
+
+| Erro mediano da margem do ano seguinte | Reportada | Normalizada | Recorrente |
+|---|---|---|---|
+| Todas (743 previsoes, 379 companhias) | **4,94 pp** | 5,15 | 5,46 |
+| Normais: receita >= R$ 100 mi, margem entre -100% e 100% (334) | **4,21 pp** | 4,48 | 4,62 |
+| Normais onde a recorrente difere da reportada em mais de 2 pp (152) | **5,98 pp** | 6,12 | 7,88 |
+| ... em mais de 5 pp (65) | **7,78 pp** | 9,04 | **13,27** |
+
+**A recorrente perde justamente onde a escolha importa**: acima de 5 pp de
+diferenca ela acerta melhor em so 41% das previsoes. A razao e dupla. A mediana
+de varios exercicios **ja descarta o ano atipico**, e tirar o evento de novo e
+corrigir duas vezes. E metade das companhias com "outras despesas operacionais"
+(151 de 298) as publica com o mesmo sinal em todos os anos: e custo que se
+repete, e tira-lo projeta uma companhia melhor do que ela e.
+
+Entao a sugestao passa a usar a **reportada, pela mediana, a partir de tres
+exercicios** (`EXERCICIOS_PARA_A_MEDIANA_FILTRAR`). Com menos, a mediana nao
+filtra evento nenhum e a recorrente continua sendo o ponto de partida. Os
+indicadores recorrentes, o diagnostico `ebit_depende_de_nao_recorrente` e as
+linhas de `BASE` nao mudam: mudou a escolha da sugestao, nao o calculo. Quando as
+duas diferem em 2 pp ou mais, o alerta continua dizendo -- agora com o sentido
+invertido.
+
+| Margem EBITDA, 2020-2025 | Reportada | Recorrente | Sugerida antes | Sugerida agora |
+|---|---|---|---|---|
+| CSN | 21,9% | 27,2% | 27,2% | 21,9% |
+| WEG | 20,8% | 22,7% | 22,7% | 20,8% |
+| Porto Seguro | 9,2% | 17,9% | 17,9% | 9,2% |
+| Vale | 36,8% | 48,8% | 48,8% | 36,8% |
+| Suzano | 51,2% | 49,0% | 49,0% | 51,2% |
+
+A Vale era o exemplo do teste antigo de que o ajuste servia nos dois sentidos:
+impairment todo ano, recorrente acima da reportada. Medido, projetar sem ele erra
+mais o ano seguinte do que projetar com ele.
+
+A varredura no navegador com CSN e Porto Seguro, de premissas derivadas, saiu limpa depois da troca.
+
 ### O WACC sugerido passa a usar o beta do setor
 
 A decisao que tinha ficado em aberto foi tomada: a sugestao usa o **beta
@@ -2725,10 +2773,12 @@ despesas operacionais" continua como evento.
 
 **De 2021 a 2025, em todo o universo, so tres companhias tem vocabulario de seguro dentro de `3.04.04`/`3.04.05`.** A Porto Seguro, nos cinco exercicios, pesando de 7 a 29 vezes o EBIT -- com os rotulos antigos ("Sinistros retidos", "Variacao das provisoes tecnicas") ate 2022 e os do IFRS 17 depois, e o padrao pega os dois. E Eneva e OceanPact, que nao operam seguro e lancam **indenizacao de seguro recebida** em outras receitas, de 1% a 4% do EBIT: essa e evento de verdade, e fica como estava.
 
-**O que continua aberto.** Na Porto a recorrente ainda sai o dobro da reportada,
-porque a sublinha "Outras despesas operacionais" (-3.319) segue tratada como
-evento -- que e a regra de toda companhia, e nao desta. Se ela se repete todo ano,
-e se repete, a regra geral de `3.04.05` e que merece a proxima medicao.
+**O que ficou aberto, e foi medido depois.** Na Porto a recorrente ainda saia o
+dobro da reportada, porque a sublinha "Outras despesas operacionais" (-3.319)
+seguia tratada como evento. A medicao da regra geral mostrou que a sugestao nao
+devia partir da recorrente em companhia nenhuma -- ver "A margem sugerida parte da
+reportada". A coluna "EBITDA sugerida" acima descreve a regra de entao; hoje a da
+Porto e a reportada, 9,2%.
 
 ### O relatorio baixado tambem sai escapado
 

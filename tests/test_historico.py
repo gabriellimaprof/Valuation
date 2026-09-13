@@ -308,53 +308,64 @@ def test_premissas_sugeridas_rodam_no_motor(dfs):
 
 
 # ---------------------------------------------------------------------------
-# A margem sugerida parte da recorrente
+# A margem sugerida parte da reportada, pela mediana
 # ---------------------------------------------------------------------------
 
 
 def _com_nao_recorrente(itens: list[float]) -> Demonstracoes:
-    anos = [2022, 2023, 2024]
+    anos = [2022, 2023, 2024][-len(itens):]
+    n = len(itens)
     base = {
-        "receita_liquida": [1000.0] * 3,
-        "custo_produtos_vendidos": [600.0] * 3,
-        "lucro_bruto": [400.0] * 3,
+        "receita_liquida": [1000.0] * n,
+        "custo_produtos_vendidos": [600.0] * n,
+        "lucro_bruto": [400.0] * n,
         "ebit": [200.0 + i for i in itens],
-        "depreciacao_amortizacao": [50.0] * 3,
+        "depreciacao_amortizacao": [50.0] * n,
         "outras_receitas_operacionais": itens,
-        "lucro_liquido": [120.0] * 3,
-        "ativo_total": [2000.0] * 3,
-        "patrimonio_liquido": [900.0] * 3,
+        "lucro_liquido": [120.0] * n,
+        "ativo_total": [2000.0] * n,
+        "patrimonio_liquido": [900.0] * n,
     }
     return Demonstracoes(
         empresa="Teste", valores=pd.DataFrame(base, index=anos).T
     )
 
 
-def test_a_margem_sugerida_tira_o_que_nao_se_repete():
-    """Ganho de R$ 100 num EBIT de R$ 300 e evento, nao regime.
+def test_item_que_se_repete_todo_ano_fica_na_margem():
+    """Um "outras receitas" de R$ 100 em todos os exercicios nao e evento.
 
-    Sem o ajuste a sugestao projetaria 35% de margem EBITDA para sempre; com
-    ele, os 25% que o negocio entrega.
+    Ate aqui a sugestao tirava o item inteiro e projetava 25%. Medido prevendo a
+    margem do ano seguinte pela mediana dos anteriores (646 previsoes em 334
+    companhias de 2021-2025), a reportada erra 4,2 pp na mediana e a recorrente
+    4,6 pp -- e onde as duas diferem em mais de 5 pp, 7,8 contra 13,3. A mediana
+    ja descarta o ano atipico, e tirar o item de novo corrige duas vezes.
     """
     analise = analisar(_com_nao_recorrente([100.0, 100.0, 100.0]))
     assert analise.mediana("Margem EBITDA") == pytest.approx(0.35)
     assert analise.mediana("Margem EBITDA recorrente") == pytest.approx(0.25)
 
     sugestao = sugerir_premissas(analise)
+    assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.35)
+    assert "reportada" in sugestao.justificativas["margem_ebitda"]
+
+
+def test_o_ano_atipico_a_mediana_ja_descarta():
+    """Um ganho de R$ 300 num exercicio so nao move a mediana de tres."""
+    sugestao = sugerir_premissas(analisar(_com_nao_recorrente([0.0, 300.0, 0.0])))
+    assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.25)
+
+
+def test_com_dois_exercicios_a_recorrente_continua_valendo():
+    """Com dois anos a mediana e a media, e o evento pesa pela metade.
+
+    Ai tirar o item ainda e o melhor que se tem -- e vale nos dois sentidos: a
+    perda deixa a recorrente acima da reportada.
+    """
+    analise = analisar(_com_nao_recorrente([-80.0, -80.0]))
+    assert analise.mediana("Margem EBITDA recorrente") == pytest.approx(0.25)
+    sugestao = sugerir_premissas(analise)
     assert sugestao.operacionais.margem_ebitda[0] == pytest.approx(0.25)
     assert "recorrente" in sugestao.justificativas["margem_ebitda"]
-
-
-def test_o_ajuste_vai_nos_dois_sentidos():
-    """Quando o item foi **perda**, a recorrente e maior que a reportada.
-
-    E o caso da Vale, onde o item foi impairment: reportada de 38,7% contra
-    51,9% recorrente na mediana de 2020-2024.
-    """
-    analise = analisar(_com_nao_recorrente([-80.0, -80.0, -80.0]))
-    assert analise.mediana("Margem EBITDA") == pytest.approx(0.17)
-    assert analise.mediana("Margem EBITDA recorrente") == pytest.approx(0.25)
-    assert sugerir_premissas(analise).operacionais.margem_ebitda[0] == pytest.approx(0.25)
 
 
 def test_a_diferenca_relevante_vira_alerta():
