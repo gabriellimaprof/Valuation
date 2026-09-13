@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1333 testes
+pytest                        # 1337 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.333 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.337 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2640,6 +2640,44 @@ consertar nada e fica de rede para o proximo.
 **Nao verificado:** o patrimonio liquido nao foi conferido contra release em
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
+
+### Os betas setoriais saem da planilha oficial do Damodaran
+
+Com a sugestao de WACC usando o beta do setor, a tabela de `dados_setoriais`
+passou a decidir o custo de capital de toda companhia -- e ela era, nas palavras
+do proprio modulo, "ordens de grandeza" compiladas a mao em 2025-01. Agora cada
+setor do app agrega industrias da planilha de **mercados emergentes** do
+Damodaran (`betaemerg.xls`, edicao de 2026-01-05), ponderadas pelo numero de
+empresas (`INDUSTRIAS_DAMODARAN`). O beta e a **media 2021-26 do beta
+desalavancado corrigido por caixa**, que o Damodaran indica como beta puro do
+negocio; a D/E e a da mesma planilha. `setores_da_planilha` refaz a conta a
+partir da planilha carregada, para a proxima edicao ser um comando.
+
+| Setor | Antes | Oficial | D/E antes -> oficial |
+|---|---|---|---|
+| Construcao civil | 1,05 | **0,48** | 0,60 -> 1,90 |
+| Bens de capital | 0,95 | **1,16** | 0,40 -> 0,14 |
+| Papel e celulose | 0,90 | 0,64 | 0,70 -> 1,01 |
+| Mineracao | 1,10 | 1,22 | 0,35 -> 0,25 |
+| Siderurgia e metalurgia | 1,05 | 1,01 | 0,50 -> 0,51 |
+
+Medido com a regra de teto e piso, nas 415 companhias: a mediana do WACC
+sugerido vai de 12,4% para **12,0%**, as fora de 7%-30% passam de 1 para 3, e a
+CSN fica em 9,1%.
+
+**Bancos e Seguros ficaram como estavam.** No banco a D/E da planilha inclui
+deposito (2,46), o app nao realavanca beta de banco, e o beta alavancado oficial
+(0,59) derrubaria o Ke e o valor por lucro residual de toda instituicao sem
+conferencia nenhuma -- os numeros de banco documentados aqui sairiam de baixo. Na
+seguradora o float pesa como alavancagem pela mesma razao. Os dois pedem medicao
+propria.
+
+**E o caminho oficial nunca tinha funcionado.** O modulo mandava carregar a
+planilha para trabalho formal, e ela falhava duas vezes: o `.xls` exige `xlrd`,
+que nao estava nas dependencias, e `carregar_betas_damodaran` lia so a primeira
+aba -- que na edicao de 2026 e "Explanation & FAQs", com a tabela em "Industry
+Averages". O leitor agora procura o cabecalho em todas as abas, e `xlrd` foi
+declarado. O teste monta uma planilha nessa ordem, sem rede.
 
 ### A margem sugerida parte da reportada, e nao da recorrente
 

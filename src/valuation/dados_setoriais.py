@@ -25,11 +25,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ATUALIZADO_EM = "2025-01"
+ATUALIZADO_EM = "2026-01"
 AVISO_REFERENCIA = (
-    "Valores de referencia embarcados, revisados em "
-    f"{ATUALIZADO_EM}. Nao substituem a base oficial do Damodaran: para trabalho "
-    "formal, carregue as planilhas oficiais."
+    "Betas e D/E setoriais da planilha de mercados emergentes do Damodaran, "
+    f"edicao de {ATUALIZADO_EM}, agregados por setor do app. E um instantaneo: "
+    "para trabalho formal, carregue a edicao corrente."
 )
 
 
@@ -54,34 +54,114 @@ class Setor:
 
 
 SETORES: tuple[Setor, ...] = (
-    Setor("Agronegocio", 0.75, 0.55, 0.20, "Ciclico, sensivel a commodity e cambio"),
-    Setor("Alimentos e bebidas", 0.65, 0.45, 0.18, "Defensivo, demanda estavel"),
+    Setor("Agronegocio", 0.61, 0.58, 0.20, "Ciclico, sensivel a commodity e cambio"),
+    Setor("Alimentos e bebidas", 0.73, 0.33, 0.18, "Defensivo, demanda estavel"),
     Setor("Bancos e servicos financeiros", 0.95, 0.00, float("nan"),
           "Valuation por lucro residual; WACC nao se aplica, e o beta nao se realavanca",
           financeiro=True),
-    Setor("Bens de capital", 0.95, 0.40, 0.15, "Ciclico, ligado ao investimento"),
-    Setor("Construcao civil", 1.05, 0.60, 0.16, "Muito ciclico e sensivel a juros"),
-    Setor("Educacao", 0.80, 0.35, 0.22, ""),
-    Setor("Energia eletrica", 0.55, 0.85, 0.35, "Regulado, fluxo previsivel, alavancado"),
-    Setor("Farmaceutico e saude", 0.80, 0.30, 0.20, ""),
-    Setor("Mineracao", 1.10, 0.35, 0.35, "Preco de commodity domina o resultado"),
-    Setor("Papel e celulose", 0.90, 0.70, 0.30, "Ciclico e intensivo em capital"),
-    Setor("Petroleo e gas", 1.05, 0.45, 0.30, "Preco de commodity domina o resultado"),
-    Setor("Quimico e petroquimico", 0.95, 0.55, 0.14, ""),
-    Setor("Saneamento", 0.50, 0.75, 0.40, "Regulado, fluxo muito previsivel"),
+    Setor("Bens de capital", 1.16, 0.14, 0.15, "Ciclico, ligado ao investimento"),
+    Setor("Construcao civil", 0.48, 1.90, 0.16, "Muito ciclico e sensivel a juros"),
+    Setor("Educacao", 0.81, 0.34, 0.22, ""),
+    Setor("Energia eletrica", 0.47, 1.02, 0.35, "Regulado, fluxo previsivel, alavancado"),
+    Setor("Farmaceutico e saude", 0.91, 0.23, 0.20, ""),
+    Setor("Mineracao", 1.22, 0.25, 0.35, "Preco de commodity domina o resultado"),
+    Setor("Papel e celulose", 0.64, 1.01, 0.30, "Ciclico e intensivo em capital"),
+    Setor("Petroleo e gas", 1.14, 0.30, 0.30, "Preco de commodity domina o resultado"),
+    Setor("Quimico e petroquimico", 0.99, 0.46, 0.14, ""),
+    Setor("Saneamento", 0.43, 0.93, 0.40, "Regulado, fluxo muito previsivel"),
     Setor("Seguros", 0.85, 0.15, float("nan"), "Valuation por FCFE ou lucro residual"),
-    Setor("Servicos de TI e software", 1.10, 0.15, 0.22, "Pouco intensivo em capital fixo"),
-    Setor("Shopping centers e imobiliario", 0.75, 0.70, 0.60,
+    Setor("Servicos de TI e software", 1.27, 0.08, 0.22, "Pouco intensivo em capital fixo"),
+    Setor("Shopping centers e imobiliario", 0.64, 0.61, 0.60,
           "Margem alta porque a receita e aluguel; muito sensivel a juros"),
-    Setor("Siderurgia e metalurgia", 1.05, 0.50, 0.18, "Ciclico"),
-    Setor("Telecomunicacoes", 0.70, 0.65, 0.35, "Intensivo em capital, receita recorrente"),
-    Setor("Transporte e logistica", 0.90, 0.60, 0.25, "Intensivo em capital"),
-    Setor("Varejo", 0.90, 0.40, 0.10, "Margem baixa, giro alto"),
-    Setor("Vestuario e calcados", 0.95, 0.35, 0.14, ""),
-    Setor("Media e entretenimento", 1.00, 0.40, 0.20, ""),
+    Setor("Siderurgia e metalurgia", 1.01, 0.51, 0.18, "Ciclico"),
+    Setor("Telecomunicacoes", 0.70, 0.32, 0.35, "Intensivo em capital, receita recorrente"),
+    Setor("Transporte e logistica", 0.74, 0.81, 0.25, "Intensivo em capital"),
+    Setor("Varejo", 0.86, 0.28, 0.10, "Margem baixa, giro alto"),
+    Setor("Vestuario e calcados", 0.75, 0.26, 0.14, ""),
+    Setor("Media e entretenimento", 1.21, 0.12, 0.20, ""),
 )
 
 POR_NOME: dict[str, Setor] = {s.nome: s for s in SETORES}
+
+# **De onde vem cada numero da tabela acima.** Ate 2025-01 os betas eram ordens
+# de grandeza compiladas a mao, e o proprio modulo avisava que nao eram a base
+# oficial. Desde que a sugestao de WACC passou a usar o beta do setor, eles
+# decidem o custo de capital de toda companhia, e ordem de grandeza nao basta.
+#
+# Cada setor do app agrega as industrias do Damodaran abaixo, ponderadas pelo
+# numero de empresas, na planilha de **mercados emergentes** (`betaemerg.xls`,
+# edicao de 2026-01-05). O beta e a **media 2021-26 do beta desalavancado
+# corrigido por caixa** -- o que o proprio Damodaran indica como beta puro do
+# negocio, e a media por ser menos volatil que o ano. A D/E e a da mesma
+# planilha.
+#
+# **Bancos e Seguros nao foram trocados.** No banco a D/E inclui deposito (2,46
+# na planilha) e o app nao realavanca beta de banco; o beta alavancado oficial,
+# 0,59, derrubaria o Ke e o valor por lucro residual de toda instituicao sem que
+# nada tivesse sido conferido. Na seguradora o float pesa como alavancagem pela
+# mesma razao. Os dois pedem medicao propria.
+#
+# Medido o efeito, com a regra de teto de D/E 3 e piso de Kd 3%, nas 415
+# companhias: a mediana do WACC sugerido vai de 12,4% para 12,0%, e as fora de
+# 7%-30% passam de 1 para 3. As maiores mudancas: Construcao civil de 1,05 para
+# 0,48 (a D/E tipica de incorporadora e 1,90, nao 0,60), Bens de capital de 0,95
+# para 1,16, Papel e celulose de 0,90 para 0,64.
+INDUSTRIAS_DAMODARAN: dict[str, tuple[str, ...]] = {
+    "Agronegocio": ("Farming/Agriculture",),
+    "Alimentos e bebidas": ("Food Processing", "Beverage (Alcoholic)", "Beverage (Soft)"),
+    "Bens de capital": ("Machinery", "Electrical Equipment"),
+    "Construcao civil": ("Homebuilding", "Real Estate (Development)"),
+    "Educacao": ("Education",),
+    "Energia eletrica": ("Power", "Utility (General)"),
+    "Farmaceutico e saude": (
+        "Drugs (Pharmaceutical)",
+        "Hospitals/Healthcare Facilities",
+        "Healthcare Support Services",
+    ),
+    "Mineracao": ("Metals & Mining",),
+    "Papel e celulose": ("Paper/Forest Products",),
+    "Petroleo e gas": ("Oil/Gas (Integrated)", "Oil/Gas (Production and Exploration)"),
+    "Quimico e petroquimico": ("Chemical (Basic)", "Chemical (Diversified)"),
+    "Saneamento": ("Utility (Water)",),
+    "Servicos de TI e software": ("Software (System & Application)", "Computer Services"),
+    "Shopping centers e imobiliario": ("Real Estate (Operations & Services)",),
+    "Siderurgia e metalurgia": ("Steel",),
+    "Telecomunicacoes": ("Telecom. Services", "Telecom (Wireless)"),
+    "Transporte e logistica": ("Transportation", "Trucking"),
+    "Varejo": ("Retail (General)", "Retail (Special Lines)", "Retail (Grocery and Food)"),
+    "Vestuario e calcados": ("Apparel", "Shoe"),
+    "Media e entretenimento": ("Entertainment", "Broadcasting"),
+}
+
+
+def setores_da_planilha(tabela: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    """``{setor: (beta desalavancado, D/E)}`` a partir da planilha carregada.
+
+    Existe para que a proxima atualizacao da tabela seja um comando, e nao uma
+    transcricao: carregue com `carregar_betas_damodaran` e compare.
+    """
+    colunas = {str(c).strip().lower(): c for c in tabela.columns}
+    media = next((c for k, c in colunas.items() if k.startswith("average")), None)
+    corrigido = colunas.get("unlevered beta corrected for cash")
+    firmas = colunas.get("number of firms")
+    razao = colunas.get("d/e ratio")
+    if corrigido is None or firmas is None or razao is None:
+        raise ValueError("A planilha nao traz beta corrigido por caixa, empresas e D/E.")
+    saida = {}
+    for setor, industrias in INDUSTRIAS_DAMODARAN.items():
+        linhas = tabela.loc[[i for i in industrias if i in tabela.index]]
+        if linhas.empty:
+            continue
+        pesos = pd.to_numeric(linhas[firmas], errors="coerce").fillna(0).astype(float)
+        beta = pd.to_numeric(linhas[corrigido], errors="coerce")
+        if media is not None:
+            beta = pd.to_numeric(linhas[media], errors="coerce").fillna(beta)
+        endividamento = pd.to_numeric(linhas[razao], errors="coerce")
+        saida[setor] = (
+            float(np.average(beta.astype(float), weights=pesos)),
+            float(np.average(endividamento.astype(float), weights=pesos)),
+        )
+    return saida
 
 # **O setor do cadastro da CVM, traduzido para os setores desta tabela.** A
 # importacao ja guarda o setor da companhia (`Demonstracoes.fonte["setor"]`), e
@@ -272,20 +352,32 @@ def carregar_betas_damodaran(caminho: str | Path) -> pd.DataFrame:
     if not caminho.exists():
         raise FileNotFoundError(f"Planilha de betas nao encontrada: {caminho}")
 
-    bruto = pd.read_excel(caminho, sheet_name=0, header=None, dtype=object)
-    linha_cabecalho = None
-    for indice in range(min(len(bruto), 30)):
-        textos = [str(v).strip().lower() for v in bruto.iloc[indice] if v is not None]
-        if any("industry name" in t for t in textos) and any("beta" in t for t in textos):
-            linha_cabecalho = indice
+    # **A tabela nao esta na primeira aba.** Na edicao de 2026-01 a planilha
+    # abre em "Explanation & FAQs" e a tabela mora em "Industry Averages" -- e
+    # este carregador lia so a aba 0, entao o caminho que o modulo recomenda
+    # para trabalho formal **nunca carregou** a planilha oficial. Procurar o
+    # cabecalho em todas as abas aguenta a proxima troca de ordem tambem.
+    abas = pd.read_excel(caminho, sheet_name=None, header=None, dtype=object)
+    aba_da_tabela = linha_cabecalho = None
+    for nome_aba, bruto in abas.items():
+        for indice in range(min(len(bruto), 30)):
+            textos = [
+                str(v).strip().lower() for v in bruto.iloc[indice] if pd.notna(v)
+            ]
+            if any("industry name" in t for t in textos) and any(
+                "beta" in t for t in textos
+            ):
+                aba_da_tabela, linha_cabecalho = nome_aba, indice
+                break
+        if aba_da_tabela is not None:
             break
-    if linha_cabecalho is None:
+    if aba_da_tabela is None:
         raise ValueError(
             f"{caminho.name} nao parece a planilha de betas do Damodaran: nao "
-            "encontrei um cabecalho com 'Industry Name' e 'Beta'."
+            "encontrei, em aba nenhuma, um cabecalho com 'Industry Name' e 'Beta'."
         )
 
-    tabela = pd.read_excel(caminho, sheet_name=0, header=linha_cabecalho)
+    tabela = pd.read_excel(caminho, sheet_name=aba_da_tabela, header=linha_cabecalho)
     tabela.columns = [str(c).strip() for c in tabela.columns]
     coluna_setor = next(c for c in tabela.columns if "industry name" in c.lower())
     tabela = tabela.dropna(subset=[coluna_setor]).set_index(coluna_setor)

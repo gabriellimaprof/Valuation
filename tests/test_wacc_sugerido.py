@@ -42,7 +42,11 @@ def test_o_beta_vem_do_setor_do_cadastro(weg):
     sugestao = sugerir_premissas(analisar(weg))
     cc = sugestao.custo_capital
     assert sugestao.setor == "Bens de capital"
-    assert cc.beta_desalavancado == pytest.approx(0.95)
+    from valuation.dados_setoriais import POR_NOME
+
+    assert cc.beta_desalavancado == pytest.approx(
+        POR_NOME["Bens de capital"].beta_desalavancado
+    )
     assert "Bens de capital" in sugestao.justificativas["custo_capital"]
     assert not any("marcador" in a for a in sugestao.alertas)
 
