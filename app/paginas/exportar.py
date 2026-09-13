@@ -187,7 +187,13 @@ def _relatorio(resultado) -> None:
 
     st.download_button(
         "Baixar o relatório (.md)",
-        data=texto.encode("utf-8"),
+        # **O arquivo tambem sai escapado.** Ele e markdown para ser lido num
+        # visualizador, e os visualizadores comuns tambem leem `$...$` como
+        # formula: o GitHub e o preview do VS Code quebram "R$ milhoes" do mesmo
+        # jeito que a tela quebrava. `\$` e escape valido do CommonMark e
+        # aparece como `$` em todos eles; so num editor de texto cru ele se ve --
+        # e ali o custo e uma barra, e nao uma frase ilegivel.
+        data=escapar_cifrao(texto).encode("utf-8"),
         file_name=f"relatorio_{_slug(estado.empresa().nome)}.md",
         mime="text/markdown",
         type="primary",

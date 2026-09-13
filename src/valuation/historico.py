@@ -536,6 +536,15 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
         .add(d.serie("outras_receitas_operacionais").fillna(0), fill_value=0)
         .add(d.serie("outras_despesas_operacionais").fillna(0), fill_value=0)
     )
+    # **Na seguradora, o custo da operacao lancado em outras despesas nao e
+    # evento.** A Porto Seguro saia com margem EBIT recorrente de 82% contra 8,8%
+    # reportada, e a sugestao projetava margem EBITDA de 82% -- R$ 286 por acao.
+    # Ver `aplicacoes.operacao_de_seguro_em_outros`.
+    from .importacao.aplicacoes import operacao_de_seguro_em_outros
+
+    nao_recorrente = nao_recorrente.sub(
+        operacao_de_seguro_em_outros(d.detalhe, nao_recorrente.index), fill_value=0
+    )
     if nao_recorrente.abs().sum() > 0:
         indicadores["Margem EBIT recorrente"] = _divisao_segura(
             ebit.sub(nao_recorrente, fill_value=0), receita

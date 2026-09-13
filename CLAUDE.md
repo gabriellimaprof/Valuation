@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1311 testes
+pytest                        # 1314 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.311 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.314 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,75 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### Na seguradora, o sinistro nao e item nao recorrente
+
+A varredura com a Porto Seguro mostrou o valuation quebrado: margem EBIT
+**recorrente de 82%** contra 8,8% reportada, margem EBITDA sugerida de 82% e
+**R$ 286 por acao**. A causa e de plano de contas: o plano industrial da CVM nao
+tem linha de sinistro, e a Porto lanca o custo da operacao dentro de `3.04.05`,
+"Outras despesas operacionais" -- "Despesas de seguro" (-21.614 em 2024),
+resseguro (-56), custo de aquisicao (-774), custo dos servicos prestados (-241).
+O app trata `3.04.05` inteira como item nao recorrente, e ali tirava o sinistro
+da margem.
+
+Agora, **para quem `opera_seguro`**, as sublinhas de `3.04.04` e `3.04.05` com
+rotulo de operacao (seguro, sinistro, resseguro, provisao tecnica, previdencia,
+custo de aquisicao, servicos prestados) saem do item nao recorrente
+(`aplicacoes.operacao_de_seguro_em_outros`). So a sublinha que se chama "Outras
+despesas operacionais" continua como evento.
+
+| 2024 | EBIT reportada | Recorrente antes | Recorrente agora | EBITDA sugerida |
+|---|---|---|---|---|
+| Porto Seguro | 8,8% | 82,0% | **17,6%** | 82,1% -> **18,5%** |
+| Porto Saude | 6,9% | 7,1% | 7,1% | 7,3% |
+| Bradsaude | 30,1% | 30,0% | 30,0% | 33,8% |
+| Hapvida | 2,6% | 2,4% | 2,4% | 8,9% |
+
+**De 2021 a 2025, em todo o universo, so tres companhias tem vocabulario de seguro dentro de `3.04.04`/`3.04.05`.** A Porto Seguro, nos cinco exercicios, pesando de 7 a 29 vezes o EBIT -- com os rotulos antigos ("Sinistros retidos", "Variacao das provisoes tecnicas") ate 2022 e os do IFRS 17 depois, e o padrao pega os dois. E Eneva e OceanPact, que nao operam seguro e lancam **indenizacao de seguro recebida** em outras receitas, de 1% a 4% do EBIT: essa e evento de verdade, e fica como estava.
+
+**O que continua aberto.** Na Porto a recorrente ainda sai o dobro da reportada,
+porque a sublinha "Outras despesas operacionais" (-3.319) segue tratada como
+evento -- que e a regra de toda companhia, e nao desta. Se ela se repete todo ano,
+e se repete, a regra geral de `3.04.05` e que merece a proxima medicao.
+
+### O relatorio baixado tambem sai escapado
+
+O `.md` do Exportar e markdown para ser lido num visualizador, e os comuns tambem
+leem `$...$` como formula: o GitHub e o preview do VS Code quebrariam "R$ milhoes"
+do mesmo jeito que a tela quebrava. `\$` e escape valido do CommonMark e aparece
+como `$` neles; so num editor de texto cru se ve a barra. O arquivo e o unico
+lugar onde o relatorio e gravado, entao o escape fica no botao de download.
+
+### CSN e Porto Seguro no workflow
+
+A varredura agendada passa a percorrer as duas com as premissas derivadas. Foram
+elas, e nao a WEG, que acharam o cifrao virando formula em cinco textos, o bloco
+das duas dividas misturando duas empresas e a margem da seguradora.
+
+### O WACC sugerido: beta sem realavancar e Kd sem piso
+
+A CSN saiu com WACC de 6,4% na tela, e o diagnostico acusou "fora da faixa
+tipica". A causa nao e a CSN: a sugestao grava `beta_alavancado_setor=1,0` com a
+D/E do setor **igual** a da companhia, e o beta nunca e realavancado -- o custo do
+capital proprio ignora que 77% do capital dela e divida.
+
+Medido nas 415 companhias de 2021-2025: hoje **31 (7,5%)** saem com WACC fora de
+7%-30%, todas abaixo, e a mediana e 11,4%. Com o beta desalavancado do setor
+(`dados_setoriais`, mapeado pelo setor do cadastro da CVM -- 384 companhias)
+realavancado a D/E de cada uma, sao **15 (3,9%)** fora, mediana de 11,9%, mudanca
+mediana de +0,7 pp. A CSN, nesta medicao com cinco exercicios, vai de 7,4% para
+9,0%.
+
+**Nao foi adotado, por dois motivos medidos.** Realavancar pela D/E contabil
+explode o beta onde o patrimonio e quase zero: TERP (D/E 130), PBG (76) e
+Alphaville (73) sairiam com beta de 48 a 54 -- a regra pede teto de D/E, ou D/E a
+mercado. E o que sobra fora da faixa e **Kd**, e nao beta: o Kd pelo caixa tem
+teto (25%) e nao tem piso, e sai em 0,1% na Simpar e na Neoenergia, 0,2% na EDP,
+0,4% na Marfrig. Sao 17 companhias abaixo de 1% e 28 abaixo de 3%, **sem vale** na
+distribuicao -- varias em recuperacao judicial (juro que nao se paga) ou com o
+juro lancado em outra linha. As duas correcoes movem o WACC de muita gente, e
+ficam como decisao.
+
 ### ROIC vazio onde o capital investido e irrisorio
 
 Com o titulo de longo prazo fora do capital, apareceram os extremos: onde ele e
@@ -2737,21 +2806,32 @@ a barra, e `t.replace(r"R$", "")` removia todo cifrao antes de conferir -- o tes
 passava por construcao. So nao ficou assim porque a linha foi relida depois de
 passar.
 
-### A Localiza nao fecha com nenhuma das duas
+### A Localiza fecha: abate o vinculado, e o swap
 
-A divida liquida publicada no fim de 2024 e de **R$ 30,1 bi** (citada por materia
-que resume os slides do 3T25, e nao lida no release). O app:
+A divida liquida publicada no fim de 2024 e **R$ 30,1 bi** (materia sobre os
+slides do 3T25), e nenhuma leitura do app chegava perto -- a padrao sem
+arrendamento dava 33.341. O release nao abriu em tres fontes; a **planilha de
+dados da RI** (`Planilha-Localiza-2T26.xlsx`, aba AtivoPassivo) abriu, e com as
+linhas dela a conta fecha:
 
-| Localiza, 2024 | App | Distancia |
-|---|---|---|
-| Padrao | 34.678 | 4,6 bi |
-| Ampla | 33.703 | 3,6 bi |
-| Padrao sem arrendamento | 33.341 | 3,2 bi |
-| Ampla sem arrendamento | 32.366 | 2,3 bi |
+| Localiza, 2024 | R$ mi |
+|---|---|
+| Emprestimos, financiamentos e debentures | 44.766,5 |
+| (-) Caixa e aplicacoes circulantes (o app le 11.426) | -11.425,5 |
+| (-) Aplicacao financeira de longo prazo -- o CDB vinculado, **bruto** | -1.216,9 |
+| (-) Swap liquido (ativo 2.164,4 - passivo 104,3) | -2.060,1 |
+| **Divida liquida** | **30.064**, os "R$ 30,1 bi" |
 
-A distancia e maior que o CDB vinculado inteiro (974), entao a diferenca esta em
-outra parte da definicao dela, e sem o release nao se sabe qual. Continua **nao
-conferida**, e o tratamento do vinculado segue a Serena.
+Tres coisas saem disso. **O vinculado entra**, como na Serena -- e a regra do app
+ja o abate. **O arrendamento fica fora**, como na Suzano: os 1.336,6 da planilha
+sao os 1.337 do app. E **o swap entra**: a Localiza soma o derivativo a divida,
+que e o que o motivo do derivativo ja dizia que as companhias fazem -- e o app
+nao faz. O swap dela nao esta no TVM, esta em conta propria, e nenhuma das duas
+dividas liquidas o le.
+
+Uma nuance fica sem explicacao: a companhia usa o CDB **bruto** (1.216,9), e nao
+liquido do ajuste a valor presente (975,1). Com o liquido a conta daria 30.306,
+fora do arredondamento.
 
 ### O ROIC na mesma base da ponte
 
@@ -2904,7 +2984,7 @@ contra a provisao, nao o balanco inteiro: a Hapvida tem R$ 8,2 bi de TVM
 circulante, e a primeira redacao do achado chamava tudo de lastro. O texto diz
 "parte" e manda a nota de ativos garantidores.
 
-**Nao verificado:** Localiza -- ver "A Localiza nao fecha com nenhuma das duas".
+**Localiza:** conferida depois -- ver "A Localiza fecha: abate o vinculado, e o swap".
 
 ### O lucro residual do banco partia do patrimonio do grupo
 

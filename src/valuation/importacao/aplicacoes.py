@@ -37,7 +37,8 @@ saidas:
 * ``vinculado`` -- abate, mas so paga a obrigacao a que esta preso. A Serena o
   soma ao caixa (1.428 + 488 = 1.916, e ela publica "caixa total ajustado de
   R$ 1,92 bi"), entao ficar fora contrariaria a propria companhia; o que se faz
-  e dizer que ele esta ali;
+  e dizer que ele esta ali. A Localiza tambem: a divida liquida que ela publica
+  (R$ 30,1 bi) so se reconstroi abatendo o CDB vinculado de longo prazo;
 * ``nao_e_caixa`` -- derivativo, lastro de provisao tecnica, participacao em
   outra companhia, carteira de credito, conta que nem e aplicacao.
 
@@ -263,6 +264,58 @@ def opera_seguro(detalhe: pd.DataFrame | None) -> bool:
         or provisao.any()
         or receita_ifrs_17.any()
         or passivo_ifrs_17.any()
+    )
+
+
+# **Na seguradora, parte das "outras despesas operacionais" e a propria
+# operacao.** O plano da CVM nao tem linha de sinistro no plano industrial, e a
+# Porto Seguro lanca o custo principal dentro de `3.04.05`: "Despesas de seguro"
+# (-21.614 em 2024), resseguro (-56), custo de aquisicao (-774), custo dos
+# servicos prestados (-241). O app trata `3.04.05` inteira como item nao
+# recorrente -- e, ali, tirava o sinistro da margem.
+#
+# Medido nas 8 companhias do sinal de seguradora em 2024: so a Porto Seguro lanca
+# a operacao ali. Porto Saude, Bradsaude e Hapvida a lancam no custo dos servicos
+# (3.02), e a margem recorrente delas ja batia com a reportada. De 2021 a 2025,
+# em todo o universo, **so tres** companhias tem vocabulario de seguro dentro de
+# 3.04.04/3.04.05: a Porto Seguro nos cinco exercicios, pesando de 7 a 29 vezes o
+# EBIT -- com os rotulos antigos ("Sinistros retidos", "Variacao das provisoes
+# tecnicas") ate 2022 e os do IFRS 17 depois, e o padrao pega os dois --, e Eneva
+# e OceanPact, que nao operam seguro e lancam **indenizacao de seguro recebida**
+# em outras receitas, de 1% a 4% do EBIT. Essa e evento de verdade, e fica.
+#
+# O padrao so vale para quem `opera_seguro`: "custos dos servicos prestados" e
+# operacao de uma seguradora, e numa industrial o mesmo rotulo seria outra
+# discussao.
+OPERACAO_DE_SEGURO = re.compile(
+    r"segur|sinistr|resseguro|retrocess|provis\w* tecnic|previdenc"
+    r"|custos? de aquisic|servicos prestados|salvados|ressarciment"
+)
+
+
+def operacao_de_seguro_em_outros(detalhe: pd.DataFrame | None, colunas) -> pd.Series:
+    """O que a seguradora lanca como operacao dentro de `3.04.04` e `3.04.05`.
+
+    Zero para quem nao opera seguro ou nao tem arvore: nao ha o que tirar do
+    item nao recorrente.
+    """
+    colunas = list(colunas)
+    zeros = pd.Series(0.0, index=colunas, dtype=float)
+    if detalhe is None or detalhe.empty or not opera_seguro(detalhe):
+        return zeros
+    codigos = detalhe["codigo"].astype(str)
+    filhas = detalhe[codigos.str.match(r"^3\.04\.0[45]\.\d+$")]
+    operacao = filhas[filhas["rotulo"].map(_sem_acento).str.contains(OPERACAO_DE_SEGURO)]
+    if operacao.empty:
+        return zeros
+    return pd.Series(
+        {
+            coluna: float(pd.to_numeric(operacao[coluna], errors="coerce").fillna(0).sum())
+            if coluna in operacao.columns
+            else 0.0
+            for coluna in colunas
+        },
+        dtype=float,
     )
 
 
