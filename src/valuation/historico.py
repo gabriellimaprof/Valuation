@@ -292,7 +292,22 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
     aliquota_para_nopat = aliquota_efetiva.fillna(ALIQUOTA_IR_BRASIL)
     nopat = ebit * (1 - aliquota_para_nopat)
 
-    capital_investido = divida_liquida.add(patrimonio, fill_value=0)
+    # **O capital investido sai da divida liquida da ponte, e nao da padrao.**
+    # A ponte trata o TVM de longo prazo como ativo do acionista, fora da
+    # operacao -- o rendimento dele fica abaixo do EBIT. O ROIC que ancora a
+    # projecao tem de tira-lo do capital pelo mesmo motivo: com a padrao, ele
+    # contava aplicacao financeira como capital da operacao e saia subestimado
+    # exatamente nas companhias que tem mais caixa aplicado.
+    #
+    # Medido na safra 2021-2025, mediana por companhia. Das que tem titulo de
+    # longo prazo, o ROIC muda 0,06 pp na mediana e mais de 1 pp em 14 de 130.
+    # Na base inteira a mediana fica em 10,1% e o P75 em 16,5%; o P90 vai de
+    # 25,5% para 26,3% e o P95 de 40,1% para 41,2%. **O extremo e de
+    # denominador**: onde o titulo e quase todo o capital, o capital investido
+    # encolhe perto de zero e o ROIC explode -- Porto Saude de 52% para 460%,
+    # Sondotecnica de 34% para 178%. A fragilidade ja existia com o caixa
+    # circulante; o titulo so a estende.
+    capital_investido = d.divida_liquida_da_ponte().add(patrimonio, fill_value=0)
     capital_medio = _media_movel_de_saldo(capital_investido)
     patrimonio_medio = _media_movel_de_saldo(patrimonio)
     patrimonio_controladores_medio = _media_movel_de_saldo(patrimonio_controladores)

@@ -2641,6 +2641,49 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### O ROIC na mesma base da ponte
+
+Com a ponte na ampla, o ROIC que ancora a projecao contava o titulo de longo
+prazo como capital da operacao -- e saia subestimado justamente nas companhias
+com mais caixa aplicado. O capital investido passa a sair de
+`Demonstracoes.divida_liquida_da_ponte`: a ampla onde ha arvore, a padrao onde
+nao.
+
+**Medido antes, na safra 2021-2025, mediana por companhia.** Com a padrao, a
+medicao reproduziu `BASE` **exatamente** -- 397 companhias e os mesmos sete
+quantis --, o que diz que ela mede o mesmo que a base mede:
+
+| | P5 | P25 | Mediana | P75 | P90 | P95 |
+|---|---|---|---|---|---|---|
+| ROIC padrao (`BASE` antiga) | -8,8% | 4,4% | 10,1% | 16,5% | 25,5% | 40,1% |
+| ROIC da ponte (`BASE` nova) | -9,1% | 4,4% | 10,1% | 16,5% | 26,3% | 41,2% |
+
+A mediana e o P75 nao se movem; o que abre e a cauda de cima. Por companhia, nas
+que tem o titulo, a mudanca mediana e de 0,06 pp e passa de 1 pp em 14 de 130.
+A primeira medicao, feita antes do sinal de seguradora, dava P75 de 16,2% -- a
+Porto Seguro com R$ 11 bi abatidos e o que mudava.
+
+**O extremo e de denominador, e nao do titulo.** Onde o titulo e quase todo o
+capital investido, o capital encolhe perto de zero e o ROIC explode: Porto Saude
+de 52% para 460%, Sondotecnica de 34% para 178%, Azul de 56% para 75%.
+`_divisao_segura` recusa capital zero ou negativo, mas nao capital positivo e
+irrisorio. A fragilidade ja existia com o caixa circulante, e o titulo so a
+estende -- e a Porto Saude e, alem disso, a holding que o sinal de seguradora
+deixa passar.
+
+**`BASE` teve regeneradas as tres linhas que dependem do capital investido** --
+ROIC, giro do capital investido e crescimento fundamentado (reinvestimento x
+ROIC) --, a partir do universo refeito com `python -m valuation.pares` (421
+companhias, 39 minutos). **Todas as outras linhas reproduziram exatamente**, o
+que diz que nenhuma outra mudanca de codigo desde a ultima medicao as deslocou;
+o crescimento fundamentado so se moveu porque carrega o ROIC dentro (ate 1,2 pp
+num quantil). O giro mediano vai de 0,917x para 0,928x.
+
+**O teste de formula pegou a mudanca antes do verbete.**
+`test_o_roic_publicado_bate_com_a_formula_publicada` refaz a conta escrita no
+verbete e comparava 36,45% com os 36,48% do app: a WEG tem R$ 17 mi de titulo de
+longo prazo. O verbete ganhou a frase, e o teste, a parcela.
+
 ### Duas dividas liquidas, e o que decide se o TVM e caixa
 
 A pergunta veio do dono: **quando o TVM nao circulante e investimento, e nao

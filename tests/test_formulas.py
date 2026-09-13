@@ -76,12 +76,17 @@ def test_o_roic_publicado_bate_com_a_formula_publicada(analise):
     nopat = ebit * (1 - aliquota)
 
     divida = d.divida_bruta()
+    # A divida liquida **da ponte**: abate tambem o titulo de longo prazo que e
+    # caixa. A WEG tem R$ 17 mi dele, e com a padrao o ROIC saia 36,45% contra
+    # os 36,48% do app -- o teste pegou a formula nova antes do verbete.
+    longo_prazo = d.aplicacoes_de_longo_prazo()
 
     def capital(a: int) -> float:
         divida_liquida = (
             float(divida[a])
             - d.valor("caixa_equivalentes", a)
             - d.valor("aplicacoes_financeiras", a)
+            - float(longo_prazo[a])
         )
         return divida_liquida + d.valor("patrimonio_liquido", a)
 
