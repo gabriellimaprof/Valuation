@@ -1230,11 +1230,44 @@ def sugerir_premissas(
     # mi, ou 4,5%. Medido nas 467 companhias de 2024, a conta pela DRE produzia
     # Kd acima de 25% em 28% delas, com a Selic entre 10% e 14%: um WACC inflado
     # que derrubava o valor sem que nada avisasse.
-    kd = analise.mediana("Custo da divida pelo caixa")
-    kd_origem = "juros pagos na DFC sobre a divida media"
-    if not np.isfinite(kd):
-        kd = analise.mediana("Custo da divida efetivo")
-        kd_origem = "despesas financeiras sobre a divida media"
+    #
+    # **E o do ultimo exercicio plausivel, e nao a mediana de todos.** A mediana
+    # mistura anos de juro quase zero -- capitalizado, lancado em outra linha, ou
+    # nao pago -- com anos normais: a Simpar, com seis exercicios, saia com 3,003%,
+    # logo acima do piso. Medido prevendo o Kd do ano seguinte com o que havia ate
+    # o ano t, e so onde o proprio alvo e plausivel (677 previsoes, 271
+    # companhias, 2019-2025):
+    #
+    #     mediana de todos os anos   erro mediano 2,35 pp  P90 7,7  cai no sintetico 7,2%
+    #     ultimo ano                              1,46 pp      5,7                  5,8%
+    #     ultimo ano plausivel                    1,37 pp      5,2                  1,6%
+    #     mediana dos 3 ultimos plausiveis        1,77 pp      6,2                  1,6%
+    #
+    # Nos historicos com algum ano implausivel (212 previsoes) o erro vai de 3,14
+    # para 1,68 pp e a queda no sintetico de 23% para 5%. E nao e so o ciclo da
+    # Selic: o ultimo plausivel vence tambem em 2023 e 2024, de juro estavel
+    # (1,18 contra 2,09 pp e 1,21 contra 1,97 pp). Sem ano plausivel nenhum, volta
+    # a mediana -- e dali ao sintetico pelas mesmas guardas de sempre.
+    juro_pago = (
+        analise.linha("Custo da divida pelo caixa")
+        if "Custo da divida pelo caixa" in analise.indicadores.index
+        else pd.Series(dtype=float)
+    )
+    plausiveis = juro_pago[
+        (juro_pago >= KD_MINIMO_PLAUSIVEL) & (juro_pago < KD_MAXIMO_PLAUSIVEL)
+    ].dropna()
+    if not plausiveis.empty:
+        kd = float(plausiveis.iloc[-1])
+        kd_origem = (
+            f"juros pagos na DFC sobre a divida media de {plausiveis.index[-1]}, o "
+            "ultimo exercicio com Kd plausivel"
+        )
+    else:
+        kd = analise.mediana("Custo da divida pelo caixa")
+        kd_origem = "juros pagos na DFC sobre a divida media"
+        if not np.isfinite(kd):
+            kd = analise.mediana("Custo da divida efetivo")
+            kd_origem = "despesas financeiras sobre a divida media"
 
     aliquota_hist = analise.mediana("Aliquota efetiva de IR")
     if np.isfinite(aliquota_hist) and abs(aliquota_hist - aliquota_ir) > 0.05:

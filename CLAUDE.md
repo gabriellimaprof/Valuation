@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1337 testes
+pytest                        # 1340 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.337 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.340 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,48 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### O Kd sugerido e o do ultimo exercicio plausivel
+
+O piso de 3% deixou uma companhia passar, e a razao nao era o piso: o Kd
+sugerido era a **mediana** do juro pago sobre a divida media em todos os anos, e a
+mediana mistura anos de juro quase zero -- capitalizado, lancado em outra linha,
+nao pago -- com anos normais. A Simpar, com seis exercicios, saia com 3,003%.
+
+**O teste foi o mesmo da margem**: prever o Kd do ano seguinte com o que havia
+ate o ano t, e so onde o proprio alvo e plausivel (3% a 25%) -- um alvo de 0,1%
+tambem e artefato, e premiaria o estimador que erra junto. 677 previsoes em 271
+companhias, 2019-2025:
+
+| Estimador | Erro mediano | Dentro de 2 pp | P90 | Cai no sintetico |
+|---|---|---|---|---|
+| Mediana de todos os anos (antes) | 2,35 pp | 43% | 7,7 | 7,2% |
+| Ultimo ano | 1,46 pp | 60% | 5,7 | 5,8% |
+| **Ultimo ano plausivel** | **1,37 pp** | **62%** | **5,2** | **1,6%** |
+| Mediana dos 2 ultimos plausiveis | 1,54 pp | 59% | 5,6 | 1,6% |
+| Mediana dos 3 ultimos plausiveis | 1,77 pp | 55% | 6,2 | 1,6% |
+
+Nos historicos com algum ano implausivel (212 previsoes) o erro vai de 3,14 para
+**1,68 pp**, e a queda no sintetico de 23% para 5%. **E nao e so o ciclo da
+Selic**, que subiu de 2% para 13,75% no periodo e favoreceria qualquer
+estimador recente: o ultimo plausivel vence tambem em 2023 e 2024, de juro
+estavel -- 1,18 contra 2,09 pp e 1,21 contra 1,97 pp.
+
+A sugestao passa a usar o **ultimo exercicio com juro pago entre o piso e o
+teto**, e a justificativa diz qual ano. Sem nenhum, volta a mediana, e dali ao
+sintetico pelas guardas de sempre.
+
+| 2020-2025 | Kd sugerido | WACC |
+|---|---|---|
+| Simpar | **8,4%** (2022) | **8,9%** (antes 6,5%) |
+| CSN | 7,6% (2025) | 9,1% |
+| WEG | 3,6% (2025) | 13,1% |
+| Marfrig | sintetico: nenhum ano acima de 1,2% | 12,2% |
+| Neoenergia | sintetico: 0,1% em todos os anos | 11,9% |
+
+**A ressalva da Simpar**: o ultimo ano plausivel dela e 2022, tres exercicios
+atras. E o dado que existe -- os anos seguintes sao 0,1% e 0,0%, que nao medem
+custo de divida --, e a justificativa mostra o ano para quem quiser trocar.
+
 ### Os betas setoriais saem da planilha oficial do Damodaran
 
 Com a sugestao de WACC usando o beta do setor, a tabela de `dados_setoriais`
@@ -2762,7 +2804,7 @@ trocado pelo sintetico.
 **3,003%** -- logo acima do corte, quando com cinco dava 0,09% -- e WACC de 6,5%.
 A mediana mistura anos de juro quase zero com anos normais. Piso de 4% a
 resolveria, mas mandaria para o sintetico a WEG, cujo juro pago baixo e real. O
-diagnostico continua acusando a faixa.
+diagnostico continua acusando a faixa. **Resolvido depois pelo estimador, e nao pelo piso** -- ver "O Kd sugerido e o do ultimo exercicio plausivel": a Simpar vai a Kd de 8,4% e WACC de 8,9%.
 
 ### O derivativo e a terceira peca da reconciliacao, e nao da divida
 

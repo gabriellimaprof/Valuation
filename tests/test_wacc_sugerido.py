@@ -112,3 +112,36 @@ st.session_state["setor_na_config"] = estado.config().get("setor")
     teste.run()
     assert not teste.exception, [str(e.value) for e in teste.exception]
     assert teste.session_state["setor_na_config"] == "Bens de capital"
+
+
+def _com_kd(weg, valores_por_ano: dict[int, float]):
+    """A analise real da WEG, com o juro pago de cada ano trocado."""
+    analise = analisar(weg)
+    indicadores = analise.indicadores.copy()
+    for ano, valor in valores_por_ano.items():
+        indicadores.loc["Custo da divida pelo caixa", ano] = valor
+    return replace(analise, indicadores=indicadores)
+
+
+def test_o_kd_e_o_do_ultimo_exercicio_plausivel(weg):
+    """A Simpar: um ano de juro quase zero seguido de um ano normal.
+
+    A mediana dos dois dava 4,6% e escondia os dois; o ultimo plausivel e o que
+    melhor preve o ano seguinte (1,37 pp de erro mediano contra 2,35 pp).
+    """
+    sugestao = sugerir_premissas(_com_kd(weg, {2024: 0.001, 2025: 0.09}))
+    assert sugestao.custo_capital.custo_divida_brl == pytest.approx(0.09)
+    assert "2025" in sugestao.justificativas["custo_capital"]
+
+
+def test_ano_recente_implausivel_nao_apaga_o_anterior(weg):
+    """Juro capitalizado no ultimo ano: vale o ultimo que mede custo de divida."""
+    sugestao = sugerir_premissas(_com_kd(weg, {2024: 0.12, 2025: 0.002}))
+    assert sugestao.custo_capital.custo_divida_brl == pytest.approx(0.12)
+    assert "2024" in sugestao.justificativas["custo_capital"]
+
+
+def test_sem_ano_plausivel_o_kd_e_sintetico(weg):
+    sugestao = sugerir_premissas(_com_kd(weg, {2024: 0.001, 2025: 0.002}))
+    assert sugestao.custo_capital.custo_divida_brl is None
+
