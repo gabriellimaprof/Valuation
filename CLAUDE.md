@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1314 testes
+pytest                        # 1332 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.314 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.332 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,64 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### O WACC sugerido passa a usar o beta do setor
+
+A decisao que tinha ficado em aberto foi tomada: a sugestao usa o **beta
+desalavancado do setor do cadastro da CVM**, realavancado para a D/E de cada
+companhia, com **teto de 3** na estrutura-alvo e **piso de 3%** no Kd.
+
+* `dados_setoriais.setor_do_cadastro` traduz o setor da CVM para a tabela do
+  app. O prefixo "Emp. Adm. Part." sai; setor financeiro e setor sem par ficam
+  sem traducao, e ai o beta desalavancado e a mediana dos setores, 0,90.
+* A importacao ja guardava o setor em `fonte["setor"]` -- **mas so quando recebe
+  o catalogo**. Sem ele o registro da companhia nao e achado e o setor nao
+  viaja: o primeiro teste mediu a sugestao sem setor achando que media a com.
+* `derivar_premissas_do_historico` grava o setor na configuracao, e a tela de
+  custo de capital abre nele. Sem isso a caixa abriria em "(informar beta
+  manualmente)", e o proximo "Aplicar" trocaria o beta do setor por 1,0.
+
+Medido nas 415 companhias de 2021-2025 antes de escrever a regra:
+
+| Regra | Fora de 7%-30% | WACC mediano | Beta P95 / maximo |
+|---|---|---|---|
+| Antes (beta 1,0 sem realavancar) | 31 | 11,4% | 1,0 |
+| Beta do setor, sem teto nem piso | 17 | 12,0% | 4,6 / 53,9 |
+| **Teto 3 + piso 3%** | **1** | 12,4% | 2,7 / 3,3 |
+| Teto 2 + piso 3% | 1 | 12,4% | 2,4 / 2,6 |
+| Teto 4 + piso 3% | 3 | 12,3% | 3,3 / 4,0 |
+| Teto 3, sem piso | 13 | 12,1% | 2,7 / 3,3 |
+
+Com seis exercicios, como a tela importa: a **CSN vai de 6,4% para 9,2%** (beta
+3,13, D/E no teto); WEG 12,5%; Porto Seguro 14,7%; Marfrig 12,0%, com o Kd de 0,4%
+trocado pelo sintetico.
+
+**O que o piso nao pega.** A Simpar, com seis exercicios, sai com Kd mediano de
+**3,003%** -- logo acima do corte, quando com cinco dava 0,09% -- e WACC de 6,5%.
+A mediana mistura anos de juro quase zero com anos normais. Piso de 4% a
+resolveria, mas mandaria para o sintetico a WEG, cujo juro pago baixo e real. O
+diagnostico continua acusando a faixa.
+
+### O derivativo e a terceira peca da reconciliacao, e nao da divida
+
+A Localiza abate o swap da divida liquida que publica, e a pergunta era se o app
+deveria abater tambem. Medido nas 415 companhias de 2024: **190 publicam
+derivativo**, em 25 o liquido passa de 10% da divida liquida -- e das 475 folhas
+encontradas, **399 dizem so "Instrumentos Financeiros Derivativos"**. O rotulo nao
+separa o swap da divida do hedge da receita, e os maiores casos sao justamente os
+que nao protegem divida: a Suzano tem 6.568 liquidos a pagar contra receita em
+dolar, a Raizen 2.518 a receber em commodity. Somar tudo a divida erraria onde
+pesa.
+
+Entao o derivativo entra como **terceira parcela** da reconciliacao com o release
+(`aplicacoes.derivativos_no_balanco`), ao lado do arrendamento e do titulo de
+longo prazo, e nenhuma das duas dividas liquidas o abate. A leitura fica restrita
+a ativo (`1.`) e passivo (`2.01`, `2.02`): a primeira varredura pegou a reserva
+de hedge do patrimonio, e a Klabin aparecia com 1.989 de "passivo" que era ajuste
+de avaliacao patrimonial. Na Localiza a leitura da 2.164,4 a receber e 104,3 a
+pagar -- os numeros da planilha da RI.
+
+Na tela, a WEG derivada abre a caixa de setor em "Bens de capital" com beta desalavancado de 0,95 -- e o Kd vai para o sintetico, porque importada pela tela (2019-2024) o juro pago dela sai em 2,6%, abaixo do piso. As tres varreduras com premissas derivadas, WEG, CSN e Porto Seguro, sairam limpas.
+
 ### Na seguradora, o sinistro nao e item nao recorrente
 
 A varredura com a Porto Seguro mostrou o valuation quebrado: margem EBIT
@@ -2708,7 +2766,7 @@ teto (25%) e nao tem piso, e sai em 0,1% na Simpar e na Neoenergia, 0,2% na EDP,
 0,4% na Marfrig. Sao 17 companhias abaixo de 1% e 28 abaixo de 3%, **sem vale** na
 distribuicao -- varias em recuperacao judicial (juro que nao se paga) ou com o
 juro lancado em outra linha. As duas correcoes movem o WACC de muita gente, e
-ficam como decisao.
+ficaram como decisao -- e foram adotadas depois: ver "O WACC sugerido passa a usar o beta do setor".
 
 ### ROIC vazio onde o capital investido e irrisorio
 

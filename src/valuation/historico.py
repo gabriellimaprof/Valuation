@@ -90,6 +90,25 @@ KD_MAXIMO_PLAUSIVEL = 0.25
 # nunca disparar.
 GIRO_DO_CAPITAL_IMPLAUSIVEL = 20.0
 
+# **A estrutura-alvo sugerida nao passa de D/E 3.** A sugestao realavanca o beta
+# do setor para a D/E do balanco, e Hamada com patrimonio quase zero nao descreve
+# risco: TERP (D/E 130), PBG (76) e Alphaville (73) sairiam com beta de 48 a 54.
+# Medido nas 415 companhias de 2021-2025, com o beta do setor: sem teto, 17 saem
+# com WACC fora de 7%-30% e o beta chega a 53,9; com teto 3 o beta maximo e 3,3 e
+# o P95 2,7. Passam de 3 67 companhias (16%). Teto 2 da a mesma faixa e corta
+# estrutura legitima de energia e saneamento; teto 4 deixa 3 fora.
+DIVIDA_PL_ALVO_MAXIMA = 3.0
+
+# **E o Kd sugerido tem piso.** O teto existia; o piso nao, e o juro pago sobre a
+# divida media saia em 0,1% na Simpar e na Neoenergia, 0,2% na EDP, 0,4% na
+# Marfrig -- juro capitalizado, lancado em outra linha, ou que a companhia em
+# recuperacao judicial nao paga. Medido: 17 companhias abaixo de 1%, 28 abaixo de
+# 3%, **sem vale** na distribuicao. O corte e economico, e nao estatistico:
+# companhia brasileira nao capta abaixo de 3% ao ano. Com teto 3 e piso 3% sobra
+# uma companhia fora da faixa (Igua: Kd de 3,3% e beta de saneamento); com piso 4%
+# nenhuma, mas ele ja alcanca divida subsidiada e em dolar que e real.
+KD_MINIMO_PLAUSIVEL = 0.03
+
 # O mesmo corte sobre a **despesa financeira**, e ele nao pergunta a mesma coisa:
 # nao e "esta divida e cara demais?", e sim "este denominador significa alguma
 # coisa?". Ele exclui 25,8% da base de `qualidade._juros`, e **medi mover e
@@ -763,6 +782,9 @@ class PremissasSugeridas:
     custo_capital: PremissasCustoCapital
     justificativas: dict[str, str]
     alertas: list[str]
+    # O setor do app que deu o beta, para a tela de custo de capital abrir nele.
+    # ``None`` quando o cadastro nao traduz.
+    setor: str | None = None
 
 
 def _convergir(inicio: float, fim: float, anos: int) -> list[float]:
@@ -1201,33 +1223,75 @@ def sugerir_premissas(
         if "juros pagos" in kd_origem
         else DESPESA_FINANCEIRA_SEM_DENOMINADOR
     )
-    kd_utilizavel = bool(np.isfinite(kd) and 0 < kd < teto)
+    kd_utilizavel = bool(np.isfinite(kd) and KD_MINIMO_PLAUSIVEL <= kd < teto)
     if np.isfinite(kd) and not kd_utilizavel:
         alertas.append(
             f"O custo da divida calculado do historico deu {kd:.1%}, fora do que "
-            "se paga por credito corporativo. Deixei o Kd para ser montado "
-            "sinteticamente; confira a divida media e o resultado financeiro."
+            "se paga por credito corporativo"
+            + (
+                " -- abaixo de 3% costuma ser juro capitalizado, lancado em outra "
+                "linha ou nao pago"
+                if kd < KD_MINIMO_PLAUSIVEL
+                else ""
+            )
+            + ". Deixei o Kd para ser montado sinteticamente; confira a divida "
+            "media e o resultado financeiro."
         )
 
+    # **O beta vem do setor do cadastro da CVM, realavancado.** Ate aqui a
+    # sugestao gravava beta 1,0 com a D/E do setor igual a da companhia, e o beta
+    # nunca era realavancado: a CSN, com 77% do capital em divida, saia com WACC
+    # de 6,4%. Medido nas 415 companhias de 2021-2025: 31 saiam fora de 7%-30%;
+    # com o beta do setor, o teto de D/E e o piso de Kd, sai 1, e a mediana vai de
+    # 11,4% para 12,4%. Ver `dados_setoriais.setor_do_cadastro`.
+    from .dados_setoriais import BETA_DESALAVANCADO_SEM_SETOR, setor_do_cadastro
+
+    setor_cvm = (analise.demonstracoes.fonte or {}).get("setor")
+    setor = setor_do_cadastro(setor_cvm)
+    beta_desalavancado = (
+        setor.beta_desalavancado if setor is not None else BETA_DESALAVANCADO_SEM_SETOR
+    )
+    divida_pl_alvo = min(divida_pl, DIVIDA_PL_ALVO_MAXIMA)
+
     custo_capital = PremissasCustoCapital(
-        beta_alavancado_setor=1.0,
-        divida_pl_setor=divida_pl,
-        divida_pl_alvo=divida_pl,
+        beta_alavancado_setor=None,
+        beta_desalavancado=beta_desalavancado,
+        divida_pl_alvo=divida_pl_alvo,
         custo_divida_brl=float(kd) if kd_utilizavel else None,
     )
     justificativas["custo_capital"] = (
-        f"D/E de {divida_pl:.2f} vem do balanco do ultimo ano. "
+        f"D/E de {divida_pl:.2f} vem do balanco do ultimo ano"
+        + (
+            f", limitada a {DIVIDA_PL_ALVO_MAXIMA:.1f} na estrutura-alvo. "
+            if divida_pl > DIVIDA_PL_ALVO_MAXIMA
+            else ". "
+        )
         + (
             f"Kd de {kd:.1%} vem de {kd_origem}."
             if kd_utilizavel
             else "Kd sera montado sinteticamente (rf + risco-pais + spread)."
         )
-        + " O beta precisa vir do setor: 1,0 e apenas um marcador."
+        + (
+            f" Beta desalavancado de {beta_desalavancado:.2f}, do setor "
+            f"{setor.nome} (cadastro da CVM: {setor_cvm}), realavancado para a "
+            "estrutura-alvo."
+            if setor is not None
+            else " Sem setor traduzido do cadastro, o beta desalavancado e a "
+            f"mediana dos setores ({beta_desalavancado:.2f})."
+        )
     )
-    alertas.append(
-        "O beta sugerido (1,0) e um marcador. Escolha o setor na tela de custo de "
-        "capital antes de defender o numero."
-    )
+    if divida_pl > DIVIDA_PL_ALVO_MAXIMA:
+        alertas.append(
+            f"A D/E do balanco e {divida_pl:.2f}. Realavancar o beta por ela "
+            "descreveria o patrimonio contabil, e nao o risco: a estrutura-alvo "
+            f"ficou em {DIVIDA_PL_ALVO_MAXIMA:.1f}. Se a companhia vai mesmo operar "
+            "assim, suba-a na tela de custo de capital."
+        )
+    if setor is None:
+        alertas.append(
+            "Sem setor traduzido do cadastro, o beta e a mediana dos setores. "
+            "Escolha o setor na tela de custo de capital antes de defender o numero."
+        )
 
     return PremissasSugeridas(
         operacionais=operacionais,
@@ -1235,6 +1299,7 @@ def sugerir_premissas(
         custo_capital=custo_capital,
         justificativas=justificativas,
         alertas=alertas,
+        setor=setor.nome if setor is not None else None,
     )
 
 

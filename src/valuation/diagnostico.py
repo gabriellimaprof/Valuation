@@ -889,19 +889,45 @@ def _ponte_com_o_release(analise) -> str:
     # a aplicacao de longo prazo mantendo o arrendamento (11.163 - 3.407 =
     # 7.756, exato). Somar as duas nao bate com nenhuma das duas -- entao o app
     # entrega as pecas e quem confere monta a definicao da companhia dele.
+    # **E o derivativo, a terceira peca.** A Localiza abate o swap (2.060 em
+    # 2024) da divida liquida que publica, e sem ele os R$ 30,1 bi nao se
+    # reconstroem. O app nao o abate em nenhuma das duas, porque o rotulo nao
+    # separa swap de divida de hedge de receita -- ver
+    # `aplicacoes.derivativos_no_balanco`. Aqui ele entra so como peca.
+    from .importacao.aplicacoes import derivativos_no_balanco
+
+    derivativo_ativo, derivativo_passivo = derivativos_no_balanco(
+        getattr(d, "detalhe", None)
+    )
+    derivativo = derivativo_ativo - derivativo_passivo
+
+    parcelas = [f"arrendamento de {_num(arrendamento)} {unidade}"]
+    if aplicacoes_lp > 0:
+        parcelas.append(
+            f"aplicação financeira de longo prazo de {_num(aplicacoes_lp)} {unidade}"
+        )
+    if derivativo != 0:
+        parcelas.append(
+            f"derivativo líquido de {_num(derivativo)} {unidade} "
+            f"({_num(derivativo_ativo)} a receber, {_num(derivativo_passivo)} a pagar)"
+        )
+    quantas = {1: "uma parcela", 2: "duas parcelas", 3: "três parcelas"}[len(parcelas)]
+    lista = parcelas[0] if len(parcelas) == 1 else (
+        ", ".join(parcelas[:-1]) + " e " + parcelas[-1]
+    )
     texto = (
         f" **Para reconciliar com o release:** a dívida líquida aqui é "
         f"{_num(liquida)} {unidade}, e a definição da companhia costuma diferir "
-        f"em duas parcelas — arrendamento de {_num(arrendamento)} {unidade}"
+        f"em {quantas} — {lista} —, que a dívida líquida padrão **não** trata "
+        "como a companhia."
     )
     if aplicacoes_lp > 0:
+        texto += " A **ampla**, no histórico, já abate a aplicação de longo prazo."
+    if derivativo != 0:
         texto += (
-            f" e aplicação financeira de longo prazo de {_num(aplicacoes_lp)} "
-            f"{unidade}"
+            " O derivativo o app não abate em nenhuma das duas: o rótulo não diz "
+            "se ele protege a dívida ou a receita."
         )
-    texto += ", que a dívida líquida padrão **não** abate."
-    if aplicacoes_lp > 0:
-        texto += " A **ampla**, no histórico, já abate a segunda."
     texto += " Tire a que a sua companhia tira e os dois números fecham."
     return texto.rstrip()
 

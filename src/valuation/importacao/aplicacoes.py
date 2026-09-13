@@ -319,6 +319,50 @@ def operacao_de_seguro_em_outros(detalhe: pd.DataFrame | None, colunas) -> pd.Se
     )
 
 
+# **Derivativo no balanco, para a reconciliacao -- e nao para a divida.** A
+# Localiza abate o swap da divida liquida que publica (2.060 liquidos em 2024, e
+# sem ele os R$ 30,1 bi nao se reconstroem). Mas medido nas 415 companhias de
+# 2024, 190 publicam derivativo, e das 475 folhas encontradas **399 dizem so
+# "Instrumentos Financeiros Derivativos"**: o rotulo nao separa o swap da divida
+# do hedge da receita. Os maiores casos sao justamente os que nao protegem
+# divida -- Suzano com 6.568 liquidos a pagar contra receita em dolar, Raizen com
+# 2.518 a receber em commodity. Somar tudo a divida erraria onde pesa.
+#
+# So ativo (`1.`) e passivo (`2.01`, `2.02`): a primeira varredura pegou tambem
+# a reserva de hedge do patrimonio (`2.03`), e a Klabin aparecia com 1.989 de
+# "passivo" que era ajuste de avaliacao patrimonial.
+DERIVATIVO = re.compile(r"derivativ|\bswaps?\b")
+
+
+def derivativos_no_balanco(detalhe: pd.DataFrame | None, coluna=None) -> tuple[float, float]:
+    """``(ativo, passivo)`` de derivativos publicados, somando so as folhas."""
+    if detalhe is None or detalhe.empty or "codigo" not in detalhe.columns:
+        return 0.0, 0.0
+    periodos = colunas_de_periodo(detalhe)
+    if not periodos:
+        return 0.0, 0.0
+    coluna = periodos[-1] if coluna is None else coluna
+    if coluna not in detalhe.columns:
+        return 0.0, 0.0
+    codigos = detalhe["codigo"].astype(str)
+    no_balanco = codigos.str.match(r"^(1\.|2\.0[12]\.)")
+    casa = detalhe[no_balanco & detalhe["rotulo"].map(_sem_acento).str.contains(DERIVATIVO)]
+    ativo = passivo = 0.0
+    codigos_que_casam = set(casa["codigo"].astype(str))
+    for _, linha in casa.iterrows():
+        codigo = str(linha["codigo"])
+        if any(outro.startswith(codigo + ".") for outro in codigos_que_casam):
+            continue
+        valor = _numero(linha[coluna])
+        if not np.isfinite(valor):
+            continue
+        if codigo.startswith("1."):
+            ativo += valor
+        else:
+            passivo += valor
+    return ativo, passivo
+
+
 def _numero(valor) -> float:
     try:
         numero = float(valor)

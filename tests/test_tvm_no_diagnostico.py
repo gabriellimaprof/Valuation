@@ -120,5 +120,8 @@ def test_derivativo_de_longo_prazo_nao_entra_na_reconciliacao():
         arrendamento=300.0,
     )
     texto = _ponte_com_o_release(analise)
-    assert "400,0" not in texto
+    # Nao e a parcela da aplicacao de longo prazo, que a ampla abate...
+    assert "aplicação financeira de longo prazo" not in texto
     assert "ampla" not in texto
+    # ...e sim a do derivativo, que nenhuma das duas dividas liquidas abate.
+    assert "derivativo líquido de 400,0" in texto

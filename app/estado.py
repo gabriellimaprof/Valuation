@@ -306,6 +306,11 @@ def derivar_premissas_do_historico(horizonte: int = 5):
     substituir_bloco("operacionais", sugestao.operacionais)
     substituir_bloco("ponte", sugestao.ponte)
     substituir_bloco("custo_capital", sugestao.custo_capital)
+    # A tela de custo de capital abre a caixa de setor pela configuracao. Sem
+    # isto ela mostraria "(informar beta manualmente)" com o beta do setor ja
+    # aplicado -- e o proximo "Aplicar" ali trocaria o beta do setor por 1,0.
+    if sugestao.setor:
+        definir_config("setor", sugestao.setor)
     atualizar({"nome": dados.empresa, "unidade": dados.unidade})
     return sugestao
 

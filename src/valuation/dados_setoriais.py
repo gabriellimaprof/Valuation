@@ -83,6 +83,65 @@ SETORES: tuple[Setor, ...] = (
 
 POR_NOME: dict[str, Setor] = {s.nome: s for s in SETORES}
 
+# **O setor do cadastro da CVM, traduzido para os setores desta tabela.** A
+# importacao ja guarda o setor da companhia (`Demonstracoes.fonte["setor"]`), e
+# ate aqui a sugestao nao o usava: gravava beta 1,0 com a D/E do setor igual a
+# da propria companhia, e o beta nunca era realavancado. A CSN, com 77% do
+# capital em divida, saia com WACC de 6,4%.
+#
+# O prefixo "Emp. Adm. Part. - " e da holding e nao muda o negocio. Ficam **sem
+# traducao** os setores que nao tem par nesta tabela (hospedagem, embalagens,
+# "Sem Setor Principal") e os financeiros: uma companhia no plano industrial com
+# setor "Intermediacao Financeira" nao deve virar banco por causa do cadastro --
+# isso trocaria o metodo inteiro. Medido no universo de 2021-2025, a traducao
+# cobre 384 das 415 companhias.
+SETOR_DO_CADASTRO_CVM: dict[str, str] = {
+    "Agricultura (Açúcar, Álcool e Cana)": "Agronegocio",
+    "Alimentos": "Alimentos e bebidas",
+    "Bebidas e Fumo": "Alimentos e bebidas",
+    "Brinquedos e Lazer": "Media e entretenimento",
+    "Comunicação e Informática": "Servicos de TI e software",
+    "Comércio (Atacado e Varejo)": "Varejo",
+    "Const. Civil, Mat. Const. e Decoração": "Construcao civil",
+    "Construção Civil, Mat. Constr. e Decoração": "Construcao civil",
+    "Educação": "Educacao",
+    "Energia Elétrica": "Energia eletrica",
+    "Extração Mineral": "Mineracao",
+    "Farmacêutico e Higiene": "Farmaceutico e saude",
+    "Máqs., Equip., Veíc. e Peças": "Bens de capital",
+    "Máquinas, Equipamentos, Veículos e Peças": "Bens de capital",
+    "Metalurgia e Siderurgia": "Siderurgia e metalurgia",
+    "Papel e Celulose": "Papel e celulose",
+    "Petroquímicos e Borracha": "Quimico e petroquimico",
+    "Petróleo e Gás": "Petroleo e gas",
+    "Saneamento, Serv. Água e Gás": "Saneamento",
+    "Seguradoras e Corretoras": "Seguros",
+    "Serviços Médicos": "Farmaceutico e saude",
+    "Serviços médicos": "Farmaceutico e saude",
+    "Serviços Transporte e Logística": "Transporte e logistica",
+    "Telecomunicações": "Telecomunicacoes",
+    "Têxtil e Vestuário": "Vestuario e calcados",
+}
+
+# O beta de quem nao tem setor traduzido: a mediana dos setores nao financeiros,
+# e nao 1,0. Um marcador que o app realavanca vira premissa, e a mediana e o
+# marcador menos arbitrario que a propria tabela oferece.
+BETA_DESALAVANCADO_SEM_SETOR: float = float(
+    np.median([s.beta_desalavancado for s in SETORES if not s.financeiro])
+)
+
+
+def setor_do_cadastro(nome_cvm: str | None) -> Setor | None:
+    """O setor desta tabela para o setor do cadastro da CVM, ou ``None``."""
+    if not nome_cvm:
+        return None
+    nome = str(nome_cvm).replace("Emp. Adm. Part. - ", "").strip()
+    traduzido = SETOR_DO_CADASTRO_CVM.get(nome)
+    setor = POR_NOME.get(traduzido) if traduzido else None
+    if setor is None or setor.financeiro:
+        return None
+    return setor
+
 
 @dataclass(frozen=True)
 class Pais:
