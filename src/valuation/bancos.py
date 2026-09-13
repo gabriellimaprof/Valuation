@@ -83,8 +83,30 @@ def ler_historico(demonstracoes) -> HistoricoDoBanco:
     rentável do que foi.
     """
     anos = list(demonstracoes.anos)
-    patrimonio = demonstracoes.serie("patrimonio_liquido").reindex(anos)
-    lucro = demonstracoes.serie("lucro_liquido").reindex(anos)
+
+    # **As duas pontas sao do controlador, e aqui isso decide valor.**
+    # `equity = PL contabil + VP do lucro residual`: partir do patrimonio
+    # **consolidado** produz o equity do **grupo**, enquanto o preco e a
+    # contagem de acoes sao da controladora. P/VP e valor por acao saem
+    # inflados, e nada denuncia -- o modelo fecha.
+    #
+    # Medido nas instituicoes de 2024: 8 das 35 tem minoritario acima de 1% do
+    # patrimonio, e a Cielo tem **22,7%**. Corrigindo a base, o equity dela cai
+    # de 12.819 para **9.906 (-22,7%)**; na Itausa, -4,8%.
+    #
+    # Isto e diferente do `ROE` do historico, que fica consolidado de proposito:
+    # la o numero **descreve**, aqui ele **decide**.
+    consolidado = demonstracoes.serie("patrimonio_liquido").reindex(anos)
+    minoritarios = demonstracoes.serie("minoritarios").reindex(anos).fillna(0.0)
+    patrimonio = consolidado.sub(minoritarios, fill_value=0.0)
+
+    # O lucro acompanha o patrimonio. Sem `3.11.01` publicado, o consolidado e o
+    # que ha -- e a companhia sem minoritario tem os dois iguais de qualquer
+    # forma, entao a queda so alcanca quem nao abriu a atribuicao.
+    controladores = demonstracoes.serie("lucro_controladores").reindex(anos)
+    lucro = controladores.where(
+        controladores.notna(), demonstracoes.serie("lucro_liquido").reindex(anos)
+    )
     dividendos = demonstracoes.serie("dividendos_pagos").reindex(anos).abs()
 
     medio = (patrimonio + patrimonio.shift(1)) / 2

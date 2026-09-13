@@ -863,9 +863,13 @@ def test_o_achado_do_arrendamento_reconcilia_com_o_release():
     )
 
     ponte = _ponte_com_o_release(analise)
-    # Divida liquida = 1.000 - 100 = 900; sem os 300 de arrendamento, 600.
-    assert "900,0" in ponte
-    assert "600,0" in ponte
+    # **Ela entrega as parcelas, e nao uma alternativa composta.** Conferido
+    # contra dois releases de 2024, cada companhia usa a sua definicao: a Suzano
+    # tira o arrendamento (o app da 79.445 contra 79.000 publicados) e a Ultrapar
+    # abate a aplicacao de longo prazo mantendo o arrendamento (11.163 - 3.407 =
+    # 7.756, exato). Somar as duas nao bate com nenhuma.
+    assert "900,0" in ponte  # a divida liquida do app: 1.000 - 100 de caixa
+    assert "300,0" in ponte  # a parcela de arrendamento, para quem quiser tirar
     assert "R$ milhões" in ponte
 
 

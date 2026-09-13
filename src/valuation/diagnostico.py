@@ -868,12 +868,59 @@ def _ponte_com_o_release(analise) -> str:
     if not (np.isfinite(liquida) and np.isfinite(arrendamento)) or arrendamento <= 0:
         return ""
     unidade = getattr(d, "unidade", "") or ""
-    return (
+
+    # **A segunda parcela da diferenca**, achada conferindo o release da
+    # Ultrapar contra o app: 11.163 no app, 7.756 publicado, e os 3.407 de
+    # diferenca sao **exatamente** a aplicacao financeira nao circulante que a
+    # companhia abate e o app nao. Medido em 199 companhias de 2024, 35,7% tem a
+    # linha; ela vale 1,5% da divida liquida na mediana, mas passa de 10% em
+    # 20% delas -- Embraer 87%, Cyrela 77%, Ultrapar 31%.
+    #
+    # O app **nao a abate**: essa decisao move a ponte EV -> equity de toda
+    # companhia e nao foi tomada. O que ele faz e dizer que ela existe.
+    # Ela vem da **arvore publicada** e nao do vocabulario: `Conta` escolhe um
+    # codigo quando varios casam, e aqui as tres linhas irmas precisam ser
+    # somadas -- na Ultrapar a escolha caiu em `1.02.01.03` (zero) em vez de
+    # `.01` (3.407). Como o numero so **explica** uma diferenca e nao entra em
+    # conta nenhuma, ler a arvore e mais barato que dar a `Conta` um modo de
+    # somar.
+    #
+    # So `.01`, `.02` e `.03`: `1.02.01.0\d` alcancaria contas a receber (.04),
+    # estoques (.05) e tributos diferidos (.06) do realizavel a longo prazo, e
+    # foi o que inflou a Vale para R$ 59 bi na primeira medicao.
+    aplicacoes_lp = 0.0
+    arvore = getattr(d, "detalhe", None)
+    if arvore is not None and not arvore.empty:
+        colunas = [c for c in arvore.columns if c not in ("codigo", "rotulo", "nivel")]
+        if colunas:
+            codigos = arvore["codigo"].astype(str)
+            alvo = arvore[codigos.str.fullmatch(r"1\.02\.01\.0[123]")]
+            if not alvo.empty:
+                valor = alvo[colunas[-1]].sum()
+                if np.isfinite(valor) and valor > 0:
+                    aplicacoes_lp = float(valor)
+
+    # **As parcelas, e nao uma alternativa composta.** Conferido contra dois
+    # releases de 2024, cada companhia usa a sua definicao: a Suzano tira o
+    # arrendamento (o app da 79.445 contra 79.000 publicados) e a Ultrapar abate
+    # a aplicacao de longo prazo mantendo o arrendamento (11.163 - 3.407 =
+    # 7.756, exato). Somar as duas nao bate com nenhuma das duas -- entao o app
+    # entrega as pecas e quem confere monta a definicao da companhia dele.
+    texto = (
         f" **Para reconciliar com o release:** a dívida líquida aqui é "
-        f"{_num(liquida)} {unidade} **com** arrendamento; sem ele são "
-        f"{_num(liquida - arrendamento)} {unidade}, que costuma ser o número da "
-        "manchete."
-    ).rstrip()
+        f"{_num(liquida)} {unidade}, e a definição da companhia costuma diferir "
+        f"em duas parcelas — arrendamento de {_num(arrendamento)} {unidade}"
+    )
+    if aplicacoes_lp > 0:
+        texto += (
+            f" e aplicação financeira de longo prazo de {_num(aplicacoes_lp)} "
+            f"{unidade}"
+        )
+    texto += (
+        ", que o app **não** abate. Tire a que a sua companhia tira e os dois "
+        "números fecham."
+    )
+    return texto.rstrip()
 
 
 def _minoritarios(analise) -> list[Achado]:

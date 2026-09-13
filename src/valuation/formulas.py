@@ -51,7 +51,17 @@ FORMULAS: dict[str, Formula] = {
     ),
     "Margem EBIT": Formula("EBIT ÷ Receita líquida"),
     "Margem NOPAT": Formula("NOPAT ÷ Receita líquida"),
-    "Margem liquida": Formula("Lucro líquido ÷ Receita líquida"),
+    "Margem liquida": Formula(
+        "Lucro líquido consolidado ÷ Receita líquida",
+        "**Fica no consolidado, e a razão é estrutural:** não existe "
+        "\"receita dos controladores\". Usar o lucro do controlador sobre a "
+        "receita do grupo misturaria as bases — o numerador excluiria a parte "
+        "dos minoritários e o denominador continuaria somando a receita das "
+        "controladas inteiras. É por isso que `ROE` e `Payout` ganharam par na "
+        "base do controlador e esta não. Medido em 147 companhias de 2024, ela "
+        "também é a menos afetada das três: 16,3% diferem em mais de 1 ponto, "
+        "contra 21,2% do ROE e 27,4% do payout.",
+    ),
     "Lucro dos controladores / Lucro liquido": Formula(
         "Lucro atribuído aos controladores (3.11.01) ÷ Lucro líquido "
         "consolidado (3.11)",

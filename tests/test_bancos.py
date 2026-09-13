@@ -254,3 +254,95 @@ def test_sem_roe_nao_ha_beta_de_indiferenca():
     assert not np.isfinite(
         beta_de_indiferenca(cc, PremissasMacro(), float("nan"))
     )
+
+
+def _banco_com_minoritario(pl, minoritario, lucro_c, lucro_k):
+    import pandas as pd
+
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "patrimonio_liquido": pl,
+                "minoritarios": minoritario,
+                "lucro_liquido": lucro_c,
+                "lucro_controladores": lucro_k,
+                "dividendos_pagos": -lucro_k * 0.4,
+            }
+            for ano in (2022, 2023, 2024)
+        }
+    )
+    return Demonstracoes(empresa="Banco T", valores=valores, unidade="R$ milhões")
+
+
+def test_o_lucro_residual_parte_do_patrimonio_do_controlador():
+    """Aqui o número **decide**, e não só descreve.
+
+    `equity = PL contábil + VP do lucro residual`. Partir do patrimônio
+    **consolidado** produz o equity do **grupo**, enquanto o preço e a contagem
+    de ações são da controladora — P/VP e valor por ação saem inflados, e nada
+    denuncia porque o modelo fecha.
+
+    Medido nas instituições de 2024: **11 das 32** têm minoritário acima de 0,5%
+    do patrimônio, e a correção tira de 0,7% a **52,8%** do valor de partida —
+    Wiz −52,8%, Cielo −22,7%, BTG −9,4%, Itaú −4,6%.
+
+    Isto é diferente do `ROE` do histórico, que fica consolidado de propósito:
+    lá o número descreve, aqui ele decide.
+    """
+    from valuation.bancos import ler_historico
+
+    historico = ler_historico(
+        _banco_com_minoritario(pl=1000.0, minoritario=200.0, lucro_c=150.0, lucro_k=120.0)
+    )
+    # O patrimonio de partida e o do controlador: 1.000 - 200.
+    assert float(historico.patrimonio.iloc[-1]) == pytest.approx(800.0)
+    # E o lucro acompanha, senao o ROE misturaria as duas bases.
+    assert float(historico.lucro.iloc[-1]) == pytest.approx(120.0)
+
+
+def test_sem_atribuicao_publicada_o_consolidado_e_o_que_ha():
+    """A queda só alcança quem não abriu a atribuição — e ali os dois coincidem."""
+    import numpy as np
+    import pandas as pd
+
+    from valuation.bancos import ler_historico
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "patrimonio_liquido": 1000.0,
+                "lucro_liquido": 150.0,
+                "dividendos_pagos": -60.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    historico = ler_historico(
+        Demonstracoes(empresa="B", valores=valores, unidade="R$ milhões")
+    )
+    assert float(historico.patrimonio.iloc[-1]) == pytest.approx(1000.0)
+    assert float(historico.lucro.iloc[-1]) == pytest.approx(150.0)
+
+
+def test_o_patrimonio_dos_minoritarios_e_lido_no_plano_financeiro():
+    """No banco a conta é `2.07.02`, e o rótulo é que a encontra.
+
+    `2.03.09` não existe no plano financeiro, e `2.07` já é um código que muda
+    de conta entre planos — adotá-lo arriscaria ler outra coisa numa industrial.
+    O rótulo "Patrimônio Líquido Atribuído aos Não Controladores" não tem essa
+    ambiguidade, e neste projeto ele tem prioridade sobre o código.
+
+    Medido em 2024, antes da correção: **8 das 36 instituições** tinham lucro de
+    minoritário e nenhum patrimônio deles — o Banco do Brasil com R$ 2,8 bi de
+    lucro atribuído a não controladores e patrimônio ausente. Depois: **zero**.
+    """
+    from valuation.importacao.esquema import POR_CHAVE, reconhecer
+
+    conta = POR_CHAVE["minoritarios"]
+    assert "patrimonio liquido atribuido aos nao controladores" in conta.sinonimos
+
+    achada = reconhecer("Patrimônio Líquido Atribuído aos Não Controladores")
+    assert achada.chave == "minoritarios", achada

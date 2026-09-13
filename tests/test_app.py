@@ -822,3 +822,93 @@ def test_o_cartao_de_receita_distingue_ano_movel_de_trimestre(monkeypatch):
     assert any("por trimestre" in r for r in trimestral)
     assert not any("por trimestre" in r for r in movel)
     assert not any("por trimestre" in r for r in anual)
+
+
+def _analise_com_fatia(consolidado: float, controladores: float):
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "ativo_total": 3000.0,
+                "patrimonio_liquido": 1000.0,
+                "minoritarios": 200.0,
+                "lucro_liquido": consolidado,
+                "lucro_controladores": controladores,
+                "dividendos_pagos": -40.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    return analisar(
+        Demonstracoes(empresa="T", valores=valores, unidade="R$ milhões")
+    )
+
+
+def test_a_leitura_do_acionista_aparece_so_quando_muda_alguma_coisa(monkeypatch):
+    """As três linhas juntas, e **só quando elas divergem**.
+
+    Elas já existiam espalhadas entre os indicadores, e espalhadas não respondem
+    a pergunta que as criou: o que sobra para quem compra a ação?
+
+    Mas em 63% das companhias medidas o minoritário não chega a 1% do lucro, e
+    ali as duas colunas seriam idênticas — um bloco que repete o número ao lado
+    gasta a atenção de quem lê e treina a ignorá-lo quando ele importar.
+    """
+    from app.paginas import historico as tela
+
+    capturado = {}
+    monkeypatch.setattr(tela, "secao", lambda *a, **k: capturado.setdefault("secao", a))
+    monkeypatch.setattr(tela.st, "html", lambda *a, **k: None)
+    monkeypatch.setattr(tela.st, "caption", lambda *a, **k: capturado.setdefault("caption", a))
+    monkeypatch.setattr(tela.st, "divider", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tela, "tabela_de_indicadores", lambda quadro: capturado.setdefault("q", quadro)
+    )
+
+    # 40% do lucro e dos minoritarios: acima do corte, o bloco aparece.
+    tela._leitura_do_acionista(_analise_com_fatia(1000.0, 600.0))
+    assert "q" in capturado
+    quadro = capturado["q"]
+    assert list(quadro.index) == ["Lucro líquido", "ROE", "Payout"]
+    assert "Consolidado (o grupo)" in quadro.columns
+    assert "Controladores (a ação)" in quadro.columns
+
+    # 2% dos minoritarios: abaixo do corte, nao aparece.
+    capturado.clear()
+    tela._leitura_do_acionista(_analise_com_fatia(1000.0, 980.0))
+    assert capturado == {}
+
+
+def test_o_bloco_do_acionista_nao_quebra_sem_atribuicao(monkeypatch):
+    """Companhia sem `3.11.01` não tem o que comparar, e não pode estourar."""
+    import pandas as pd
+
+    from app.paginas import historico as tela
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "ebit": 200.0,
+                "ativo_total": 3000.0,
+                "patrimonio_liquido": 1000.0,
+                "lucro_liquido": 100.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    chamou = {}
+    monkeypatch.setattr(tela, "secao", lambda *a, **k: chamou.setdefault("sim", True))
+    tela._leitura_do_acionista(analise)
+    assert chamou == {}

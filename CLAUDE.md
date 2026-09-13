@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1254 testes
+pytest                        # 1259 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.254 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.259 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2640,6 +2640,93 @@ consertar nada e fica de rede para o proximo.
 **Nao verificado:** o patrimonio liquido nao foi conferido contra release em
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
+
+### O lucro residual do banco partia do patrimonio do grupo
+
+No historico o `ROE` consolidado **descreve**; aqui o numero **decide**.
+`equity = PL contabil + VP do lucro residual`: partindo do patrimonio
+consolidado, o equity que sai e o do grupo -- e o preco e a contagem de acoes
+sao da controladora. P/VP e valor por acao saem inflados, e nada denuncia,
+porque o modelo fecha.
+
+Medido nas instituicoes de 2024: **11 das 32** tem minoritario acima de 0,5% do
+patrimonio, e a correcao tira de 0,7% a **52,8%** do valor de partida.
+
+| | Minoritario no PL | Efeito no equity |
+|---|---|---|
+| Wiz Co | 52,8% | **-52,8%** |
+| Cielo | 22,7% | **-22,7%** |
+| BTG Pactual | 9,4% | -9,4% |
+| Itausa / Itau | 4,8% / 4,6% | -4,8% / -4,6% |
+
+**E a correcao nao alcancava a populacao que ela mira.** No plano financeiro o
+patrimonio dos minoritarios e **`2.07.02`**, "Patrimonio Liquido Atribuido aos
+Nao Controladores" -- nem o codigo `2.03.09` nem os sinonimos existentes o
+achavam. Medido antes: **8 das 36 instituicoes** tinham lucro de minoritario e
+nenhum patrimonio deles, entre elas o **Banco do Brasil com R$ 2,8 bi**. Depois:
+**zero**.
+
+A entrada e pelo **rotulo** e nao pelo codigo, seguindo a regra que este projeto
+ja tem: `2.07` muda de conta entre planos, e adota-lo arriscaria ler outra coisa
+numa industrial. O rotulo nao tem essa ambiguidade.
+
+### Payout e margem liquida: um ganhou par, o outro nao podia ganhar
+
+O **payout** misturava as bases. O numerador e o que a **listada** paga --
+medido, so **5 de 100** companhias publicam em separado o dividendo aos
+minoritarios das controladas -- e o denominador era o lucro do **grupo**. Medido
+em 95 companhias: mediana da diferenca **zero**, mas **11,6% diferem em mais de
+10 pontos**, e na Metalurgica Gerdau vai de 34,0% para **101,5%** -- a distancia
+entre "retem dois tercos" e "distribui tudo". Entrou `Payout dos controladores`.
+
+A **margem liquida** ficou como estava, e a razao e estrutural: **nao existe
+"receita dos controladores"**. Usar o lucro do controlador sobre a receita do
+grupo misturaria as bases -- o numerador excluiria a parte dos minoritarios e o
+denominador continuaria somando a receita das controladas inteiras. Medido em
+147 companhias, ela e tambem a menos afetada das tres: 16,3% diferem em mais de
+1 ponto, contra 21,2% do ROE e 27,4% do payout.
+
+**E a cadeia passou a aparecer junta na tela**, na aba de Retorno, com as tres
+linhas lado a lado -- e **so quando o minoritario passa de 25% do lucro**. Em
+63% das companhias ele nao chega a 1%, e ali as duas colunas seriam identicas:
+bloco que repete o numero ao lado gasta a atencao de quem le e treina a ignora-lo
+quando ele importar.
+
+### O patrimonio bate ao milhao, e a divida difere por definicao
+
+O `WebFetch` de um release devolve o PDF **salvo em disco**, e `pypdf` -- que ja
+e dependencia -- le o texto. Foi assim que o patrimonio saiu da manchete (onde
+ele nunca esta) para a fonte primaria.
+
+Ultrapar, release do 4T24 contra o app:
+
+| | Release | App |
+|---|---|---|
+| Patrimonio liquido total | **15.823** | **15.823** |
+| Divida liquida | 7.756 | 11.163 |
+
+**O patrimonio bate ao milhao.** A divida difere em 3.407, e o numero e exato: e
+a linha `1.02.01.01`, "Aplicacoes Financeiras Avaliadas a Valor Justo", do ativo
+**nao circulante** -- a Ultrapar a abate da propria divida liquida e o app nao.
+`11.163 - 3.407 = 7.756`.
+
+E **cada companhia usa a sua definicao**. Na Suzano a diferenca e o
+arrendamento (o app da 79.445 sem ele contra 79.000 publicados); na Ultrapar e a
+aplicacao de longo prazo, mantendo o arrendamento. Somar as duas nao bate com
+nenhuma das duas -- entao a reconciliacao **entrega as parcelas** e quem confere
+monta a definicao da companhia dele.
+
+O app **nao abate** a aplicacao de longo prazo: essa decisao move a ponte
+EV -> equity de toda companhia e nao foi tomada. Medido em 199 companhias de
+2024, **35,7% tem a linha**; ela vale 1,5% da divida liquida na mediana, mas
+passa de 10% em 20% delas -- Embraer 87%, Cyrela 77%, Ultrapar 31%.
+
+**A primeira medicao disto estava errada e o numero denunciou.** Somando
+`1.02.01.0\d` a Vale aparecia com R$ 59 bi de aplicacao financeira, quase toda a
+divida liquida dela -- porque o padrao alcanca contas a receber (.04), estoques
+(.05) e tributos diferidos (.06) do realizavel a longo prazo. So `.01`, `.02` e
+`.03` sao aplicacao financeira, e com eles o total da amostra cai de R$ 412 bi
+para **R$ 35,6 bi**.
 
 ### E o ano-base de uma serie trimestral era o rotulo
 

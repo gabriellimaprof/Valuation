@@ -969,6 +969,68 @@ def _caixa_livre_com_reciclagem(analise, composicao) -> None:
             )
 
 
+# Quanto do lucro pode ficar com os minoritarios antes de a leitura do acionista
+# merecer um bloco proprio. O mesmo corte do achado no diagnostico: acusa 13% da
+# base, e "um quarto do lucro nao e seu" e limiar com significado proprio.
+MINORITARIO_QUE_MUDA_A_LEITURA = 0.25
+
+
+def _leitura_do_acionista(analise) -> None:
+    """As tres linhas na base do controlador, juntas.
+
+    Elas ja existiam espalhadas entre os indicadores -- `Lucro dos controladores
+    / Lucro liquido`, `ROE dos controladores`, `Payout dos controladores` --, e
+    espalhadas nao respondem a pergunta que as criou: **o que sobra para quem
+    compra a acao?**
+
+    **Aparece so quando muda alguma coisa.** Em 63% das companhias medidas o
+    minoritario nao chega a 1% do lucro, e nelas as duas colunas seriam
+    identicas -- um bloco que repete o numero ao lado gasta a atencao de quem le
+    e treina a ignorar o bloco quando ele importar.
+    """
+    fatia = analise.mediana("Lucro dos controladores / Lucro liquido")
+    if not np.isfinite(fatia) or abs(1 - fatia) <= MINORITARIO_QUE_MUDA_A_LEITURA:
+        return
+
+    st.divider()
+    secao(
+        "A leitura do acionista da listada",
+        "O consolidado descreve o **grupo**; estas linhas descrevem a **ação**. "
+        "As duas estão certas, e o release costuma publicar a segunda.",
+    )
+
+    pares = (
+        ("Lucro líquido", "Lucro dos controladores / Lucro liquido", None),
+        ("ROE", "ROE", "ROE dos controladores"),
+        ("Payout", "Payout (dividendos / lucro)", "Payout dos controladores"),
+    )
+    linhas = []
+    for rotulo, consolidado, controlador in pares:
+        if controlador is None:
+            linhas.append(
+                {
+                    "Linha": rotulo,
+                    "Consolidado (o grupo)": "100%",
+                    "Controladores (a ação)": formatar(fatia, "pct"),
+                }
+            )
+            continue
+        linhas.append(
+            {
+                "Linha": rotulo,
+                "Consolidado (o grupo)": formatar(analise.mediana(consolidado), "pct"),
+                "Controladores (a ação)": formatar(analise.mediana(controlador), "pct"),
+            }
+        )
+    st.html(tabela_de_indicadores(pd.DataFrame(linhas).set_index("Linha")))
+    st.caption(
+        f"**{formatar(1 - fatia, 'pct')} do lucro consolidado é dos minoritários "
+        "das controladas** — a mediana do período. Medido em 415 companhias de "
+        "2024, isso passa de um quarto em 13% delas, e em 2,4% o consolidado e o "
+        "do controlador nem têm o mesmo sinal."
+    )
+
+
 def _retorno(analise) -> None:
     conceito("roic", "O indicador mais importante do valuation")
     _formula_do_roic()
@@ -995,6 +1057,8 @@ def _retorno(analise) -> None:
             )
     elif not roic.empty:
         grafico(linhas_percentuais(analise.indicadores.loc[["ROIC"]], "ROIC"))
+
+    _leitura_do_acionista(analise)
 
     st.divider()
     conceito("dupont", "Por que o retorno é o que é")

@@ -589,6 +589,19 @@ CONTAS_BP: tuple[Conta, ...] = (
         sinonimos=(
             "participacao dos acionistas nao controladores",
             "participacao de nao controladores",
+            # **O plano financeiro escreve outro rotulo, e num codigo que nao
+            # pode ser adotado.** Nos bancos a conta e `2.07.02`, "Patrimonio
+            # Liquido Atribuido aos Nao Controladores" -- e `2.07` ja e um
+            # codigo que muda de conta entre planos, entao adota-lo aqui
+            # arriscaria ler outra coisa numa industrial. O rotulo nao tem essa
+            # ambiguidade, e neste projeto ele tem prioridade sobre o codigo.
+            #
+            # Medido em 2024: **8 das 36 instituicoes** tinham lucro de
+            # minoritario e nenhum patrimonio deles, entre elas o Banco do
+            # Brasil com R$ 2,8 bi de lucro atribuido a nao controladores.
+            "patrimonio liquido atribuido aos nao controladores",
+            "patrimonio liquido atribuido a nao controladores",
+            "patrimonio liquido dos nao controladores",
             "minoritarios",
             "minority interest",
             "non controlling interests",
