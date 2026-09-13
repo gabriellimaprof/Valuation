@@ -313,9 +313,10 @@ class PonteValor:
 
     ``aplicacoes_longo_prazo`` e o TVM nao circulante que abate a divida, e e
     ele que separa as duas dividas liquidas: zero e a padrao, que so abate o
-    circulante; preenchido e a ampla, que e o que Ultrapar, Embraer e Cyrela
-    publicam. Fica no fim da classe para nao deslocar quem constroi a ponte por
-    posicao.
+    circulante; preenchido e a ampla, que e o que Ultrapar, Cyrela, Embraer e
+    Petrobras publicam -- e o que a ponte sugerida usa. O default da classe
+    fica em zero porque ela tambem e montada a mao, sem arvore para ler. Fica no
+    fim da classe para nao deslocar quem constroi a ponte por posicao.
     """
 
     divida_bruta: float = 0.0

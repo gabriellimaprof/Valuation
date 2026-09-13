@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1288 testes
+pytest                        # 1298 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.288 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.298 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2665,13 +2665,30 @@ vinculado. No historico entra `Divida liquida ampla / EBITDA`, so onde as duas
 diferem; na ponte, `PonteValor.aplicacoes_longo_prazo`, em que zero e a padrao.
 O campo fica no fim da classe, e arquivo salvo antes dele abre na padrao.
 
-**A sugestao fica na padrao, e a tela de Valor troca com um clique.** Medido nas
-415 companhias de 2024: **134 (32,3%)** tem TVM de longo prazo que abate, R$ 45,3
-bi no total. A queda de DL/EBITDA tem mediana de 0,04x, mas passa de 0,25x em
-16,5% delas, e o TVM passa de 10% do patrimonio em 12,8%. Trocar o padrao moveria
-o equity de um terco da base sem ninguem pedir. O que o app faz e mostrar as
-duas lado a lado, cada linha com o que ela e, e dizer na justificativa da ponte
-sugerida que a outra existe.
+**A ponte sugerida usa a ampla, e a tela de Valor volta a padrao com um clique.**
+A primeira versao deixava a sugestao na padrao, por cautela com mover o equity
+de um terco da base -- e o enquadramento estava errado. **Na ponte a pergunta nao
+e "e caixa?", e sim "e do acionista, e algum fluxo ja o conta?".** O titulo de
+longo prazo e do acionista, e o rendimento dele fica no resultado financeiro,
+abaixo do EBIT de onde o FCFF parte: deixa-lo fora nao e escolher definicao, e
+esquecer um ativo -- e o erro vai sempre para o mesmo lado. "Avisa e nao corrige"
+vale para inconsistencia publicada; esta era omissao do proprio app.
+
+A quarta conferencia veio junto: a **Petrobras** define as disponibilidades
+ajustadas com o titulo liquido "ainda que o prazo de vencimento seja superior a
+12 meses", e a divida liquida publicada, **323.489**, fica a 0,09% da ampla do
+app (323.211) e a 1,0% da padrao (326.816).
+
+Medido nas 415 companhias de 2024, ja com o sinal de seguradora: **132** tem TVM
+de longo prazo que abate, R$ 33,8 bi. Antes dele eram 134 e R$ 45,3 bi, e ali a
+queda de DL/EBITDA tinha mediana de 0,04x, passando de 0,25x em 16,5% delas, e o
+titulo passava de 10% do patrimonio em 12,8%.
+
+**Os pares seguem a ponte.** O EV dos pares vindos da CVM usa
+`Demonstracoes.divida_liquida_da_ponte`: com a alvo na ampla e os pares na
+padrao, o multiplo mediano carregaria para o preco o titulo que ninguem abateu.
+Sem arvore -- planilha, plano financeiro -- a da ponte e a padrao, o unico numero
+que existe.
 
 **O que decide se a linha e caixa e o rotulo da subconta.** O plano da CVM separa
 pela *mensuracao* do IFRS 9 -- valor justo no resultado, em ORA, custo amortizado
@@ -2710,16 +2727,30 @@ O corte do achado e **1% da divida bruta** e caiu num vale: as duas menores pesa
   1.216 e "(-) Ajuste a Valor Presente" -242. Sem isso a tela mostrava caixa
   negativo ao lado de um vinculado inflado.
 
-**O que a regra nao pega, e por que nao tentei.** Seguradora: a Porto Seguro tem
-R$ 11 bi de TVM de longo prazo em contas que so dizem "custo amortizado" -- lastro
-de provisao tecnica que nao se declara. Procurar a provisao no passivo foi medido
-e rejeitado (2 das 415 a publicam com esse nome, e nenhuma das duas tem TVM de
-longo prazo), e o setor do cadastro poe operadora de saude junto de hospital e
-laboratorio. A ampla da Porto sai com R$ 11 bi a mais de caixa, e o verbete diz.
+**A seguradora, que o rotulo da linha nao denuncia e a demonstracao sim.** A
+Porto Seguro tem R$ 11 bi de TVM de longo prazo em contas que so dizem "custo
+amortizado". A primeira tentativa, so pela provisao tecnica no passivo, achou 2
+companhias e foi rejeitada -- mas deixou de fora a Hapvida, que publica a provisao
+ali, e a causa dessa falha da varredura nao foi apurada. Refeita com a receita:
+**premio ou contraprestacao em `3.01` e sinistro no custo, ou provisao tecnica
+no passivo** (`aplicacoes.opera_seguro`) marca **5** companhias -- Porto Seguro,
+Bradsaude, Hapvida, Qualicorp e Hospital Care Caledonia --, todas de seguro ou
+saude, e pega 95% do valor das que tem titulo de longo prazo. Deixa passar a
+Porto Saude (674), holding que nao usa nenhuma das palavras.
 
-**Nao verificado:** Localiza (o PDF do release nao abriu, entao o tratamento do
-CDB vinculado e da Serena por analogia) e Petrobras (R$ 3,6 bi de longo prazo,
-definicao da companhia nao conferida).
+**Cada metade da regra sozinha erra.** "Premio" e "contraprestacao" soltos
+marcaram 12 companhias a mais: "Contraprestacao a Pagar a Clientes" da Frasle,
+"Premio de opcao de acoes" da Mills, a contraprestacao contingente de aquisicao
+da EDP. Na seguradora, o titulo que nao se declara livre vira lastro e sai da
+ampla; o que se declara livre fica ("Aplicacoes livres" da Bradsaude, 400).
+
+**E o motivo e o teto, e nao a medida.** A regulacao exige ativo garantidor
+contra a provisao, nao o balanco inteiro: a Hapvida tem R$ 8,2 bi de TVM
+circulante, e a primeira redacao do achado chamava tudo de lastro. O texto diz
+"parte" e manda a nota de ativos garantidores.
+
+**Nao verificado:** Localiza. O release nao abriu em tres fontes, e o tratamento
+do CDB vinculado segue a Serena por analogia.
 
 ### O lucro residual do banco partia do patrimonio do grupo
 

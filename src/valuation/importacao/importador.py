@@ -664,6 +664,27 @@ class Demonstracoes:
         """
         return self.divida_liquida().sub(self.aplicacoes_de_longo_prazo())
 
+    def divida_liquida_da_ponte(self) -> pd.Series:
+        """A divida liquida que o valuation usa: a ampla onde ha arvore, a padrao onde nao.
+
+        **Na ponte a pergunta nao e "e caixa?"; e "e do acionista, e alguem ja o
+        conta?".** O TVM de longo prazo e do acionista, e o rendimento dele fica
+        no resultado financeiro, abaixo do EBIT de onde o FCFF parte. Deixa-lo
+        fora nao e escolher uma definicao: e esquecer um ativo que nenhum fluxo
+        conta.
+
+        E e o que as companhias publicam. Conferido em 2024: Ultrapar (11.163 -
+        3.407 = 7.756, exato), Cyrela ("TVM LP" 2.256), Embraer ("curto e longo
+        prazo") e Petrobras, cuja divida liquida de **323.489** fica a 0,09% da
+        ampla (323.211) e a 1,0% da padrao (326.816) -- a definicao dela inclui
+        titulo liquido "ainda que o prazo de vencimento seja superior a 12
+        meses".
+
+        Sem arvore publicada -- planilha, plano financeiro -- nao ha como ler o
+        titulo de longo prazo, e a padrao e o unico numero que existe.
+        """
+        return self.divida_liquida_ampla().fillna(self.divida_liquida())
+
     def capital_giro(self) -> pd.Series:
         """Capital de giro operacional = recebiveis + estoques - fornecedores.
 

@@ -1070,6 +1070,16 @@ def sugerir_premissas(
         )
         acoes = float("nan")
 
+    # **A ponte sugerida abate o TVM de longo prazo que e caixa** -- ver
+    # `Demonstracoes.divida_liquida_da_ponte` para o porque e as quatro
+    # companhias conferidas. Derivativo, lastro e carteira de credito continuam
+    # fora: nao sao caixa, e o rotulo publicado diz isso.
+    tvm_longo_prazo = d.aplicacoes_de_longo_prazo().dropna()
+    tvm_longo_prazo_na_data_base = (
+        float(tvm_longo_prazo.iloc[-1])
+        if not tvm_longo_prazo.empty and tvm_longo_prazo.iloc[-1] > 0
+        else 0.0
+    )
     ponte = PonteValor(
         divida_bruta=float(np.nan_to_num(d.divida_bruta().dropna().iloc[-1]))
         if d.divida_bruta().notna().any()
@@ -1078,6 +1088,7 @@ def sugerir_premissas(
         aplicacoes_financeiras=float(np.nan_to_num(d.valor("aplicacoes_financeiras"))),
         minoritarios=float(np.nan_to_num(d.valor("minoritarios"))),
         acoes_em_circulacao=float(acoes) if np.isfinite(acoes) and acoes > 0 else None,
+        aplicacoes_longo_prazo=tvm_longo_prazo_na_data_base,
     )
     justificativas["ponte"] = (
         f"Saldos do balanco de {d.ano_base}: divida bruta, caixa, aplicacoes e "
@@ -1088,14 +1099,13 @@ def sugerir_premissas(
             else ""
         )
     )
-    # A sugestao fica na divida liquida **padrao**: a ampla move o equity, e a
-    # escolha e do analista. O que ela nao faz e esconder que a escolha existe.
-    aplicacoes_lp = d.aplicacoes_de_longo_prazo().dropna()
-    if not aplicacoes_lp.empty and aplicacoes_lp.iloc[-1] > 0:
+    if ponte.aplicacoes_longo_prazo > 0:
         justificativas["ponte"] += (
-            f" O TVM de longo prazo ({formato.num(float(aplicacoes_lp.iloc[-1]), 1)}) "
-            "ficou fora: e a divida liquida padrao. Na tela de Valor, um clique "
-            "usa a ampla, que o abate."
+            " O TVM de longo prazo que e caixa "
+            f"({formato.num(ponte.aplicacoes_longo_prazo, 1)}) entrou: e do "
+            "acionista, e o rendimento dele fica abaixo do EBIT, fora de qualquer "
+            "fluxo projetado. Na tela de Valor, um clique volta a divida liquida "
+            "padrao."
         )
 
     divida_pl = analise.ultimo("Divida bruta / Patrimonio liquido")

@@ -627,11 +627,11 @@ def _arrendamento(ponte, unidade: str) -> None:
 def _duas_dividas_liquidas(ponte, unidade: str) -> None:
     """A dívida líquida com e sem o TVM de longo prazo, e o que cada título é.
 
-    A padrão abate só o circulante. Onde a companhia tem título de longo prazo,
-    a definição que ela publica costuma abatê-lo também — Ultrapar, Embraer e
-    Cyrela, as três conferidas. Nenhuma das duas é a errada e a escolha move o
-    equity, então ela é do analista: fica a um clique, com cada linha dizendo o
-    que é e por quê.
+    A padrão abate só o circulante; a ampla abate também o título de longo
+    prazo que é caixa, e é a que a ponte sugerida usa — o título é do acionista e
+    o rendimento dele fica abaixo do EBIT, fora de qualquer fluxo. As companhias
+    conferidas publicam assim (Ultrapar, Cyrela, Embraer, Petrobras). A padrão
+    fica a um clique, com cada linha dizendo o que é e por quê.
     """
     from dataclasses import replace
 

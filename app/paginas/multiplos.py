@@ -411,7 +411,13 @@ def _buscar_peers(companhias, ano: int, unidade: str) -> None:
                 "Empresa": companhia.nome,
                 "Cotação (R$/ação)": None,
                 "Ações": _serie(d, "acoes_em_circulacao", ano, divisor),
-                "Dívida líquida": _serie_metodo(d.divida_liquida(), ano, divisor),
+                # A mesma divida liquida da ponte da empresa avaliada. Com a
+                # alvo na ampla e os pares na padrao, o EV dos pares sairia
+                # maior pelo titulo de longo prazo que ninguem abateu, e o
+                # multiplo mediano carregaria essa diferenca para o preco.
+                "Dívida líquida": _serie_metodo(
+                    d.divida_liquida_da_ponte(), ano, divisor
+                ),
                 "Receita": _serie(d, "receita_liquida", ano, divisor),
                 "EBITDA": _serie_metodo(d.ebitda(), ano, divisor),
                 "EBIT": _serie(d, "ebit", ano, divisor),

@@ -4,12 +4,14 @@ A divida liquida abate o TVM **circulante** (`1.01.02`) e deixa de fora o **nao
 circulante** (`1.02.01.01/.02/.03`). As duas escolhas sao discutiveis, e por
 razoes opostas.
 
-**O TVM de longo prazo costuma ser caixa.** Conferido contra o release de 2024
-das tres companhias em que ele mais pesa sobre a divida liquida: a Ultrapar o
-abate (11.163 no app, 7.756 publicados, e a diferenca e exatamente a linha); a
-Embraer define a divida liquida com "investimentos financeiros de **curto e
-longo prazo**"; a Cyrela publica a linha "Titulos e Valores Mobiliarios LP" com
-**2.256**, que e o que o app le. Tres de tres.
+**O TVM de longo prazo costuma ser caixa.** Conferido contra o que as companhias
+publicam em 2024, nas quatro em que ele mais pesa: a Ultrapar o abate (11.163 no
+app, 7.756 publicados, e a diferenca e exatamente a linha); a Embraer define a
+divida liquida com "investimentos financeiros de **curto e longo prazo**"; a
+Cyrela publica a linha "Titulos e Valores Mobiliarios LP" com **2.256**, que e o
+que o app le; e a Petrobras inclui o titulo liquido "ainda que o prazo de
+vencimento seja superior a 12 meses" -- a divida liquida dela, 323.489, fica a
+0,09% da ampla do app.
 
 **E o TVM nem sempre e caixa, em nenhum dos dois prazos.** O plano da CVM so
 separa pela *mensuracao* do IFRS 9 -- valor justo no resultado, em ORA, custo
@@ -37,15 +39,14 @@ saidas:
   R$ 1,92 bi"), entao ficar fora contrariaria a propria companhia; o que se faz
   e dizer que ele esta ali;
 * ``nao_e_caixa`` -- derivativo, lastro de provisao tecnica, participacao em
-  outra companhia, conta que nem e aplicacao.
+  outra companhia, carteira de credito, conta que nem e aplicacao.
 
-**O que esta regra nao pega.** A carteira de uma seguradora lastreia provisao
-tecnica mesmo sem dizer isso no rotulo: a Porto Seguro tem R$ 11 bi de TVM de
-longo prazo em contas que so dizem "custo amortizado". Procurar a provisao no
-passivo nao resolve -- medido, so 2 das 415 companhias a publicam com esse nome,
-e nenhuma das duas tem TVM de longo prazo --, e o setor do cadastro poe a
-operadora de saude junto do hospital e do laboratorio. Nao ha sinal limpo, e a
-regra nao finge ter.
+**A seguradora e o caso que o rotulo da linha nao denuncia, e a companhia sim.**
+A Porto Seguro tem R$ 11 bi de TVM de longo prazo em contas que so dizem "custo
+amortizado" -- a carteira que lastreia a provisao tecnica. O sinal esta no resto
+da demonstracao: quem publica **premio ou contraprestacao na receita e sinistro
+no custo**, ou **provisao tecnica no passivo**, opera seguro ou plano de saude.
+Ver :func:`opera_seguro` para a medicao e para o que ela deixa passar.
 """
 
 from __future__ import annotations
@@ -136,6 +137,43 @@ SINAIS: tuple[tuple[str, re.Pattern, str], ...] = (
 
 MOTIVO_CAIXA = "Aplicação financeira sem sinal de restrição no rótulo publicado."
 
+# **O teto, e nao a medida.** A regulacao exige ativo garantidor contra a
+# provisao tecnica, mas nao o balanco inteiro: a Hapvida tem R$ 8,2 bi de TVM
+# circulante, e quanto disso e garantidor so a nota explicativa diz. A linha fica
+# fora da ampla -- errar para o lado de nao dar ao acionista o dinheiro dos
+# segurados --, e o motivo diz que e uma parte, e onde conferir.
+MOTIVO_LASTRO_DE_SEGURADORA = (
+    "Carteira de seguradora ou operadora de saúde: a companhia publica prêmio e "
+    "sinistro, ou provisão técnica, e parte desta carteira é ativo garantidor "
+    "dessa obrigação — que não está na ponte. O rótulo não diz quanto: a nota de "
+    "ativos garantidores diz. Somar tudo ao caixa daria ao acionista o dinheiro "
+    "dos segurados."
+)
+
+# O titulo que a propria companhia declara livre continua caixa mesmo numa
+# seguradora: a Bradsaude separa "Aplicacoes livres" (400) das "Garantidoras de
+# Provisoes Tecnicas" (139), e as duas leituras estao certas.
+DECLARADO_LIVRE = re.compile(r"\blivres?\b")
+
+# **Quem opera seguro ou plano de saude.** A receita com premio ou contraprestacao
+# **e** um custo com sinistro ou evento, ou a provisao tecnica no passivo.
+#
+# Medido nas 415 companhias de 2024, a regra marca **5**: Porto Seguro,
+# Bradsaude, Hapvida, Qualicorp e Hospital Care Caledonia -- todas de seguro ou
+# saude. Entre as que tem TVM de longo prazo, pega Porto Seguro (11.014),
+# Hapvida (481) e Bradsaude (400 livres, que ficam), **95% do valor**, e deixa
+# passar a **Porto Saude** (674), holding cuja demonstracao nao usa nenhuma das
+# palavras.
+#
+# **Cada metade da regra sozinha erra.** "premio" e "contraprestacao" soltos no
+# passivo marcaram 12 companhias a mais -- "Contraprestacao a Pagar a Clientes"
+# da Frasle, "Premio de opcao de acoes" da Mills, a contraprestacao contingente
+# de aquisicao da EDP. Por isso a receita precisa estar em `3.01` e vir
+# acompanhada de sinistro, e no passivo so vale "provisao tecnica".
+RECEITA_DE_SEGURO = re.compile(r"premio|contraprestac")
+CUSTO_DE_SEGURO = re.compile(r"sinistr|eventos indenizaveis|eventos/sinistros")
+PROVISAO_TECNICA = re.compile(r"provis\w* tecnic")
+
 # Diferenca entre o grupo e a soma das subcontas abaixo da qual ela e
 # arredondamento, e nao uma parte que a companhia deixou sem abrir.
 FOLGA_DO_RESIDUO = 0.005
@@ -191,6 +229,18 @@ def plano_industrial(detalhe: pd.DataFrame | None) -> bool:
     return not grupo.empty and "realiz" in _sem_acento(grupo["rotulo"].iloc[0])
 
 
+def opera_seguro(detalhe: pd.DataFrame | None) -> bool:
+    """A companhia opera seguro ou plano de saude? Ver `RECEITA_DE_SEGURO`."""
+    if detalhe is None or detalhe.empty or "codigo" not in detalhe.columns:
+        return False
+    codigos = detalhe["codigo"].astype(str)
+    rotulos = detalhe["rotulo"].map(_sem_acento)
+    receita = rotulos[codigos.str.startswith("3.01")].str.contains(RECEITA_DE_SEGURO)
+    custo = rotulos[codigos.str.startswith("3.")].str.contains(CUSTO_DE_SEGURO)
+    provisao = rotulos[codigos.str.startswith("2.")].str.contains(PROVISAO_TECNICA)
+    return bool((receita.any() and custo.any()) or provisao.any())
+
+
 def _numero(valor) -> float:
     try:
         numero = float(valor)
@@ -199,7 +249,18 @@ def _numero(valor) -> float:
     return numero
 
 
-def _linhas_do_grupo(detalhe: pd.DataFrame, grupo: str, coluna) -> list[LinhaDeTitulo]:
+def _como_lastro(linha: "LinhaDeTitulo") -> "LinhaDeTitulo":
+    """Numa seguradora, o titulo sem sinal nenhum e lastro, e nao caixa."""
+    if linha.classe != CAIXA or DECLARADO_LIVRE.search(_sem_acento(linha.rotulo)):
+        return linha
+    return LinhaDeTitulo(
+        linha.codigo, linha.rotulo, linha.valor, NAO_E_CAIXA, MOTIVO_LASTRO_DE_SEGURADORA
+    )
+
+
+def _linhas_do_grupo(
+    detalhe: pd.DataFrame, grupo: str, coluna, seguradora: bool = False
+) -> list[LinhaDeTitulo]:
     """As linhas de um grupo do IFRS 9, abertas ate onde a companhia abriu.
 
     **A subconta nao precisa somar o grupo.** A WEG publica `1.02.01.01` com
@@ -254,6 +315,8 @@ def _linhas_do_grupo(detalhe: pd.DataFrame, grupo: str, coluna) -> list[LinhaDeT
                     grupo, str(linha_do_grupo["rotulo"].iloc[0]), residuo, classe, motivo
                 )
             )
+    if seguradora:
+        linhas = [_como_lastro(l) for l in linhas]
     return linhas
 
 
@@ -273,10 +336,11 @@ def titulos(detalhe: pd.DataFrame | None, coluna=None) -> list[LinhaDeTitulo]:
     if coluna not in detalhe.columns:
         return []
 
+    seguradora = opera_seguro(detalhe)
     linhas: list[LinhaDeTitulo] = []
     for raiz in (TVM_CIRCULANTE, REALIZAVEL_A_LONGO_PRAZO):
         for balde in BALDES_DO_IFRS_9:
-            linhas += _linhas_do_grupo(detalhe, f"{raiz}.{balde}", coluna)
+            linhas += _linhas_do_grupo(detalhe, f"{raiz}.{balde}", coluna, seguradora)
     return linhas
 
 
