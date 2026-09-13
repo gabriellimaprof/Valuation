@@ -629,6 +629,41 @@ class Demonstracoes:
         )
         return self.divida_bruta().sub(caixa, fill_value=0)
 
+    def titulos_e_valores_mobiliarios(self, coluna=None) -> list:
+        """As linhas de TVM publicadas, de curto e longo prazo, com o que cada uma e.
+
+        Ver :mod:`valuation.importacao.aplicacoes`. Lista vazia quando nao ha
+        arvore publicada para ler.
+        """
+        from .aplicacoes import titulos
+
+        return titulos(self.detalhe, coluna)
+
+    def aplicacoes_de_longo_prazo(self) -> pd.Series:
+        """O TVM de longo prazo que abate a divida, por periodo.
+
+        NaN onde nao ha como saber (sem arvore publicada); zero onde a arvore
+        esta e a linha nao.
+        """
+        from .aplicacoes import longo_prazo_que_abate
+
+        return longo_prazo_que_abate(self.detalhe, self.valores.columns)
+
+    def divida_liquida_ampla(self) -> pd.Series:
+        """Divida liquida que abate tambem o TVM de longo prazo que e caixa.
+
+        **Sao duas dividas liquidas, e nenhuma e a errada.** A padrao
+        (:meth:`divida_liquida`) so abate o circulante. Esta abate tambem o TVM
+        de longo prazo que a classificacao le como caixa ou vinculado -- que e o
+        que Ultrapar, Embraer e Cyrela publicam como divida liquida. Derivativo,
+        lastro de provisao tecnica e participacao societaria de longo prazo
+        ficam fora dela.
+
+        Sem arvore publicada o resultado e NaN, e nao a padrao: uma ampla igual
+        a padrao por falta de dado teria cara de medida.
+        """
+        return self.divida_liquida().sub(self.aplicacoes_de_longo_prazo())
+
     def capital_giro(self) -> pd.Series:
         """Capital de giro operacional = recebiveis + estoques - fornecedores.
 

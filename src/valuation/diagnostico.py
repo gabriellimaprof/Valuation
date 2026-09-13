@@ -872,33 +872,16 @@ def _ponte_com_o_release(analise) -> str:
     # **A segunda parcela da diferenca**, achada conferindo o release da
     # Ultrapar contra o app: 11.163 no app, 7.756 publicado, e os 3.407 de
     # diferenca sao **exatamente** a aplicacao financeira nao circulante que a
-    # companhia abate e o app nao. Medido em 199 companhias de 2024, 35,7% tem a
-    # linha; ela vale 1,5% da divida liquida na mediana, mas passa de 10% em
-    # 20% delas -- Embraer 87%, Cyrela 77%, Ultrapar 31%.
-    #
-    # O app **nao a abate**: essa decisao move a ponte EV -> equity de toda
-    # companhia e nao foi tomada. O que ele faz e dizer que ela existe.
-    # Ela vem da **arvore publicada** e nao do vocabulario: `Conta` escolhe um
-    # codigo quando varios casam, e aqui as tres linhas irmas precisam ser
-    # somadas -- na Ultrapar a escolha caiu em `1.02.01.03` (zero) em vez de
-    # `.01` (3.407). Como o numero so **explica** uma diferenca e nao entra em
-    # conta nenhuma, ler a arvore e mais barato que dar a `Conta` um modo de
-    # somar.
-    #
-    # So `.01`, `.02` e `.03`: `1.02.01.0\d` alcancaria contas a receber (.04),
-    # estoques (.05) e tributos diferidos (.06) do realizavel a longo prazo, e
-    # foi o que inflou a Vale para R$ 59 bi na primeira medicao.
+    # companhia abate e a divida liquida padrao nao. E a que a **ampla** abate
+    # -- ver `Demonstracoes.divida_liquida_ampla`, que le cada linha pelo
+    # rotulo e deixa fora derivativo, lastro e participacao.
     aplicacoes_lp = 0.0
-    arvore = getattr(d, "detalhe", None)
-    if arvore is not None and not arvore.empty:
-        colunas = [c for c in arvore.columns if c not in ("codigo", "rotulo", "nivel")]
-        if colunas:
-            codigos = arvore["codigo"].astype(str)
-            alvo = arvore[codigos.str.fullmatch(r"1\.02\.01\.0[123]")]
-            if not alvo.empty:
-                valor = alvo[colunas[-1]].sum()
-                if np.isfinite(valor) and valor > 0:
-                    aplicacoes_lp = float(valor)
+    try:
+        serie_lp = d.aplicacoes_de_longo_prazo().dropna()
+    except Exception:  # noqa: BLE001 - origem sem arvore
+        serie_lp = pd.Series(dtype=float)
+    if not serie_lp.empty and np.isfinite(serie_lp.iloc[-1]) and serie_lp.iloc[-1] > 0:
+        aplicacoes_lp = float(serie_lp.iloc[-1])
 
     # **As parcelas, e nao uma alternativa composta.** Conferido contra dois
     # releases de 2024, cada companhia usa a sua definicao: a Suzano tira o
@@ -916,11 +899,82 @@ def _ponte_com_o_release(analise) -> str:
             f" e aplicação financeira de longo prazo de {_num(aplicacoes_lp)} "
             f"{unidade}"
         )
-    texto += (
-        ", que o app **não** abate. Tire a que a sua companhia tira e os dois "
-        "números fecham."
-    )
+    texto += ", que a dívida líquida padrão **não** abate."
+    if aplicacoes_lp > 0:
+        texto += " A **ampla**, no histórico, já abate a segunda."
+    texto += " Tire a que a sua companhia tira e os dois números fecham."
     return texto.rstrip()
+
+
+# Abaixo disto, o TVM circulante que nao e caixa pesa pouco na divida liquida
+# para merecer leitura. Medido em 2024, sao 10 companhias com a linha, e o peso
+# sobre a divida bruta tem um **vale**: as duas menores ficam em 0,06% (Aegea) e
+# 0,01% (B3), e a menor das outras em 1,5% (CSN). O corte em 1% cai no vazio
+# entre as duas populacoes. O primeiro palpite, 5%, perdia justamente a CSN e a
+# Simpar -- os casos que motivaram o achado. n=10: o corte e so isso.
+TVM_QUE_NAO_E_CAIXA_RELEVANTE = 0.01
+
+
+def _titulos_que_nao_sao_caixa(analise) -> list[Achado]:
+    """TVM **circulante** que o rotulo publicado diz nao ser caixa.
+
+    As duas dividas liquidas abatem o circulante inteiro, e ali mora o caso
+    classico de "TVM que e investimento": a CSN publica "Acoes Usiminas", R$ 861
+    mi, dentro de `1.01.02` -- e a divida liquida dela sai menor por uma
+    participacao societaria. O app **avisa e nao corrige**: a CVM o publicou
+    como aplicacao, e mover a linha e decisao de quem conhece a companhia.
+    """
+    d = getattr(analise, "demonstracoes", None)
+    if d is None:
+        return []
+    from .importacao.aplicacoes import NAO_E_CAIXA
+
+    try:
+        linhas = [
+            l
+            for l in d.titulos_e_valores_mobiliarios()
+            if not l.longo_prazo and l.classe == NAO_E_CAIXA and l.valor > 0
+        ]
+        bruta = float(d.divida_bruta().dropna().iloc[-1])
+    except Exception:  # noqa: BLE001 - origem sem arvore ou sem divida
+        return []
+    if not linhas:
+        return []
+    total = sum(l.valor for l in linhas)
+    # Sem divida o numero nao move alavancagem nenhuma; o que ele move e o caixa
+    # livre, e ai o denominador e o proprio caixa.
+    caixa = float(np.nan_to_num(d.valor("caixa_equivalentes")))
+    base = bruta if np.isfinite(bruta) and bruta > 0 else caixa
+    if not (np.isfinite(base) and base > 0) or total / base < TVM_QUE_NAO_E_CAIXA_RELEVANTE:
+        return []
+
+    unidade = getattr(d, "unidade", "") or ""
+    motivos = []
+    for l in linhas:
+        if l.motivo not in motivos:
+            motivos.append(l.motivo)
+    return [
+        Achado(
+            codigo="tvm_circulante_que_nao_e_caixa",
+            severidade=INFORMACAO,
+            titulo=(
+                f"{_num(total)} {unidade} do TVM circulante não é caixa, e a "
+                "dívida líquida o abate"
+            ),
+            detalhe=(
+                "O plano da CVM põe no mesmo grupo de aplicações tudo o que é "
+                "ativo financeiro mensurado pelo IFRS 9, e o rótulo publicado diz "
+                "que parte dele não é tesouraria: "
+                + "; ".join(f"{l.rotulo} ({_num(l.valor)} {unidade})" for l in linhas)
+                + ". " + " ".join(motivos)
+            ),
+            acao=(
+                "Em Valor → *Editar os itens da ponte*, mova o valor de Aplicações "
+                "para Ativos não operacionais. O equity não muda; a dívida líquida "
+                "e todo múltiplo sobre EV, sim."
+            ),
+        )
+    ]
 
 
 def _minoritarios(analise) -> list[Achado]:
@@ -1165,6 +1219,8 @@ def _checar_contra_historico(
                 referencia="CPC 06 (R2) / IFRS 16",
             )
         )
+
+    achados += _titulos_que_nao_sao_caixa(analise)
 
     kd_competencia = _mediana(analise, "Custo da divida efetivo")
     kd_caixa = _mediana(analise, "Custo da divida pelo caixa")

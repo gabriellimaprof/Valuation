@@ -1,0 +1,307 @@
+"""Titulos e valores mobiliarios: quando sao caixa, e quando nao sao.
+
+A divida liquida abate o TVM **circulante** (`1.01.02`) e deixa de fora o **nao
+circulante** (`1.02.01.01/.02/.03`). As duas escolhas sao discutiveis, e por
+razoes opostas.
+
+**O TVM de longo prazo costuma ser caixa.** Conferido contra o release de 2024
+das tres companhias em que ele mais pesa sobre a divida liquida: a Ultrapar o
+abate (11.163 no app, 7.756 publicados, e a diferenca e exatamente a linha); a
+Embraer define a divida liquida com "investimentos financeiros de **curto e
+longo prazo**"; a Cyrela publica a linha "Titulos e Valores Mobiliarios LP" com
+**2.256**, que e o que o app le. Tres de tres.
+
+**E o TVM nem sempre e caixa, em nenhum dos dois prazos.** O plano da CVM so
+separa pela *mensuracao* do IFRS 9 -- valor justo no resultado, em ORA, custo
+amortizado --, e isso nao diz se o dinheiro esta livre. Quem diz e a subconta
+que a companhia abre embaixo, com o rotulo dela. Medido em 2024: das 135
+companhias com TVM de longo prazo, **72 abrem subconta**, e o que aparece fora
+de "aplicacao" e pouco, mas grande:
+
+    Simpar       2.244  Instrumentos financeiros derivativos
+    Localiza     1.216  Certificados de deposito bancario vinculados
+    Serena         488  Caixa restrito
+    Bradsaude      139  Aplicacoes Garantidoras de Provisoes Tecnicas
+
+E a participacao societaria -- o caso classico de "TVM que e investimento" --
+nao apareceu no longo prazo de ninguem: apareceu no **circulante** da CSN,
+"Acoes Usiminas", R$ 861 mi, que a divida liquida padrao abate como se fosse
+caixa.
+
+Por isso a classificacao e de **linha**, e vale para os dois prazos. Ela tem tres
+saidas:
+
+* ``caixa`` -- abate a divida;
+* ``vinculado`` -- abate, mas so paga a obrigacao a que esta preso. A Serena o
+  soma ao caixa (1.428 + 488 = 1.916, e ela publica "caixa total ajustado de
+  R$ 1,92 bi"), entao ficar fora contrariaria a propria companhia; o que se faz
+  e dizer que ele esta ali;
+* ``nao_e_caixa`` -- derivativo, lastro de provisao tecnica, participacao em
+  outra companhia, conta que nem e aplicacao.
+
+**O que esta regra nao pega.** A carteira de uma seguradora lastreia provisao
+tecnica mesmo sem dizer isso no rotulo: a Porto Seguro tem R$ 11 bi de TVM de
+longo prazo em contas que so dizem "custo amortizado". Procurar a provisao no
+passivo nao resolve -- medido, so 2 das 415 companhias a publicam com esse nome,
+e nenhuma das duas tem TVM de longo prazo --, e o setor do cadastro poe a
+operadora de saude junto do hospital e do laboratorio. Nao ha sinal limpo, e a
+regra nao finge ter.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+
+from .importador import colunas_de_periodo
+
+TVM_CIRCULANTE = "1.01.02"
+REALIZAVEL_A_LONGO_PRAZO = "1.02.01"
+
+# **So as tres linhas de aplicacao financeira.** `1.02.01.0\d` alcancaria contas
+# a receber (.04), estoques (.05) e tributos diferidos (.06) do realizavel a
+# longo prazo -- e foi o que inflou a Vale para R$ 59 bi na primeira medicao,
+# quase toda a divida liquida dela.
+BALDES_DO_IFRS_9 = ("01", "02", "03")
+
+CAIXA = "caixa"
+VINCULADO = "vinculado"
+NAO_E_CAIXA = "nao_e_caixa"
+
+# O que abate a divida. `vinculado` entra porque as companhias o somam ao caixa
+# -- ver a nota do modulo sobre a Serena.
+ABATE_A_DIVIDA = frozenset({CAIXA, VINCULADO})
+
+# Ordem importa: o primeiro sinal que casa decide. "Aplicacoes **garantidoras**
+# de provisoes tecnicas" tem de cair em lastro antes de "garantia" a mandar para
+# vinculado.
+#
+# `\bacoes\b` e com fronteira de palavra de proposito: sem ela, "aplic**acoes**
+# financeiras" -- o rotulo de quase toda linha desta arvore -- viraria
+# participacao societaria.
+SINAIS: tuple[tuple[str, re.Pattern, str], ...] = (
+    (
+        NAO_E_CAIXA,
+        re.compile(r"derivativ|\bswaps?\b|\bhedge\b"),
+        "Derivativo: protege a dívida, não a paga. Quando cobre dívida em outra "
+        "moeda, a companhia costuma somá-lo à dívida — mas não é caixa.",
+    ),
+    (
+        NAO_E_CAIXA,
+        re.compile(r"garantidora|provis\w* tecnic"),
+        "Lastro de provisão técnica: é a reserva que a regulação exige contra "
+        "sinistros e eventos, e já tem destino.",
+    ),
+    (
+        NAO_E_CAIXA,
+        re.compile(r"\bacoes\b|participac|instrumentos? patrimonia"),
+        "Participação em outra companhia: é investimento, vale o preço da ação e "
+        "não o saldo, e não paga dívida sem ser vendida. Na ponte, o lugar dela é "
+        "em ativos não operacionais.",
+    ),
+    (
+        NAO_E_CAIXA,
+        re.compile(r"operac\w* de credito|carteira de credito"),
+        "Carteira de crédito: é o negócio de uma financeira do grupo e rende "
+        "dentro da operação. A Cyrela publica a dívida líquida com e sem a da "
+        "CashMe por isso.",
+    ),
+    (
+        NAO_E_CAIXA,
+        re.compile(r"partes? relacionad"),
+        "Crédito a parte relacionada: é empréstimo a outra empresa do grupo ou "
+        "do controlador, e não aplicação de tesouraria.",
+    ),
+    (
+        NAO_E_CAIXA,
+        re.compile(r"adiantamento"),
+        "Não é aplicação financeira: a companhia publicou outra conta dentro do "
+        "grupo de aplicações.",
+    ),
+    (
+        VINCULADO,
+        # "Caixa Margem" e margem depositada em bolsa contra derivativo: nao sai
+        # enquanto a posicao estiver aberta.
+        re.compile(
+            r"vinculad|restrit|restric|cauc|escrow|conta reserva|garantia|\bmargem\b"
+        ),
+        "Vinculado a uma obrigação: só paga a dívida a que está preso. A companhia "
+        "costuma somá-lo ao caixa; para medir o que ela tem livre, tire-o.",
+    ),
+)
+
+MOTIVO_CAIXA = "Aplicação financeira sem sinal de restrição no rótulo publicado."
+
+# Diferenca entre o grupo e a soma das subcontas abaixo da qual ela e
+# arredondamento, e nao uma parte que a companhia deixou sem abrir.
+FOLGA_DO_RESIDUO = 0.005
+
+
+@dataclass(frozen=True)
+class LinhaDeTitulo:
+    """Uma linha de TVM publicada, com o que ela e."""
+
+    codigo: str
+    rotulo: str
+    valor: float
+    classe: str
+    motivo: str
+
+    @property
+    def longo_prazo(self) -> bool:
+        return self.codigo.startswith(REALIZAVEL_A_LONGO_PRAZO + ".")
+
+    @property
+    def abate_a_divida(self) -> bool:
+        return self.classe in ABATE_A_DIVIDA
+
+
+def _sem_acento(texto: str) -> str:
+    return (
+        unicodedata.normalize("NFKD", str(texto))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+
+
+def classificar(rotulo: str) -> tuple[str, str]:
+    """A classe de uma linha de TVM pelo rotulo publicado, e o porque."""
+    texto = _sem_acento(rotulo)
+    for classe, padrao, motivo in SINAIS:
+        if padrao.search(texto):
+            return classe, motivo
+    return CAIXA, MOTIVO_CAIXA
+
+
+def plano_industrial(detalhe: pd.DataFrame | None) -> bool:
+    """A arvore e do plano industrial, onde estes codigos significam o que aqui se le.
+
+    No plano de banco e seguradora `1.02.01` e outra conta, e a divida liquida
+    nem se aplica. O rotulo do grupo decide, como em todo o importador: codigo
+    muda de significado entre planos, rotulo nao.
+    """
+    if detalhe is None or detalhe.empty or "codigo" not in detalhe.columns:
+        return False
+    grupo = detalhe[detalhe["codigo"].astype(str) == REALIZAVEL_A_LONGO_PRAZO]
+    return not grupo.empty and "realiz" in _sem_acento(grupo["rotulo"].iloc[0])
+
+
+def _numero(valor) -> float:
+    try:
+        numero = float(valor)
+    except (TypeError, ValueError):
+        return float("nan")
+    return numero
+
+
+def _linhas_do_grupo(detalhe: pd.DataFrame, grupo: str, coluna) -> list[LinhaDeTitulo]:
+    """As linhas de um grupo do IFRS 9, abertas ate onde a companhia abriu.
+
+    **A subconta nao precisa somar o grupo.** A WEG publica `1.02.01.01` com
+    R$ 17,1 mi e a unica filha, "Titulos Designados a Valor Justo", com **zero**:
+    ler so as filhas perderia o saldo inteiro. O que as filhas nao explicam vira
+    uma linha com o rotulo do proprio grupo.
+    """
+    codigos = detalhe["codigo"].astype(str)
+    linha_do_grupo = detalhe[codigos == grupo]
+    if linha_do_grupo.empty:
+        return []
+    total = _numero(linha_do_grupo[coluna].iloc[0])
+    nivel = grupo.count(".") + 1
+
+    filhas = detalhe[
+        codigos.str.startswith(grupo + ".")
+        & (codigos.str.count(r"\.") + 1 == nivel + 1)
+    ]
+    linhas: list[LinhaDeTitulo] = []
+    for _, filha in filhas.iterrows():
+        valor = _numero(filha[coluna])
+        if not np.isfinite(valor) or valor == 0:
+            continue
+        classe, motivo = classificar(filha["rotulo"])
+        linhas.append(
+            LinhaDeTitulo(str(filha["codigo"]), str(filha["rotulo"]), valor, classe, motivo)
+        )
+
+    # **O ajuste negativo segue a conta que ele ajusta.** A Localiza publica
+    # "CDB vinculados" com 1.216 e, ao lado, "(-) Ajuste a Valor Presente" com
+    # -242. O rotulo do ajuste nao tem sinal nenhum e cairia em caixa -- e a
+    # tela mostraria caixa negativo ao lado de um vinculado inflado.
+    positivas = {l.classe for l in linhas if l.valor > 0}
+    if len(positivas) == 1:
+        (classe_das_irmas,) = positivas
+        linhas = [
+            LinhaDeTitulo(
+                l.codigo, l.rotulo, l.valor, classe_das_irmas,
+                next(p.motivo for p in linhas if p.valor > 0),
+            )
+            if l.valor < 0 and l.motivo == MOTIVO_CAIXA
+            else l
+            for l in linhas
+        ]
+
+    if np.isfinite(total) and total != 0:
+        residuo = total - sum(l.valor for l in linhas)
+        if abs(residuo) > FOLGA_DO_RESIDUO * abs(total):
+            classe, motivo = classificar(linha_do_grupo["rotulo"].iloc[0])
+            linhas.append(
+                LinhaDeTitulo(
+                    grupo, str(linha_do_grupo["rotulo"].iloc[0]), residuo, classe, motivo
+                )
+            )
+    return linhas
+
+
+def titulos(detalhe: pd.DataFrame | None, coluna=None) -> list[LinhaDeTitulo]:
+    """Todas as linhas de TVM -- circulante e de longo prazo -- num periodo.
+
+    Sem arvore publicada, ou numa arvore de outro plano, a lista e vazia: nao ha
+    o que classificar.
+    """
+    if not plano_industrial(detalhe):
+        return []
+    periodos = colunas_de_periodo(detalhe)
+    if not periodos:
+        return []
+    if coluna is None:
+        coluna = periodos[-1]
+    if coluna not in detalhe.columns:
+        return []
+
+    linhas: list[LinhaDeTitulo] = []
+    for raiz in (TVM_CIRCULANTE, REALIZAVEL_A_LONGO_PRAZO):
+        for balde in BALDES_DO_IFRS_9:
+            linhas += _linhas_do_grupo(detalhe, f"{raiz}.{balde}", coluna)
+    return linhas
+
+
+def longo_prazo_que_abate(detalhe: pd.DataFrame | None, colunas) -> pd.Series:
+    """O TVM de longo prazo que abate a divida, por periodo.
+
+    **Vazio e zero sao respostas diferentes.** Sem arvore -- importacao de
+    planilha, plano financeiro -- o valor e NaN: nao se sabe. Com arvore e sem a
+    linha, e zero: a demonstracao inteira esta ali, e a linha nao esta. Tratar o
+    primeiro como o segundo faria a divida liquida ampla sair igual a padrao
+    para quem nunca teve como medi-la, com cara de medida.
+    """
+    colunas = list(colunas)
+    if not plano_industrial(detalhe):
+        return pd.Series(np.nan, index=colunas, dtype=float)
+    valores = {}
+    for coluna in colunas:
+        if coluna not in detalhe.columns:
+            valores[coluna] = np.nan
+            continue
+        valores[coluna] = float(
+            sum(
+                l.valor
+                for l in titulos(detalhe, coluna)
+                if l.longo_prazo and l.abate_a_divida
+            )
+        )
+    return pd.Series(valores, dtype=float)

@@ -473,6 +473,17 @@ def analisar(demonstracoes: Demonstracoes) -> AnaliseHistorica:
             arrendamento, divida_bruta
         )
 
+    # **A segunda divida liquida, e so onde ela difere da primeira.** Abate
+    # tambem o TVM de longo prazo que e caixa -- a definicao que Ultrapar,
+    # Embraer e Cyrela publicam. Medido em 2024, 135 das 415 companhias tem a
+    # linha; nas outras as duas colunas seriam identicas, e um indicador que
+    # repete o do lado ensina a ignora-lo.
+    aplicacoes_de_longo_prazo = d.aplicacoes_de_longo_prazo()
+    if aplicacoes_de_longo_prazo.fillna(0).ne(0).any():
+        indicadores["Divida liquida ampla / EBITDA"] = _divisao_segura(
+            d.divida_liquida_ampla(), ebitda
+        )
+
     # Itens que nao se repetem. A CVM padroniza os codigos (3.04.03 impairment,
     # 3.04.04 outras receitas, 3.04.05 outras despesas), entao a separacao nao
     # depende de adivinhar rotulo. Medido na base: 165 de 172 companhias tem
@@ -1077,6 +1088,15 @@ def sugerir_premissas(
             else ""
         )
     )
+    # A sugestao fica na divida liquida **padrao**: a ampla move o equity, e a
+    # escolha e do analista. O que ela nao faz e esconder que a escolha existe.
+    aplicacoes_lp = d.aplicacoes_de_longo_prazo().dropna()
+    if not aplicacoes_lp.empty and aplicacoes_lp.iloc[-1] > 0:
+        justificativas["ponte"] += (
+            f" O TVM de longo prazo ({formato.num(float(aplicacoes_lp.iloc[-1]), 1)}) "
+            "ficou fora: e a divida liquida padrao. Na tela de Valor, um clique "
+            "usa a ampla, que o abate."
+        )
 
     divida_pl = analise.ultimo("Divida bruta / Patrimonio liquido")
     if not np.isfinite(divida_pl):

@@ -578,6 +578,8 @@ def test_o_mapa_de_rotulos_nao_guarda_chave_que_nao_existe():
         "Margem EBIT (ex-IFRS 16)",
         "Divida liquida / EBITDA (ex-IFRS 16)",
         "Aluguel / EBITDA",
+        # So onde ha TVM de longo prazo que abate a divida.
+        "Divida liquida ampla / EBITDA",
     }
     orfas = sorted(set(ROTULOS_DE_INDICADOR) - possiveis)
     assert not orfas, f"entradas do mapa que nenhum indicador usa: {orfas}"

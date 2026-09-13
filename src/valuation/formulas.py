@@ -159,6 +159,19 @@ FORMULAS: dict[str, Formula] = {
         "ex-IFRS 16, use a dívida ex-arrendamento também: cruzar as duas "
         "leituras infla a alavancagem.",
     ),
+    "Divida liquida ampla / EBITDA": Formula(
+        "(Dívida bruta − Caixa − Aplicações financeiras − TVM de longo prazo "
+        "que é caixa) ÷ EBITDA",
+        "Abate também o título de longo prazo, que a dívida líquida padrão deixa "
+        "de fora. É a definição que as companhias publicam onde a linha pesa: "
+        "na Ultrapar o app dá 11.163 e o release 7.756, e a diferença é a "
+        "linha; Embraer e Cyrela também a abatem. Cada linha é lida pelo rótulo "
+        "publicado: derivativo, lastro de provisão técnica, carteira de crédito "
+        "e participação em outra companhia **ficam fora**; caixa restrito e "
+        "conta reserva **entram**, porque as companhias os somam ao caixa. "
+        "Seguradora é a exceção que o rótulo não denuncia: a carteira dela "
+        "lastreia provisão técnica mesmo quando diz só \"custo amortizado\".",
+    ),
     "Divida bruta / Patrimonio liquido": Formula(
         "Dívida bruta ÷ Patrimônio líquido"
     ),
@@ -315,6 +328,7 @@ ROTULOS_DE_INDICADOR = {
     "Prazo medio de estoque (dias)": "Prazo médio de estoque (dias)",
     "Prazo medio de pagamento (dias)": "Prazo médio de pagamento (dias)",
     "Divida liquida / EBITDA": "Dívida líquida / EBITDA",
+    "Divida liquida ampla / EBITDA": "Dívida líquida ampla / EBITDA",
     "Divida liquida / EBITDA (ex-IFRS 16)": "Dívida líquida / EBITDA (ex-IFRS 16)",
     "Divida bruta / Patrimonio liquido": "Dívida bruta / Patrimônio líquido",
     "Custo da divida efetivo": "Custo da dívida efetivo",

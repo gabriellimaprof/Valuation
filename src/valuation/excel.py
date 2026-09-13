@@ -334,6 +334,9 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     refs["divida_bruta"] = aba.entrada("Dívida bruta", ponte.divida_bruta, MOEDA)
     refs["caixa"] = aba.entrada("Caixa e equivalentes", ponte.caixa, MOEDA)
     refs["aplicacoes"] = aba.entrada("Aplicações financeiras", ponte.aplicacoes_financeiras, MOEDA)
+    refs["aplicacoes_lp"] = aba.entrada(
+        "Aplicações de longo prazo", ponte.aplicacoes_longo_prazo, MOEDA
+    )
     refs["minoritarios"] = aba.entrada("Participação de minoritários", ponte.minoritarios, MOEDA)
     refs["contingencias"] = aba.entrada("Contingencias", ponte.contingencias, MOEDA)
     refs["deficit_atuarial"] = aba.entrada("Deficit atuarial", ponte.deficit_atuarial, MOEDA)
@@ -684,7 +687,8 @@ def _aba_dcf(
         valor_terminal = aba.formula(
             "Valor terminal (fim do ano n)",
             f"={lucro}*{p['multiplo_saida']}"
-            f"+{p['divida_bruta']}-{p['caixa']}-{p['aplicacoes']}",
+            f"+{p['divida_bruta']}-{p['caixa']}-{p['aplicacoes']}"
+            f"-{p['aplicacoes_lp']}",
             MOEDA,
         )
         aba.nota(
@@ -718,6 +722,7 @@ def _aba_dcf(
         ("(-) Dívida bruta", f"=-{p['divida_bruta']}"),
         ("(+) Caixa e equivalentes", f"={p['caixa']}"),
         ("(+) Aplicações financeiras", f"={p['aplicacoes']}"),
+        ("(+) Aplicações de longo prazo", f"={p['aplicacoes_lp']}"),
         ("(-) Participação de minoritários", f"=-{p['minoritarios']}"),
         ("(-) Contingências", f"=-{p['contingencias']}"),
         ("(-) Déficit atuarial", f"=-{p['deficit_atuarial']}"),

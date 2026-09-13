@@ -544,6 +544,7 @@ def _ponte(resultado, unidade: str) -> None:
         ("(−) Dívida bruta", -ponte.divida_bruta),
         ("(+) Caixa", ponte.caixa),
         ("(+) Aplicações", ponte.aplicacoes_financeiras),
+        ("(+) Aplicações de longo prazo", ponte.aplicacoes_longo_prazo),
         ("(−) Minoritários", -ponte.minoritarios),
         ("(−) Contingências", -ponte.contingencias),
         ("(−) Déficit atuarial", -ponte.deficit_atuarial),
@@ -562,6 +563,7 @@ def _ponte(resultado, unidade: str) -> None:
     )
 
     _arrendamento(ponte, unidade)
+    _duas_dividas_liquidas(ponte, unidade)
 
     with st.expander("Editar os itens da ponte"):
         _editar_ponte(ponte)
@@ -622,6 +624,101 @@ def _arrendamento(ponte, unidade: str) -> None:
     st.warning(aviso)
 
 
+def _duas_dividas_liquidas(ponte, unidade: str) -> None:
+    """A dívida líquida com e sem o TVM de longo prazo, e o que cada título é.
+
+    A padrão abate só o circulante. Onde a companhia tem título de longo prazo,
+    a definição que ela publica costuma abatê-lo também — Ultrapar, Embraer e
+    Cyrela, as três conferidas. Nenhuma das duas é a errada e a escolha move o
+    equity, então ela é do analista: fica a um clique, com cada linha dizendo o
+    que é e por quê.
+    """
+    from dataclasses import replace
+
+    from valuation.importacao.aplicacoes import NAO_E_CAIXA, VINCULADO
+
+    analise = estado.analise()
+    if analise is None:
+        return
+    linhas = analise.demonstracoes.titulos_e_valores_mobiliarios()
+    longo = [l for l in linhas if l.longo_prazo]
+    # No circulante so o que **nao** e caixa merece aviso: o resto e o que a
+    # divida liquida padrao ja abate, com razao.
+    circulante_fora = [
+        l for l in linhas if not l.longo_prazo and l.classe == NAO_E_CAIXA
+    ]
+    if not longo and not circulante_fora:
+        return
+
+    if longo:
+        abate = sum(l.valor for l in longo if l.abate_a_divida)
+        padrao = ponte.divida_bruta - ponte.caixa - ponte.aplicacoes_financeiras
+
+        st.markdown("**Duas dívidas líquidas**")
+        colunas = st.columns(3)
+        with colunas[0]:
+            metrica(
+                "Padrão (sem o TVM de longo prazo)", padrao, "moeda", unidade,
+                ajuda="Abate só o caixa e as aplicações do circulante.",
+            )
+        with colunas[1]:
+            metrica(
+                "Ampla (com o TVM de longo prazo)", padrao - abate, "moeda", unidade,
+                ajuda=(
+                    "Abate também o título de longo prazo que é caixa ou "
+                    "vinculado — a definição que as companhias costumam publicar."
+                ),
+            )
+        with colunas[2]:
+            metrica("TVM de longo prazo que abate", abate, "moeda", unidade)
+
+        situacao = {
+            VINCULADO: "entra, vinculado",
+            NAO_E_CAIXA: "fica fora",
+        }
+        st.markdown(
+            "\n".join(
+                f"- `{l.codigo}` {l.rotulo} — {formatar(l.valor, 'moeda', unidade)}: "
+                f"**{situacao.get(l.classe, 'entra')}**. {l.motivo}"
+                for l in longo
+            )
+        )
+
+        if abate > 0:
+            if ponte.aplicacoes_longo_prazo:
+                st.caption(
+                    f"A ponte usa a **ampla**: abate "
+                    f"{formatar(ponte.aplicacoes_longo_prazo, 'moeda', unidade)} de "
+                    "TVM de longo prazo."
+                )
+                if st.button("Voltar à dívida líquida padrão"):
+                    estado.substituir_bloco(
+                        "ponte", replace(ponte, aplicacoes_longo_prazo=0.0)
+                    )
+                    st.rerun()
+            else:
+                st.caption("A ponte usa a **padrão**: o TVM de longo prazo fica fora.")
+                if st.button("Usar a dívida líquida ampla na ponte"):
+                    estado.substituir_bloco(
+                        "ponte", replace(ponte, aplicacoes_longo_prazo=abate)
+                    )
+                    st.rerun()
+
+    if circulante_fora:
+        total = sum(l.valor for l in circulante_fora)
+        st.warning(
+            f"No **circulante**, {formatar(total, 'moeda', unidade)} do TVM não é "
+            "caixa, e as duas dívidas líquidas o abatem mesmo assim: "
+            + " ".join(
+                f"{l.rotulo} ({formatar(l.valor, 'moeda', unidade)}) — {l.motivo}"
+                for l in circulante_fora
+            )
+            + " Para tirá-lo, mova o valor de Aplicações para Ativos não "
+            "operacionais em *Editar os itens da ponte*: o equity não muda, a "
+            "dívida líquida sim."
+        )
+
+
 def _editar_ponte(ponte) -> None:
     from dataclasses import replace
 
@@ -648,6 +745,15 @@ def _editar_ponte(ponte) -> None:
     acoes = colunas[3].number_input(
         "Ações em circulação", value=float(ponte.acoes_em_circulacao or 0.0), step=1.0
     )
+    aplicacoes_lp = st.number_input(
+        "Aplicações de longo prazo",
+        value=float(ponte.aplicacoes_longo_prazo),
+        step=10.0,
+        help=(
+            "TVM não circulante que abate a dívida. Zero é a dívida líquida "
+            "padrão, que só abate o circulante."
+        ),
+    )
 
     if st.button("Aplicar ponte"):
         estado.substituir_bloco(
@@ -657,6 +763,7 @@ def _editar_ponte(ponte) -> None:
                 divida_bruta=divida,
                 caixa=caixa,
                 aplicacoes_financeiras=aplicacoes,
+                aplicacoes_longo_prazo=aplicacoes_lp,
                 minoritarios=minoritarios,
                 contingencias=contingencias,
                 deficit_atuarial=atuarial,

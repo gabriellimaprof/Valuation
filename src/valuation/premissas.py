@@ -307,9 +307,15 @@ class PonteValor:
     """Itens que ligam o Enterprise Value ao Equity Value na data-base.
 
     Sinais ja embutidos: ``divida_bruta``, ``minoritarios``, ``contingencias`` e
-    ``deficit_atuarial`` sao subtraidos; ``caixa``, ``aplicacoes_financeiras`` e
-    ``ativos_nao_operacionais`` sao somados. Informe todos como valores
-    positivos.
+    ``deficit_atuarial`` sao subtraidos; ``caixa``, ``aplicacoes_financeiras``,
+    ``aplicacoes_longo_prazo`` e ``ativos_nao_operacionais`` sao somados.
+    Informe todos como valores positivos.
+
+    ``aplicacoes_longo_prazo`` e o TVM nao circulante que abate a divida, e e
+    ele que separa as duas dividas liquidas: zero e a padrao, que so abate o
+    circulante; preenchido e a ampla, que e o que Ultrapar, Embraer e Cyrela
+    publicam. Fica no fim da classe para nao deslocar quem constroi a ponte por
+    posicao.
     """
 
     divida_bruta: float = 0.0
@@ -320,10 +326,16 @@ class PonteValor:
     deficit_atuarial: float = 0.0
     ativos_nao_operacionais: float = 0.0
     acoes_em_circulacao: float | None = None
+    aplicacoes_longo_prazo: float = 0.0
 
     @property
     def divida_liquida(self) -> float:
-        return self.divida_bruta - self.caixa - self.aplicacoes_financeiras
+        return (
+            self.divida_bruta
+            - self.caixa
+            - self.aplicacoes_financeiras
+            - self.aplicacoes_longo_prazo
+        )
 
 
 @dataclass(frozen=True)

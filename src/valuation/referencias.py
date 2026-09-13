@@ -416,6 +416,7 @@ SO_NO_EXERCICIO: frozenset[str] = frozenset(
         "ROIC",
         "ROE",
         "Divida liquida / EBITDA",
+        "Divida liquida ampla / EBITDA",
         "Capital de giro / Receita",
         # Variacao de um periodo contra outro.
         "Crescimento da receita",

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1259 testes
+pytest                        # 1288 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1204,7 +1204,7 @@ não é verificação.
 
 ## Estado atual
 
-1.259 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.288 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2641,6 +2641,86 @@ consertar nada e fica de rede para o proximo.
 companhia nenhuma -- ele quase nunca esta na manchete, e as buscas nao o
 devolveram. Divida liquida foi conferida em duas (Suzano e SmartFit).
 
+### Duas dividas liquidas, e o que decide se o TVM e caixa
+
+A pergunta veio do dono: **quando o TVM nao circulante e investimento, e nao
+equivalente de caixa?** A resposta saiu de quatro releases e da arvore publicada.
+
+**O TVM de longo prazo costuma ser caixa, e as companhias o abatem.** Conferido
+em 2024 contra o release das tres em que ele mais pesa:
+
+| | Divida liquida padrao | TVM de longo prazo | O que o release faz |
+|---|---|---|---|
+| Ultrapar | 11.163 | 3.407 | publica 7.756 = 11.163 - 3.407 |
+| Cyrela | 2.922 | 2.256 | publica "Titulos e Valores Mobiliarios LP" **2.256** e o abate |
+| Embraer | 2.477 | 2.157 | define com "investimentos financeiros de curto e longo prazo" |
+
+E **caixa restrito tambem**: a Serena publica "caixa total ajustado de R$ 1,92
+bi", e 1.428 do circulante mais 488 de "Caixa restrito" de longo prazo dao 1.916.
+
+**Por isso sao duas dividas liquidas, e nenhuma e a errada.** A padrao
+(`Demonstracoes.divida_liquida`) continua abatendo so o circulante. A ampla
+(`divida_liquida_ampla`) abate tambem o TVM de longo prazo que e caixa ou
+vinculado. No historico entra `Divida liquida ampla / EBITDA`, so onde as duas
+diferem; na ponte, `PonteValor.aplicacoes_longo_prazo`, em que zero e a padrao.
+O campo fica no fim da classe, e arquivo salvo antes dele abre na padrao.
+
+**A sugestao fica na padrao, e a tela de Valor troca com um clique.** Medido nas
+415 companhias de 2024: **134 (32,3%)** tem TVM de longo prazo que abate, R$ 45,3
+bi no total. A queda de DL/EBITDA tem mediana de 0,04x, mas passa de 0,25x em
+16,5% delas, e o TVM passa de 10% do patrimonio em 12,8%. Trocar o padrao moveria
+o equity de um terco da base sem ninguem pedir. O que o app faz e mostrar as
+duas lado a lado, cada linha com o que ela e, e dizer na justificativa da ponte
+sugerida que a outra existe.
+
+**O que decide se a linha e caixa e o rotulo da subconta.** O plano da CVM separa
+pela *mensuracao* do IFRS 9 -- valor justo no resultado, em ORA, custo amortizado
+--, e isso nao diz se o dinheiro esta livre. Das 135 companhias com a linha, 72
+abrem subconta com rotulo proprio. A classificacao (`importacao/aplicacoes.py`)
+tem tres saidas:
+
+| Classe | Abate? | Da base de 2024 |
+|---|---|---|
+| `caixa` | sim | "Titulos Designados a Valor Justo", "Aplicacoes livres" |
+| `vinculado` | sim, e diz que e | "Caixa restrito" (Serena 488), "CDB vinculados" (Localiza 1.216), "Conta Reserva" (Motiva, Ecorodovias), "Caixa Margem" |
+| `nao_e_caixa` | nao | derivativo (Simpar 2.244), "Garantidoras de Provisoes Tecnicas" (Bradsaude), "Operacoes de credito", **"Acoes Usiminas"** |
+
+No longo prazo, R$ 2,5 bi ficam fora e R$ 1,7 bi entram como vinculado.
+
+**A participacao societaria -- o caso classico da pergunta -- estava no
+circulante.** A CSN publica "Acoes Usiminas", R$ 861 mi, dentro de `1.01.02`: as
+duas dividas liquidas a abatem como caixa. Sao 10 companhias com TVM circulante
+que nao e caixa, R$ 3,7 bi. Isso vira o achado `tvm_circulante_que_nao_e_caixa`,
+e o app **avisa e nao corrige**: a CVM publicou a linha como aplicacao, e move-la
+para ativos nao operacionais -- que nao muda o equity, muda a divida liquida e
+todo multiplo sobre EV -- e decisao de quem conhece a companhia.
+
+O corte do achado e **1% da divida bruta** e caiu num vale: as duas menores pesam
+0,06% (Aegea) e 0,01% (B3), e a menor das outras 1,5% (CSN). O primeiro palpite,
+5%, perdia justamente CSN e Simpar. n=10, e o corte e so isso.
+
+**Tres regras que a medicao pediu:**
+
+* `\bacoes\b` com **fronteira de palavra**. Sem ela "aplic*acoes* financeiras",
+  o rotulo de quase toda linha desta arvore, virava participacao.
+* **A subconta nao precisa somar o grupo.** A WEG publica `1.02.01.01` com R$ 17,1
+  mi e a unica filha com zero; o que as filhas nao explicam vira linha com o
+  rotulo do grupo (folga de 0,5% para arredondamento).
+* **O ajuste negativo segue a conta que ajusta.** Localiza: "CDB vinculados"
+  1.216 e "(-) Ajuste a Valor Presente" -242. Sem isso a tela mostrava caixa
+  negativo ao lado de um vinculado inflado.
+
+**O que a regra nao pega, e por que nao tentei.** Seguradora: a Porto Seguro tem
+R$ 11 bi de TVM de longo prazo em contas que so dizem "custo amortizado" -- lastro
+de provisao tecnica que nao se declara. Procurar a provisao no passivo foi medido
+e rejeitado (2 das 415 a publicam com esse nome, e nenhuma das duas tem TVM de
+longo prazo), e o setor do cadastro poe operadora de saude junto de hospital e
+laboratorio. A ampla da Porto sai com R$ 11 bi a mais de caixa, e o verbete diz.
+
+**Nao verificado:** Localiza (o PDF do release nao abriu, entao o tratamento do
+CDB vinculado e da Serena por analogia) e Petrobras (R$ 3,6 bi de longo prazo,
+definicao da companhia nao conferida).
+
 ### O lucro residual do banco partia do patrimonio do grupo
 
 No historico o `ROE` consolidado **descreve**; aqui o numero **decide**.
@@ -2716,10 +2796,10 @@ aplicacao de longo prazo, mantendo o arrendamento. Somar as duas nao bate com
 nenhuma das duas -- entao a reconciliacao **entrega as parcelas** e quem confere
 monta a definicao da companhia dele.
 
-O app **nao abate** a aplicacao de longo prazo: essa decisao move a ponte
-EV -> equity de toda companhia e nao foi tomada. Medido em 199 companhias de
-2024, **35,7% tem a linha**; ela vale 1,5% da divida liquida na mediana, mas
-passa de 10% em 20% delas -- Embraer 87%, Cyrela 77%, Ultrapar 31%.
+Nesta rodada o app ainda **nao abatia** a aplicacao de longo prazo. Medido em
+199 companhias de 2024, **35,7% tem a linha**; ela vale 1,5% da divida liquida
+na mediana, mas passa de 10% em 20% delas -- Embraer 87%, Cyrela 77%, Ultrapar
+31%. A decisao veio depois: ver "Duas dividas liquidas" acima.
 
 **A primeira medicao disto estava errada e o numero denunciou.** Somando
 `1.02.01.0\d` a Vale aparecia com R$ 59 bi de aplicacao financeira, quase toda a
