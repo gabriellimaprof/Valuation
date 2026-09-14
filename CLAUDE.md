@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1340 testes
+pytest                        # 1371 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -233,6 +233,66 @@ companhias que classificam juro nas duas seções:
 
 As duas leituras do juro (a conta somada que alimenta o Kd e a reclassificação)
 usam **o mesmo padrão de exclusão**, e há teste que quebra se alguém separá-los.
+
+**O de-para do juro pago, medido linha a linha.** O Kd da Simpar saía 0,0% em
+2023-2025, e o app contornava isso com o estimador do Kd; o defeito era de
+leitura. A varredura de todas as linhas da DFC com juro, encargo, arrendamento ou
+derivativo — 423 companhias industriais, 2021-2025, **com o rótulo de cada ano**
+(a árvore publicada guarda só o mais recente, e escondia justamente a troca de
+rótulo) — reproduziu o app em 1.627 de 1.627 anos e mostrou quatro defeitos:
+
+| Defeito | Exemplo | Efeito |
+|---|---|---|
+| Encargo sem a palavra "juros" | "Encargos de dívidas pagos" (Neoenergia), "Pagamento de encargos financeiros" (Axia), Copel, CPFL, EDP | R$ 77 bi sem leitura; Kd de 0,0% a 0,1% |
+| Veto "a pagar" cego ao verbo | "Juros **pagos** sobre … risco sac. a pagar - montadoras" (Simpar desde 2023) | R$ 16 bi; Kd de 10,7% lido como 0,0% |
+| Veto cego ao espaço | "Juros Calculados … a  Pagar" (Sabesp, com dois espaços) | a apropriação entrava com sinal contrário: Kd de 2024 saía 1,4% (é 8,8%) |
+| Derivativo ou principal lido como juro | "Pagamento de derivativos de juros - hedge" (Marfrig, BRF); "Pagamentos de empréstimos e financiamentos e juros" (Três Tentos) | Kd de 90% na Três Tentos; o "juro pago" da Marfrig era só swap |
+
+As regras: **encargo conta junto de uma palavra de dívida** ("Salários e encargos
+sociais" não conta); **"a pagar" só veta sem verbo de pagamento**; **todo espaço
+é `\s+`**; **principal e juro com palavras no meio** vetam; **derivativo como
+sujeito** veta e, como qualificador, fica ("juros sobre dívidas, líquido de
+hedge" é juro); juro misturado com imposto de renda e encargo de captação vetam.
+O veto do imposto **exige as duas coisas na mesma linha**: o mesmo padrão filtra
+o imposto pago que sai do giro, e com "imposto de renda" sozinho a WEG deixava
+R$ 1,4 bi de imposto pago no capital de giro — quatro testes pegaram.
+
+O juro pago **dentro do giro** recebeu a mesma correção: com verbo de pagamento,
+sai do giro mesmo que nomeie o saldo. Sem isso a Simpar tirava o juro do giro até
+2022 e o deixava lá depois. São 8 rótulos em 8 companhias, todos pagamento; o
+imposto continua pelo filtro de saldo.
+
+Efeito nas companhias-ano com dívida, 2022-2025: sem juro pago **314 → 262**, Kd
+abaixo de 3% **116 → 99**, Kd plausível **1.122 → 1.193**. O juro reclassificado
+do financiamento para o FCO muda em 47 companhias-ano (a EDP entra com
+R$ 1,4 bi por ano; BRF e Marfrig perdem o swap). O resíduo abaixo de 3% não é de
+mapeamento: é linha que mistura principal e juro (Motiva, B3, Tenda) ou nenhuma
+linha de juro pago (Marfrig, Minerva), e esses vão ao sintético, como devem.
+
+| 2020-2025 | Kd sugerido antes | Kd depois | WACC |
+|---|---|---|---|
+| Simpar | 8,4% (2022) | **11,0%** (2025) | 8,9% → **10,1%** |
+| Neoenergia | sintético | **7,4%** (2025) | 11,9% → **8,8%** |
+| EDP | sintético | **10,9%** (2025) | 12,1% → **10,5%** |
+| Sabesp, WEG | 8,2%, 3,6% | iguais | iguais |
+
+**O estimador do último exercício plausível continua de pé** com os dados
+corrigidos (mesma base 2021-2025, 530 previsões): erro mediano de 1,21 pp contra
+1,64 pp da mediana; nos históricos com ano implausível, 1,45 contra 2,32 pp, e a
+queda no sintético é de 1,4% contra 16,2%. Mas **a vantagem sobre o "último ano"
+puro quase sumiu na base inteira** (1,21 contra 1,22 pp): boa parte dela vinha do
+defeito de leitura. Ela continua onde há ano implausível de verdade — juro
+capitalizado, ano sem pagamento.
+
+**E a tela contradizia o campo.** O navegador na Simpar mostrou o Kd de
+**10,51%** (2024, o último exercício plausível da importação pela tela) e, logo
+abaixo, "Na empresa: **8,4%** juro pago … O WACC usa o juro pago" — que era a
+**mediana** de 2019-2024. O defeito veio da troca do estimador, e não do de-para:
+a sugestão mudou e a baliza da tela continuou com a regra antiga, calculada por
+conta própria. Nenhum teste pegaria, porque a mediana estava certa e a sugestão
+também. Agora as duas chamam `historico.ultimo_kd_plausivel`, a frase diz o ano e
+deixa a mediana como contexto, e um teste de tela confere que o número em negrito
+é o da sugestão.
 
 **Os cortes de conversão são os quartis medidos, não convenção.** Medidos de
 novo depois das correções de sinal e da D&A da DFC: P25 = **15,0%**, mediana =
@@ -1204,7 +1264,7 @@ não é verificação.
 
 ## Estado atual
 
-1.340 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.371 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2679,9 +2739,13 @@ sintetico pelas guardas de sempre.
 | Marfrig | sintetico: nenhum ano acima de 1,2% | 12,2% |
 | Neoenergia | sintetico: 0,1% em todos os anos | 11,9% |
 
-**A ressalva da Simpar**: o ultimo ano plausivel dela e 2022, tres exercicios
-atras. E o dado que existe -- os anos seguintes sao 0,1% e 0,0%, que nao medem
-custo de divida --, e a justificativa mostra o ano para quem quiser trocar.
+**A ressalva da Simpar** era que o ultimo ano plausivel dela ficava em 2022, tres
+exercicios atras, com 0,1% e 0,0% depois. **Nao era dado, era leitura**: o rotulo
+mudou em 2023 e o veto "a pagar" o descartava. Com o de-para (ver "O de-para do
+juro pago, medido linha a linha") a Simpar vai a Kd de 11,0% (2025) e WACC de
+10,1%; a Neoenergia sai do sintetico para 7,4% e WACC de 8,8%; e a Marfrig
+continua no sintetico -- mas porque nao publica juro pago, e nao porque o swap
+que se lia como juro dava 1,2%.
 
 ### Os betas setoriais saem da planilha oficial do Damodaran
 

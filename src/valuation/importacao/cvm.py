@@ -1454,7 +1454,21 @@ def _somar_arrendamento_no_caixa(
         mapeamento[destinos[chave]] = "linhas de arrendamento da DFC"
 
 
-_MARCA_JUROS_PAGOS = re.compile(r"juros", re.I)
+# **O juro pago nem sempre se chama juro.** "Encargos de dividas pagos" e o rotulo
+# da Neoenergia; "Pagamento de encargos financeiros", o da Axia; "Encargos de
+# debentures pagos", o da Copel. Medido na safra 2021-2025, eram **R$ 77 bi** em
+# linhas que nenhuma regra lia, e o Kd dessas companhias saia 0,0% ou 0,1% -- que
+# o piso mandava para o sintetico, com a divida de R$ 58 bi da Neoenergia inteira
+# fora da conta.
+#
+# "Encargo" sozinho nao basta: "Salarios e encargos sociais" e "Obrigacoes e
+# encargos sobre folha de pagamento" sao pessoal. O encargo so conta junto de uma
+# palavra de divida, a ate tres palavras dele.
+_MARCA_JUROS_PAGOS = re.compile(
+    r"juros|encargos?\s+(?:\S+\s+){0,3}?"
+    r"(?:financeir|d[íi]vida|deb[êe]nture|empr[ée]st|financiament|arrendament)",
+    re.I,
+)
 
 # O que **parece** juro pago e nao e. Cada item saiu de uma linha real da base:
 #
@@ -1468,11 +1482,47 @@ _MARCA_JUROS_PAGOS = re.compile(r"juros", re.I)
 #   escapava do padrao antigo. Agora o casamento e por "juros sobre ... capital"
 #   e nao pela grafia de "proprio" -- de proposito, para nao excluir "Juros de
 #   instrumento elegivel a capital principal", que e juro de verdade.
+#
+# E o de-para medido na safra 2021-2025, linha a linha, sobre 423 companhias:
+#
+# * ``a pagar`` **so veta sem verbo de pagamento.** "Juros calculados sobre
+#   emprestimos a pagar" e apropriacao; "Juros **pagos** sobre empres. e financ.,
+#   arrends., debe. e risco sac. a pagar - montadoras" e pagamento. O veto cego
+#   zerou o Kd da Simpar a partir de 2023, quando ela trocou o rotulo: 10,7%,
+#   10,5% e 11,0% sairam 0,0%, 0,1% e 0,0% -- e a mediana foi a 3,003%.
+# * **O espaco conta.** A Sabesp escreve "a  Pagar" com dois espacos, o veto nao
+#   pegava, e a apropriacao de R$ 1,7 bi entrava **somada com sinal contrario**
+#   ao juro pago: o Kd de 2024 saia 1,4%. Todo espaco aqui e ``\s+``.
+# * ``principal e juros`` **com palavras no meio.** "Pagamentos de passivo de
+#   arrendamento e juros" (GPA, R$ 3 bi), "Pagamentos de emprestimos e
+#   financiamentos e juros" (Tres Tentos, que saia com Kd de 90%) e "Pagamentos
+#   do principal e de juros de arrendamentos" (EDP) misturam os dois.
+# * **Derivativo como sujeito nao e juro.** "Pagamento de derivativos de juros -
+#   hedge de valor justo" e liquidacao de swap, e era todo o "juro pago" da
+#   Marfrig (R$ 1,3 bi) e parte do da BRF. Como qualificador fica: "Pagamento de
+#   juros sobre dividas, liquido de hedge" e juro, e o hedge dele e parte do custo.
+#   O teste e a ordem: derivativo antes de qualquer "juros" ou "encargo".
+# * Juro **misturado com imposto de renda** nao se separa -- e o veto exige as
+#   duas coisas na linha, porque este padrao tambem filtra o imposto pago que
+#   sai do giro: "Imposto de renda e contribuicao social pagos", sozinho, tem de
+#   continuar saindo (R$ 1,4 bi na WEG em 2024). **Encargo de captacao ou de
+#   emissao** e custo de transacao, nao juro.
+# * ``capitaliz`` deixa passar "Pagamento de juros - liquido de juros
+#   capitalizados" (Auren): e o juro pago, sem a parte que foi para o ativo.
 _NAO_E_JURO_PAGO = re.compile(
-    r"recebid|exceto juros|sem juros|excluindo juros|"
-    r"principal e juros|juros e principal|"
-    r"juros sobre.{0,8}capital|capital pr[óo]prio|\bjcp\b|"
-    r"receita|capitaliz|a pagar|n[aã]o realizad|provis[aã]o",
+    r"recebid|exceto\s+juros|sem\s+juros|excluindo\s+juros|"
+    r"principal\s+e\s+(?:d[eo]s?\s+)?juros|juros\s+e\s+(?:d[eo]\s+)?principal|"
+    r"(?:pagamentos?|amortiza[çc]\w+|liquida[çc][ãa]o)\s+d[eo]s?\s+(?:\S+\s+){0,3}?"
+    r"(?:arrendamentos?|empr[ée]stimos?|financiamentos?|deb[êe]ntures?|d[íi]vidas?)"
+    r"\s+e\s+juros|"
+    r"juros\s+sobre.{0,8}capital|capital\s+pr[óo]prio|\bjcp\b|"
+    r"receita|n[aã]o\s+realizad|n[aã]o\s+liquidad|provis[aã]o|"
+    r"(?:juros|encargo).*(?:imposto\s+de\s+renda|contribui[çc][ãa]o\s+social)|"
+    r"(?:imposto\s+de\s+renda|contribui[çc][ãa]o\s+social).*(?:juros|encargo)|"
+    r"encargos?\s+(?:de\s+)?(?:capta[çc]|emiss)|"
+    r"^(?!.*l[íi]quid[oa]\s+de\s+juros\s+capitaliz).*capitaliz|"
+    r"^(?!.*\b(?:pagos?|pagamentos?)\b).*\ba\s+pagar|"
+    r"^(?:(?!juros|encargo).)*(?:derivativ|hedge|swap)",
     re.I,
 )
 
@@ -2884,7 +2934,16 @@ def pagamentos_dentro_do_giro(linhas: list[LinhaCVM]) -> dict[int, float]:
             or _MARCA_IMPOSTO.search(linha.descricao)
         )
         and _E_PAGAMENTO.search(linha.descricao)
-        and not _E_MOVIMENTO_DE_SALDO.search(linha.descricao)
+        # Juro com verbo de pagamento e pagamento, ainda que nomeie o saldo:
+        # "Juros pagos sobre ... risco sac. a pagar - montadoras" (Simpar, R$ 16 bi
+        # em tres anos), "Pagamento de juros sobre passivos de arrendamento". Sem
+        # isto a Simpar tirava o juro do giro ate 2022 e o deixava la depois,
+        # quando trocou o rotulo. Medido na safra 2021-2025, sao 8 rotulos em 8
+        # companhias, todos pagamento. O imposto continua pelo filtro de saldo.
+        and (
+            _MARCA_JUROS_PAGOS.search(linha.descricao)
+            or not _E_MOVIMENTO_DE_SALDO.search(linha.descricao)
+        )
         and not _NAO_E_JURO_PAGO.search(linha.descricao)
     ]
     total: dict[int, float] = {}

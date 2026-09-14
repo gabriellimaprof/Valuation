@@ -1647,6 +1647,22 @@ def test_a_weg_tem_pagamentos_dentro_do_giro(weg):
         # Dexxos publica.
         "Dividendos e Juros sobre capital prório pago a acionistas",
         "Juros sobre capital próprio pagos",
+        # Principal e juro com palavras no meio: GPA, Tres Tentos (Kd de 90%), EDP.
+        "Pagamentos de passivo de arrendamento e juros (Nota 22.2)",
+        "Pagamentos de empréstimos e financiamentos e juros",
+        "Pagamentos do principal e de juros de arrendamentos",
+        # Apropriacao, e nao pagamento -- a da Sabesp com dois espacos, que
+        # entrava somada com sinal contrario ao juro pago.
+        "Juros Calculados sobre Empréstimos e Financiamentos a  Pagar",
+        "Juros e variações mon. sobre emprés. e financi, arrends, debên.s e risco sacado a pagar - montadoras",
+        "Encargos sobre debêntures não liquidados",
+        # Liquidacao de swap: era todo o "juro pago" da Marfrig.
+        "Pagamento de derivativos de juros - hedge de valor justo",
+        "Liquidação de Swap e Juros sobre Debêntures",
+        # Mistura com imposto, e custo de transacao.
+        "Encargos financeiros, imposto de renda e contribuição social pagos",
+        "Encargos de captação de debêntures",
+        "Juros capitalizados",
     ],
 )
 def test_o_que_nao_e_juro_pago_fica_de_fora(rotulo):
@@ -1664,6 +1680,20 @@ def test_o_que_nao_e_juro_pago_fica_de_fora(rotulo):
         # AT1 de banco: e juro de verdade, e "capital principal" nao pode
         # confundi-lo com JCP.
         "Juros de instrumento elegível a capital principal pagos",
+        # O rotulo da Simpar desde 2023: "a pagar" com verbo de pagamento e
+        # pagamento. O veto cego zerava o Kd dela.
+        "Juros pagos sobre emprés. e financ., arrends., debê. e risco sac. a pagar - montadoras",
+        "Juros pagos s/ emprést., financ., arrend. a pagar e arrend. dir. de uso",
+        # Encargo de divida e juro: Neoenergia, Axia, Copel, EDP.
+        "Encargos de dívidas pagos",
+        "Pagamento de encargos financeiros",
+        "Encargos de debêntures pagos",
+        "Pagamentos de encargos de dívidas líquido de derivativos",
+        # Derivativo como qualificador, e nao como sujeito.
+        "Pagamento de juros sobre dívidas, líquido de hedge",
+        "Empréstimos, Financiamentos e Debêntures - Juros e Derivativos Pagos",
+        "Pagamento de juros (encargos de dívidas) - líquido de juros capitalizados",
+        "Amortizações de juros - financiamentos",
     ],
 )
 def test_juro_de_verdade_continua_contando(rotulo):
@@ -2714,3 +2744,76 @@ def test_a_mediana_do_lpa_resiste_a_linha_atipica(catalogo):
     ]
     acoes, aviso = _acoes_conferidas_no_lucro_por_acao(11_026_524.0, linhas, 2025)
     assert acoes == 11_026_524_000.0, "a linha atípica não pode derrubar a conferência"
+
+
+@pytest.mark.parametrize(
+    "rotulo",
+    [
+        "Salários e encargos sociais pagos",
+        "Obrigações e Encargos sobre Folha de Pagamento",
+        "Encargos regulatórios",
+    ],
+)
+def test_encargo_que_nao_e_de_divida_nao_e_juro(rotulo):
+    """"Encargo" so conta junto de uma palavra de divida."""
+    from valuation.importacao.cvm import _MARCA_JUROS_PAGOS
+
+    assert not _MARCA_JUROS_PAGOS.search(rotulo)
+
+
+def test_encargo_de_divida_pago_entra_no_juro_pago():
+    """Neoenergia: 6.01.03.02 "Encargos de dividas pagos" era a linha que faltava."""
+    from valuation.importacao.cvm import REGRAS_SOMADAS
+
+    regra = next(r for r in REGRAS_SOMADAS if r.chave == "juros_pagos")
+    assert regra.casa(_linha_dfc("6.01.03.02", "Encargos de dívidas pagos", -3330.0))
+    # A apropriacao no ajuste ao lucro, sem verbo, continua de fora.
+    assert not regra.casa(_linha_dfc("6.01.01.08", "Encargos financeiros", 392.0))
+
+
+def test_encargo_no_financiamento_e_reclassificado_para_o_fco():
+    """EDP: o encargo de divida em 6.03 e juro pago classificado no financiamento."""
+    from valuation.importacao.cvm import juros_pagos_no_financiamento
+
+    total = juros_pagos_no_financiamento(
+        [
+            _linha_dfc("6.03.07", "Pagamentos de encargos de dívidas líquido de derivativos", -1449.1),
+            _linha_dfc("6.03.09", "Pagamentos do principal e de juros de arrendamentos", -29.5),
+        ]
+    )
+    assert total == {2024: pytest.approx(1449.1)}
+
+
+def test_juro_pago_que_nomeia_o_saldo_sai_do_giro():
+    """Simpar desde 2023: o rotulo diz "a pagar", mas o verbo diz pagamento."""
+    from valuation.importacao.cvm import pagamentos_dentro_do_giro
+
+    total = pagamentos_dentro_do_giro(
+        [
+            _linha_dfc(
+                "6.01.02.07",
+                "Juros pagos sobre emprés. e financ., arrends., debê. e risco sac. a pagar - montadoras",
+                -5348.3,
+            ),
+            _linha_dfc("6.01.02.11", "Pagamentos de juros sobre passivos de arrendamentos", -20.0),
+            # Saldo de verdade continua no giro, juro ou imposto.
+            _linha_dfc("6.01.02.08", "Juros a pagar", 30.0),
+            _linha_dfc("6.01.02.09", "Imposto de renda e contribuição social a pagar", 40.0),
+        ]
+    )
+    assert total == {2024: pytest.approx(5368.3)}
+
+
+def test_imposto_pago_sozinho_continua_saindo_do_giro():
+    """O veto do juro misturado com imposto exige as duas coisas na linha.
+
+    O mesmo padrao filtra o imposto pago que sai do giro: com o veto so por
+    "imposto de renda", a WEG deixava R$ 1,4 bi de imposto pago no giro.
+    """
+    from valuation.importacao.cvm import _NAO_E_JURO_PAGO
+
+    assert not _NAO_E_JURO_PAGO.search("Imposto de renda e contribuição social pagos")
+    assert _NAO_E_JURO_PAGO.search(
+        "Encargos financeiros, imposto de renda e contribuição social pagos"
+    )
+

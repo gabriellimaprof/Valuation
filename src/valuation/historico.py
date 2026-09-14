@@ -910,6 +910,27 @@ def acoes_utilizaveis(acoes, patrimonio_liquido) -> bool:
     return float(patrimonio_liquido) / float(acoes) <= VALOR_POR_ACAO_IMPLAUSIVEL
 
 
+def ultimo_kd_plausivel(analise: AnaliseHistorica) -> tuple[float, object | None]:
+    """O juro pago sobre a divida media do ultimo exercicio plausivel, e o exercicio.
+
+    E a regra do Kd sugerido -- a medicao esta no comentario de
+    `sugerir_premissas` -- e mora numa funcao so porque **dois lugares a usam**: a
+    sugestao e a baliza da tela de custo de capital. Enquanto a tela calculava a
+    propria, mostrava a **mediana** embaixo do campo preenchido com o ultimo ano:
+    a Simpar via "8,4% juro pago" sob um Kd de 10,51%, e a frase dizia que o WACC
+    usava o juro pago. Sem exercicio entre o piso e o teto, devolve ``(nan, None)``.
+    """
+    if "Custo da divida pelo caixa" not in analise.indicadores.index:
+        return float("nan"), None
+    juro_pago = analise.linha("Custo da divida pelo caixa")
+    plausiveis = juro_pago[
+        (juro_pago >= KD_MINIMO_PLAUSIVEL) & (juro_pago < KD_MAXIMO_PLAUSIVEL)
+    ].dropna()
+    if plausiveis.empty:
+        return float("nan"), None
+    return float(plausiveis.iloc[-1]), plausiveis.index[-1]
+
+
 def sugerir_premissas(
     analise: AnaliseHistorica,
     horizonte: int = 5,
@@ -1248,18 +1269,16 @@ def sugerir_premissas(
     # Selic: o ultimo plausivel vence tambem em 2023 e 2024, de juro estavel
     # (1,18 contra 2,09 pp e 1,21 contra 1,97 pp). Sem ano plausivel nenhum, volta
     # a mediana -- e dali ao sintetico pelas mesmas guardas de sempre.
-    juro_pago = (
-        analise.linha("Custo da divida pelo caixa")
-        if "Custo da divida pelo caixa" in analise.indicadores.index
-        else pd.Series(dtype=float)
-    )
-    plausiveis = juro_pago[
-        (juro_pago >= KD_MINIMO_PLAUSIVEL) & (juro_pago < KD_MAXIMO_PLAUSIVEL)
-    ].dropna()
-    if not plausiveis.empty:
-        kd = float(plausiveis.iloc[-1])
+    #
+    # Remedido depois do de-para do juro pago (base 2021-2025, 530 previsoes), a
+    # ordem se mantem: 1,21 pp contra 1,64 da mediana, e 1,45 contra 2,32 pp onde
+    # ha ano implausivel. A vantagem sobre o "ultimo ano" puro quase some na base
+    # inteira (1,21 contra 1,22): parte dela era o defeito de leitura, e o que
+    # sobra e juro capitalizado ou ano sem pagamento de verdade.
+    kd, ano_do_kd = ultimo_kd_plausivel(analise)
+    if ano_do_kd is not None:
         kd_origem = (
-            f"juros pagos na DFC sobre a divida media de {plausiveis.index[-1]}, o "
+            f"juros pagos na DFC sobre a divida media de {ano_do_kd}, o "
             "ultimo exercicio com Kd plausivel"
         )
     else:

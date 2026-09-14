@@ -258,3 +258,29 @@ def test_o_kd_da_empresa_some_e_diz_por_que(trimestral, ano_movel):
 
     movel = _rodar("custo_capital", ano_movel)
     assert "Sem o Kd da empresa" not in _texto(movel)
+
+
+def test_a_baliza_do_kd_mostra_o_kd_que_a_sugestao_usa(ano_movel):
+    """A tela mostrava a mediana sob o campo preenchido com o ultimo ano.
+
+    Visto no navegador na Simpar: "8,4% juro pago" -- a mediana de 2019-2024 --
+    embaixo de um Kd de 10,51% (2024), e a frase dizia que o WACC usa o juro
+    pago. Nenhum teste pegaria: a mediana estava certa, e a sugestao tambem.
+    """
+    import re
+
+    from valuation.historico import analisar, ultimo_kd_plausivel
+
+    texto = _texto(_rodar("custo_capital", ano_movel))
+    assert "O WACC usa o **juro pago**;" not in texto
+    assert "último exercício plausível" in texto
+
+    kd, ano = ultimo_kd_plausivel(analisar(ano_movel))
+    if ano is None:
+        assert "juro pago na mediana" in texto
+        return
+    achado = re.search(r"\*\*([\d.,]+)%\*\* juro pago em (\S+) ", texto)
+    assert achado, texto
+    assert float(achado.group(1).replace(".", "").replace(",", ".")) / 100 == pytest.approx(kd, abs=6e-4)
+    assert achado.group(2) == str(ano)
+

@@ -145,3 +145,25 @@ def test_sem_ano_plausivel_o_kd_e_sintetico(weg):
     sugestao = sugerir_premissas(_com_kd(weg, {2024: 0.001, 2025: 0.002}))
     assert sugestao.custo_capital.custo_divida_brl is None
 
+
+def test_a_baliza_da_tela_e_a_sugestao_leem_o_mesmo_kd(weg):
+    """A tela mostrava a mediana sob o campo preenchido com o ultimo ano.
+
+    Simpar: "8,4% juro pago" embaixo de um Kd de 10,51%. As duas leituras moram
+    agora numa funcao so.
+    """
+    from valuation.historico import ultimo_kd_plausivel
+
+    analise = _com_kd(weg, {2024: 0.12, 2025: 0.002})
+    kd, ano = ultimo_kd_plausivel(analise)
+    assert kd == pytest.approx(0.12)
+    assert ano == 2024
+    assert sugerir_premissas(analise).custo_capital.custo_divida_brl == pytest.approx(kd)
+
+
+def test_sem_exercicio_plausivel_nao_ha_ultimo_kd(weg):
+    from valuation.historico import ultimo_kd_plausivel
+
+    kd, ano = ultimo_kd_plausivel(_com_kd(weg, {2024: 0.001, 2025: 0.002}))
+    assert ano is None and kd != kd
+

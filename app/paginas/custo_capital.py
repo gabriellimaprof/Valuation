@@ -8,6 +8,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from valuation.historico import (
+    KD_MAXIMO_PLAUSIVEL,
+    KD_MINIMO_PLAUSIVEL,
+    ultimo_kd_plausivel,
+)
 from valuation.premissas import METODOS_DE_CUSTO_DE_CAPITAL
 from valuation.dados_setoriais import (
     AVISO_REFERENCIA,
@@ -412,6 +417,24 @@ def _baliza_do_kd(kd: float) -> None:
         if not a_mediana_se_compara(analise, indicador):
             continue
         valor = float(analise.mediana(indicador))
+        if indicador == "Custo da divida pelo caixa":
+            # **O mesmo Kd que a sugestao usa**, e nao a mediana. A tela mostrava
+            # "8,4% juro pago" da Simpar -- a mediana de 2019-2024 -- embaixo de um
+            # campo preenchido com 10,51% (2024), e a frase dizia que o WACC usa o
+            # juro pago. A mediana fica ao lado, como contexto.
+            kd, ano = ultimo_kd_plausivel(analise)
+            if ano is not None:
+                contexto = (
+                    f" (mediana {formatar(valor, 'pct')})" if np.isfinite(valor) else ""
+                )
+                partes.append(f"**{formatar(kd, 'pct')}** juro pago em {ano}{contexto}")
+            elif np.isfinite(valor):
+                partes.append(
+                    f"**{formatar(valor, 'pct')}** juro pago na mediana — nenhum "
+                    f"exercício entre {formatar(KD_MINIMO_PLAUSIVEL, 'pct')} e "
+                    f"{formatar(KD_MAXIMO_PLAUSIVEL, 'pct')}"
+                )
+            continue
         if np.isfinite(valor):
             partes.append(f"**{formatar(valor, 'pct')}** {rotulo}")
 
@@ -431,7 +454,8 @@ def _baliza_do_kd(kd: float) -> None:
     st.caption(
         "Na empresa: "
         + " · ".join(partes)
-        + ". O WACC usa o **juro pago**; a competência costuma superestimar."
+        + ". O WACC sugerido usa o **juro pago do último exercício plausível**; a "
+        "competência costuma superestimar."
     )
 
 
