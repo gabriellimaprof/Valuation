@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1371 testes
+pytest                        # 1372 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -293,6 +293,23 @@ conta própria. Nenhum teste pegaria, porque a mediana estava certa e a sugestã
 também. Agora as duas chamam `historico.ultimo_kd_plausivel`, a frase diz o ano e
 deixa a mediana como contexto, e um teste de tela confere que o número em negrito
 é o da sugestão.
+
+**A base de referência se moveu só onde o de-para mexe.** Regenerado o universo
+2021-2025 (421 companhias), quatro linhas de `BASE` mudaram, e todas passam pelo
+juro pago ou pelo FCO: o Kd pelo caixa ganhou 10 companhias (349 → 359) e o P10
+subiu de 2,6% para 3,6%; a conversão FCO/EBITDA teve o P25 de 16,6% para 18,2%;
+FCO/passivo circulante e investimento em giro/receita mexeram menos de 0,01.
+Nenhuma outra linha derivou. O descolamento do juro foi a 266 companhias, com P75
+de 9,9 e P90 de 13,7 p.p. (eram 10,1 e 13,9). **Os cortes não mudaram**: 10,0 e
+13,8 p.p. acusam 24,4% e 9,8%, e `CONVERSAO_CAIXA_BAIXA` de 0,15 acusa 24,0% —
+mover corte de quartil por dois décimos seria calibrar ruído.
+
+E o achado de juro capitalizado dizia "a mediana brasileira descola **8,2** p.p."
+— a mediana de 2020-2024 — depois que a safra corrente já a tinha levado a 5,9.
+E o veredito de qualidade dizia "a mediana de **260** companhias", que o teste
+pegou assim que a base foi a 266. Número de base escrito como literal envelhece
+calado; as duas frases leem agora `DESCOLAMENTO_DO_JURO`, e o teste do achado
+confere também que o formato do número não vaza para o resto do texto.
 
 **Os cortes de conversão são os quartis medidos, não convenção.** Medidos de
 novo depois das correções de sinal e da D&A da DFC: P25 = **15,0%**, mediana =
@@ -1264,7 +1281,7 @@ não é verificação.
 
 ## Estado atual
 
-1.371 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.372 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 

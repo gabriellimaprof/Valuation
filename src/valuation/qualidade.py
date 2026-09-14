@@ -305,12 +305,20 @@ def _juros(analise: AnaliseHistorica) -> Sinal:
         f"A despesa financeira equivale a {competencia:.1%} da dívida média e o "
         f"juro pago a {caixa:.1%} — um descolamento de {diferenca:.1%}."
     )
-    # A mediana brasileira descola 8,2 p.p., entao a frase precisa dizer isso:
+    # A mediana brasileira descola alguns p.p., entao a frase precisa dizer isso:
     # sem a referencia, o leitor toma o normal do mercado por irregularidade.
+    #
+    # **Da base medida, e nao de literal.** A frase dizia "260 companhias" e
+    # "5,9 p.p." escritos a mao; regenerada a base depois do de-para do juro pago
+    # (266 companhias), ela continuaria citando a medicao anterior, calada.
+    from .referencias import DESCOLAMENTO_DO_JURO, DESCOLAMENTO_QUANTIS
+
+    empresas, quantis = DESCOLAMENTO_DO_JURO
+    mediana = f"{quantis[DESCOLAMENTO_QUANTIS.index(0.50)] * 100:.1f}".replace(".", ",")
     normal = (
-        " A mediana de 260 companhias brasileiras descola 5,9 p.p., porque a linha "
-        "de despesa financeira da CVM junta variação cambial e monetária de todo o "
-        "passivo — descolar não é, por si, sinal de nada."
+        f" A mediana de {empresas} companhias brasileiras descola {mediana} p.p., "
+        "porque a linha de despesa financeira da CVM junta variação cambial e "
+        "monetária de todo o passivo — descolar não é, por si, sinal de nada."
     )
 
     if diferenca <= JURO_DESCOLADO:

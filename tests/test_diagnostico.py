@@ -896,3 +896,36 @@ def test_sem_arrendamento_nao_ha_ponte_a_fazer():
     )
     analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
     assert _ponte_com_o_release(analise) == ""
+
+
+def test_o_achado_de_juro_capitalizado_le_a_mediana_da_base(empresa_exemplo):
+    """A frase dizia "8,2 p.p." -- a mediana de 2020-2024 -- com a base em 5,9."""
+    from valuation.referencias import DESCOLAMENTO_DO_JURO, DESCOLAMENTO_QUANTIS
+
+    linha = {
+        "receita_liquida": 5000.0, "ebit": 800.0, "depreciacao_amortizacao": 200.0,
+        "lucro_liquido": 500.0, "lucro_antes_impostos": 700.0, "impostos": 200.0,
+        "patrimonio_liquido": 3000.0, "ativo_total": 6000.0,
+        "divida_curto_prazo": 400.0, "divida_longo_prazo": 600.0,
+        # Competencia de 20% da divida contra 5% pago: acima do quartil.
+        "despesas_financeiras": 200.0, "juros_pagos": 50.0,
+    }
+    valores = pd.DataFrame({ano: dict(linha) for ano in (2022, 2023, 2024)})
+    analise = analisar(Demonstracoes(empresa="Teste", valores=valores, unidade="R$ milhões"))
+    achado = next(
+        (
+            a
+            for a in diagnosticar(avaliar(empresa_exemplo), analise).achados
+            if a.codigo == "juros_capitalizados"
+        ),
+        None,
+    )
+    assert achado is not None, "o achado precisa disparar neste caso"
+
+    mediana = DESCOLAMENTO_DO_JURO[1][DESCOLAMENTO_QUANTIS.index(0.50)]
+    assert f"descola {mediana * 100:.1f}".replace(".", ",") + " p.p." in achado.detalhe
+    assert "8,2" not in achado.detalhe
+    # O formato do numero nao vaza para o resto da frase: um ``.replace`` colado
+    # em literais adjacentes trocaria todos os pontos do texto.
+    assert "sem desembolso. Descolar" in achado.detalhe
+

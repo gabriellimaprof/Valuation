@@ -138,7 +138,7 @@ QUANTIS = (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 # indicador -> (n, valores nos quantis acima)
 BASE: dict[str, tuple[int, tuple[float, ...]]] = {
-    "Conversao de caixa (FCO / EBITDA)": (405, (-0.683, -0.356, 0.166, 0.529, 0.770, 1.017, 1.267)),
+    "Conversao de caixa (FCO / EBITDA)": (405, (-0.683, -0.338, 0.182, 0.523, 0.770, 1.017, 1.267)),
     # A conversao **operacional** -- caixa gerado pelas operacoes sobre EBITDA,
     # antes de giro, imposto e juro. Medida na mesma safra e com a mesma
     # metodologia (mediana por companhia, quantis entre companhias).
@@ -153,7 +153,7 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     "Crescimento da receita": (412, (-0.088, -0.036, 0.018, 0.092, 0.199, 0.371, 0.515)),
     "Capex / Receita": (391, (0.004, 0.008, 0.022, 0.049, 0.124, 0.291, 0.406)),
     "ROIC": (396, (-0.086, 0.001, 0.044, 0.101, 0.162, 0.260, 0.408)),
-    "Investimento em giro (DFC) / Receita": (401, (-0.224, -0.077, -0.009, 0.026, 0.078, 0.152, 0.275)),
+    "Investimento em giro (DFC) / Receita": (401, (-0.224, -0.077, -0.009, 0.026, 0.077, 0.152, 0.275)),
     "Divida liquida / EBITDA": (405, (-1.482, -0.610, 0.569, 2.024, 3.455, 5.783, 8.014)),
     "Liquidez corrente": (421, (0.324, 0.638, 1.087, 1.546, 2.167, 2.943, 4.022)),
     "Payout (dividendos / lucro)": (334, (0.000, 0.000, 0.151, 0.360, 0.603, 0.859, 1.082)),
@@ -218,8 +218,8 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
     # juro efetivamente pago da 9,3%: a linha `3.06.02` junta variacao cambial e
     # monetaria de todo o passivo, e por isso o Kd do WACC vem do juro pago.
     "Custo da divida efetivo": (412, (0.056, 0.101, 0.133, 0.182, 0.269, 0.572, 1.205)),
-    "Custo da divida pelo caixa": (349, (0.003, 0.026, 0.06, 0.093, 0.122, 0.142, 0.176)),
-    "FCO / Passivo circulante": (421, (-0.29, -0.149, 0.034, 0.242, 0.532, 0.822, 1.234)),
+    "Custo da divida pelo caixa": (359, (0.008, 0.036, 0.064, 0.093, 0.121, 0.141, 0.164)),
+    "FCO / Passivo circulante": (421, (-0.290, -0.149, 0.040, 0.240, 0.532, 0.821, 1.234)),
     # Reinvestimento x ROIC: o crescimento que a propria operacao financia. A
     # mediana em **1,4%** diz que a companhia brasileira mediana nao sustenta,
     # so com reinvestimento, nem a inflacao.
@@ -247,7 +247,13 @@ BASE: dict[str, tuple[int, tuple[float, ...]]] = {
 # acusava 4,2% da amostra nova e 34,5 p.p. acusava **zero**. Sinal que nunca
 # dispara e tao inutil quanto o que dispara sempre, que foi o problema oposto do
 # corte original de 2 p.p. (82,3%).
-DESCOLAMENTO_DO_JURO = (260, (-0.001, 0.026, 0.059, 0.100, 0.138, 0.160))
+#
+# **O de-para do juro pago moveu a distribuicao, e nao os cortes.** Com o encargo
+# de divida lido e o swap fora do juro, entram 7 companhias (259 -> 266) e o P75 e
+# o P90 descem dois decimos (10,1 -> 9,9 e 13,9 -> 13,7 p.p.). Os cortes de 10,0 e
+# 13,8 p.p. continuam acusando 24,4% e 9,8% -- um quartil e um decil --, e mover
+# corte de quartil por dois decimos seria calibrar ruido.
+DESCOLAMENTO_DO_JURO = (266, (0.000, 0.025, 0.059, 0.099, 0.137, 0.157))
 DESCOLAMENTO_QUANTIS = (0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
 
 def tabela() -> pd.DataFrame:

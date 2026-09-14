@@ -1288,6 +1288,10 @@ def _checar_contra_historico(
 
     kd_competencia = _mediana(analise, "Custo da divida efetivo")
     kd_caixa = _mediana(analise, "Custo da divida pelo caixa")
+    # A mediana vem da base medida, e nao de literal: a frase dizia "8,2 p.p." --
+    # a mediana de 2020-2024 -- depois que a safra corrente ja a tinha levado a 5,9.
+    mediana = referencias.DESCOLAMENTO_DO_JURO[1][referencias.DESCOLAMENTO_QUANTIS.index(0.50)]
+    mediana_do_descolamento = f"{mediana * 100:.1f}".replace(".", ",")
     if (
         np.isfinite(kd_competencia)
         and np.isfinite(kd_caixa)
@@ -1305,7 +1309,8 @@ def _checar_contra_historico(
                     "Parte do custo da dívida não saiu do caixa no período: pode ter "
                     "sido capitalizada em obra, acumulada para pagar depois ou ser "
                     "variação cambial e monetária sem desembolso. Descolar é o "
-                    "normal — a mediana brasileira descola 8,2 p.p. —, mas esta "
+                    f"normal — a mediana brasileira descola {mediana_do_descolamento} "
+                    "p.p. —, mas esta "
                     "companhia está no quartil que mais descola."
                 ),
                 acao=(
