@@ -29,6 +29,7 @@ mostra -- que e o pior lugar possivel para ela.
 from __future__ import annotations
 
 import html
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -71,12 +72,68 @@ def escala_do_documento(valores) -> tuple[float, str]:
     return 1.0, ""
 
 
+# O expoente de cada escala, nos dois vocabularios: o da unidade da empresa
+# ("R$ milhoes") e o do sufixo do documento ("mi").
+_EXPOENTE_DA_UNIDADE = (
+    ("trilh", 12),
+    ("bilh", 9),
+    ("milh", 6),
+    ("mil", 3),
+)
+_EXPOENTE_DO_SUFIXO = {"": 0, "mil": 3, "mi": 6, "bi": 9}
+_ESCALA_POR_EXPOENTE = {0: "", 3: "mil", 6: "milhões", 9: "bilhões", 12: "trilhões"}
+
+
+def unidade_na_escala(unidade: str, sufixo: str) -> str:
+    """A unidade da empresa **composta** com a escala do documento.
+
+    A unidade ja traz escala -- "R$ milhoes" e o padrao do app --, e o documento
+    aplica outra por cima. Colar as duas produzia **"R$ milhoes mil"**, rotulo
+    que ninguem le, sob um equity de R$ 3,5 bilhoes escrito como "3,5". Aqui as
+    duas escalas somam: milhoes (10^6) com mil (10^3) viram bilhoes.
+
+    Unidade que nao declara escala conhecida volta ao comportamento antigo, de
+    justapor -- inventar uma composicao para texto livre seria pior.
+    """
+    unidade = (unidade or "").strip()
+    sufixo = (sufixo or "").strip()
+    if not sufixo:
+        return unidade
+    if not unidade:
+        return _ESCALA_POR_EXPOENTE.get(_EXPOENTE_DO_SUFIXO.get(sufixo, 0), sufixo)
+
+    minuscula = unidade.lower()
+    for marca, expoente in _EXPOENTE_DA_UNIDADE:
+        if marca in minuscula:
+            total = expoente + _EXPOENTE_DO_SUFIXO.get(sufixo, 0)
+            nome = _ESCALA_POR_EXPOENTE.get(total)
+            if nome is None:
+                return f"{unidade} {sufixo}"
+            # Tira a escala antiga do rotulo e poe a nova: "R$ milhoes" -> "R$".
+            corte = minuscula.index(marca)
+            moeda = unidade[:corte].strip()
+            return " ".join(parte for parte in (moeda, nome) if parte)
+    nome = _ESCALA_POR_EXPOENTE.get(_EXPOENTE_DO_SUFIXO.get(sufixo, 0), sufixo)
+    return " ".join(parte for parte in (unidade, nome) if parte)
+
+
 def _num(valor, casas: int = 1) -> str:
     return formato.num(valor, casas, "—")
 
 
 def _e(texto) -> str:
     return html.escape(str(texto))
+
+
+def _negrito(texto) -> str:
+    """Escapa o texto e converte o ``**negrito**`` que vem do motor.
+
+    Os achados do diagnostico sao escritos em markdown -- eles alimentam a tela,
+    o relatorio e esta pagina --, e aqui saiam com os asteriscos a vista:
+    "**para sempre**", "**nunca erode**". Escapar primeiro e converter depois
+    mantem a pagina imune ao que vem de fora.
+    """
+    return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", _e(texto))
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +266,541 @@ def linhas_no_tempo(series: dict, titulo: str = "", percentual: bool = True) -> 
             f'{_e(_pct(ultimo) if percentual else _num(ultimo))}</text>'
         )
     return _svg("".join(partes), largura, altura, titulo)
+
+
+def barras_agrupadas(
+    quadro,
+    titulo: str = "",
+    unidade: str = "",
+    divisor: float = 1.0,
+    projetado_a_partir_de=None,
+) -> str:
+    """Series por periodo, em barras lado a lado, com o corte da projecao marcado.
+
+    O corte existe porque **entregue e projetado nao sao a mesma coisa**, e num
+    grafico continuo eles se leem como uma serie so: quem olha de longe ve a
+    curva subir e nao ve onde acaba o que a companhia fez e comeca o que o
+    analista assumiu.
+    """
+    if quadro is None or getattr(quadro, "empty", True):
+        return ""
+    colunas = list(quadro.columns)
+    periodos = [str(i) for i in quadro.index]
+    valores = quadro.to_numpy(dtype=float) / divisor
+    if not np.isfinite(valores).any():
+        return ""
+
+    largura, altura = 760, 280
+    esq, dir_, topo, base = 56, 16, 24, 46
+    util = largura - esq - dir_
+    passo = util / max(len(periodos), 1)
+    grupo = passo * 0.72
+    alto = grupo / max(len(colunas), 1)
+    maior = float(np.nanmax(np.abs(valores))) or 1.0
+    piso = min(0.0, float(np.nanmin(valores)))
+    teto = max(0.0, float(np.nanmax(valores)))
+    faixa = (teto - piso) or maior
+
+    def py(v):
+        return topo + (altura - topo - base) * (1 - (v - piso) / faixa)
+
+    partes = [
+        f'<line x1="{esq}" y1="{py(piso):.1f}" x2="{largura - dir_}" '
+        f'y2="{py(piso):.1f}" stroke="{GRADE}"/>'
+    ]
+    cores = (AZUL, VERDE, AZUL_CLARO, VERMELHO)
+    for i, periodo in enumerate(periodos):
+        x0 = esq + i * passo + (passo - grupo) / 2
+        for k, coluna in enumerate(colunas):
+            valor = valores[i, k]
+            if not np.isfinite(valor):
+                continue
+            y = py(max(valor, 0.0))
+            altura_barra = abs(py(valor) - py(0.0))
+            partes.append(
+                f'<rect x="{x0 + k * alto:.1f}" y="{y:.1f}" width="{alto * 0.86:.1f}" '
+                f'height="{max(altura_barra, 0.6):.1f}" fill="{cores[k % len(cores)]}" rx="1"/>'
+            )
+        partes.append(
+            f'<text x="{esq + i * passo + passo / 2:.1f}" y="{altura - 26}" '
+            f'text-anchor="middle" font-size="11" fill="{TINTA_FRACA}">{_e(periodo)}</text>'
+        )
+        if projetado_a_partir_de is not None and str(projetado_a_partir_de) == periodo:
+            x = esq + i * passo
+            partes.append(
+                f'<line x1="{x:.1f}" y1="{topo}" x2="{x:.1f}" y2="{py(piso):.1f}" '
+                f'stroke="{TINTA_FRACA}" stroke-dasharray="4 3"/>'
+            )
+            partes.append(
+                f'<text x="{x + 5:.1f}" y="{topo + 10}" font-size="10.5" '
+                f'fill="{TINTA_FRACA}">projetado</text>'
+            )
+    legenda = " ".join(
+        f'<tspan fill="{cores[k % len(cores)]}">■</tspan> {_e(str(c))}'
+        for k, c in enumerate(colunas)
+    )
+    partes.append(
+        f'<text x="{esq}" y="{altura - 8}" font-size="11.5" fill="{TINTA_FRACA}">{legenda}</text>'
+    )
+    if unidade:
+        partes.append(
+            f'<text x="{largura - dir_}" y="{altura - 8}" text-anchor="end" '
+            f'font-size="11" fill="{TINTA_FRACA}">em {_e(unidade)}</text>'
+        )
+    return _svg("".join(partes), largura, altura, titulo)
+
+
+def tornado(itens, base: float, unidade: str = "", divisor: float = 1.0, titulo: str = "") -> str:
+    """Quanto cada premissa move o valor, com o mesmo deslocamento nas duas pontas.
+
+    A comparacao entre premissas so vale se todas andarem o mesmo tanto -- e e
+    por isso que o tornado responde a pergunta que a tabela de sensibilidade nao
+    responde: **qual delas decide o numero**.
+    """
+    itens = [
+        (nome, float(baixo), float(alto))
+        for nome, baixo, alto in itens
+        if np.isfinite(float(baixo)) and np.isfinite(float(alto))
+    ]
+    if not itens or not np.isfinite(base):
+        return ""
+
+    alto_barra, espaco, margem_esq, largura = 24, 12, 210, 760
+    altura = len(itens) * (alto_barra + espaco) + 34
+    centro = margem_esq + (largura - margem_esq - 90) / 2
+    extremos = [abs(v - base) for _, b, a in itens for v in (b, a)]
+    maior = max(extremos) or 1.0
+    escala = (largura - margem_esq - 110) / 2 / maior
+
+    partes = [
+        f'<line x1="{centro:.1f}" y1="6" x2="{centro:.1f}" y2="{altura - 26}" '
+        f'stroke="{TINTA_FRACA}" stroke-dasharray="3 3"/>'
+    ]
+    for i, (nome, baixo, alto) in enumerate(itens):
+        y = i * (alto_barra + espaco) + 10
+        for valor, cor in ((baixo, AZUL_CLARO), (alto, AZUL)):
+            x = centro + min(valor - base, 0.0) * escala
+            comprimento = abs(valor - base) * escala
+            partes.append(
+                f'<rect x="{x:.1f}" y="{y}" width="{max(comprimento, 0.6):.1f}" '
+                f'height="{alto_barra}" fill="{cor}" rx="2"/>'
+            )
+        partes.append(
+            f'<text x="{margem_esq - 10}" y="{y + alto_barra * 0.7}" text-anchor="end" '
+            f'font-size="12.5" fill="{TINTA}">{_e(nome)}</text>'
+        )
+        extremo = max(baixo, alto)
+        partes.append(
+            f'<text x="{centro + abs(extremo - base) * escala + 8:.1f}" '
+            f'y="{y + alto_barra * 0.7}" font-size="11.5" fill="{TINTA_FRACA}">'
+            f'{_e(_num((extremo - base) / divisor))}</text>'
+        )
+    partes.append(
+        f'<text x="{centro:.1f}" y="{altura - 8}" text-anchor="middle" font-size="11" '
+        f'fill="{TINTA_FRACA}">caso base: {_e(_num(base / divisor))}'
+        + (f" {_e(unidade)}" if unidade else "")
+        + "</text>"
+    )
+    return _svg("".join(partes), largura, altura, titulo)
+
+
+def histograma(valores, titulo: str = "", unidade: str = "", divisor: float = 1.0,
+               referencia=None) -> str:
+    """Distribuicao simulada do valor, com o caso base marcado."""
+    valores = np.asarray([v for v in np.asarray(valores, dtype=float) if np.isfinite(v)])
+    if valores.size < 2:
+        return ""
+    contagens, bordas = np.histogram(valores / divisor, bins=28)
+    largura, altura = 760, 240
+    esq, dir_, topo, base_y = 40, 16, 20, 40
+    util = largura - esq - dir_
+    passo = util / len(contagens)
+    maior = contagens.max() or 1
+
+    partes = []
+    for i, contagem in enumerate(contagens):
+        alto = (altura - topo - base_y) * (contagem / maior)
+        partes.append(
+            f'<rect x="{esq + i * passo:.1f}" y="{altura - base_y - alto:.1f}" '
+            f'width="{passo * 0.9:.1f}" height="{alto:.1f}" fill="{AZUL_CLARO}"/>'
+        )
+    partes.append(
+        f'<line x1="{esq}" y1="{altura - base_y}" x2="{largura - dir_}" '
+        f'y2="{altura - base_y}" stroke="{GRADE}"/>'
+    )
+    for fracao in (0.0, 0.5, 1.0):
+        x = esq + util * fracao
+        valor = bordas[0] + (bordas[-1] - bordas[0]) * fracao
+        partes.append(
+            f'<text x="{x:.1f}" y="{altura - 20}" text-anchor="middle" font-size="11" '
+            f'fill="{TINTA_FRACA}">{_e(_num(valor))}</text>'
+        )
+    if referencia is not None and np.isfinite(float(referencia)):
+        alvo = float(referencia) / divisor
+        if bordas[0] <= alvo <= bordas[-1]:
+            x = esq + util * (alvo - bordas[0]) / (bordas[-1] - bordas[0])
+            partes.append(
+                f'<line x1="{x:.1f}" y1="{topo}" x2="{x:.1f}" y2="{altura - base_y}" '
+                f'stroke="{VERMELHO}" stroke-width="1.5"/>'
+            )
+            partes.append(
+                f'<text x="{x + 5:.1f}" y="{topo + 10}" font-size="10.5" '
+                f'fill="{VERMELHO}">caso base</text>'
+            )
+    if unidade:
+        partes.append(
+            f'<text x="{largura - dir_}" y="{altura - 6}" text-anchor="end" '
+            f'font-size="11" fill="{TINTA_FRACA}">em {_e(unidade)}</text>'
+        )
+    return _svg("".join(partes), largura, altura, titulo)
+
+
+def _cor_do_mapa(fracao: float) -> str:
+    """Do vermelho claro ao verde claro, passando pelo areia -- tinta de papel."""
+    fracao = min(max(fracao, 0.0), 1.0)
+    if fracao < 0.5:
+        t = fracao / 0.5
+        inicio, fim = (247, 221, 221), (250, 249, 247)
+    else:
+        t = (fracao - 0.5) / 0.5
+        inicio, fim = (250, 249, 247), (219, 236, 226)
+    canais = [round(a + (b - a) * t) for a, b in zip(inicio, fim)]
+    return "#%02x%02x%02x" % tuple(canais)
+
+
+def _tabela_mapa_de_calor(tabela, divisor: float = 1.0, casas: int = 1) -> str:
+    """Tabela numerica com o fundo graduado, para a faixa se ler de relance."""
+    if tabela is None or tabela.empty:
+        return ""
+    valores = tabela.to_numpy(dtype=float)
+    finitos = valores[np.isfinite(valores)]
+    if finitos.size == 0:
+        return ""
+    menor, maior = float(finitos.min()), float(finitos.max())
+    amplitude = (maior - menor) or 1.0
+
+    cabecalho = "".join(f"<th>{_e(c)}</th>" for c in tabela.columns)
+    linhas = []
+    for indice, linha in tabela.iterrows():
+        celulas = [f"<td>{_e(indice)}</td>"]
+        for valor in linha:
+            valor = float(valor)
+            if not np.isfinite(valor):
+                celulas.append('<td class="nota">—</td>')
+                continue
+            cor = _cor_do_mapa((valor - menor) / amplitude)
+            celulas.append(
+                f'<td style="background:{cor}">{_e(_num(valor / divisor, casas))}</td>'
+            )
+        linhas.append(f"<tr>{''.join(celulas)}</tr>")
+    nome = tabela.index.name or ""
+    return (
+        f'<table><thead><tr><th>{_e(nome)}</th>{cabecalho}</tr></thead>'
+        f"<tbody>{''.join(linhas)}</tbody></table>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# As secoes detalhadas: premissas, contas e faixa
+# ---------------------------------------------------------------------------
+
+
+def _premissas_operacionais(empresa, analise) -> str:
+    """Cada direcionador por ano, com a mediana que a companhia entregou ao lado.
+
+    A premissa sozinha nao se julga: 26% de margem e muito ou pouco depende do
+    que a empresa fez. A coluna da mediana poe a pergunta e a resposta na mesma
+    linha, que e o que a tela ja faz com o balizador.
+    """
+    op = empresa.operacionais
+    if op is None:
+        return ""
+    anos = [str(op.ano_base + i + 1) if op.ano_base else f"Ano {i + 1}"
+            for i in range(op.horizonte)]
+    linhas = {
+        "Crescimento da receita": (list(op.crescimento_receita), "Crescimento da receita"),
+        "Margem EBITDA": (list(op.margem_ebitda), "Margem EBITDA"),
+        "Depreciação / receita": (list(op.depreciacao_pct_receita), "Depreciacao / Receita"),
+        "Capex / receita": (list(op.capex_pct_receita), "Capex / Receita"),
+        "Capital de giro / receita": (
+            list(op.capital_giro_pct_receita), "Capital de giro / Receita"
+        ),
+    }
+    if op.arrendamento_pct_receita is not None:
+        linhas["Arrendamento / receita (saldo)"] = (list(op.arrendamento_pct_receita), None)
+    if op.arrendamento_renovacao_pct_receita is not None:
+        linhas["Renovação de arrendamento / receita"] = (
+            list(op.arrendamento_renovacao_pct_receita), None
+        )
+
+    dados = {}
+    for rotulo, (valores, indicador) in linhas.items():
+        registro = dict(zip(anos, valores))
+        entregue = float("nan")
+        if analise is not None and indicador and indicador in analise.indicadores.index:
+            entregue = float(analise.mediana(indicador))
+        registro["Mediana entregue"] = entregue
+        dados[rotulo] = registro
+    quadro = pd.DataFrame(dados).T
+    quadro.index.name = "Direcionador"
+    return _tabela(quadro, formatos={c: _pct for c in quadro.columns})
+
+
+def _custo_de_capital(resultado) -> str:
+    """A montagem do WACC linha a linha, na construcao que foi usada.
+
+    Escrever sempre a soma em dolar seria descrever uma conta que o modelo nao
+    fez -- o mesmo defeito que o relatorio ja corrigiu.
+    """
+    cc = resultado.custo_capital
+    p = resultado.empresa.custo_capital
+    macro = resultado.empresa.macro
+    linhas = []
+    if p.metodo == "local":
+        linhas += [
+            ("Taxa livre de risco (BRL)", _pct(cc.rf_brl, 2),
+             "NTN-B real nominalizada pelo IPCA de " + _pct(macro.inflacao_brl)),
+            ("Prêmio de risco local (ERP)", _pct(p.erp_local, 2),
+             "premissa do analista — é o número que mais move o Ke"),
+        ]
+    else:
+        linhas += [
+            ("Taxa livre de risco (USD)", _pct(p.rf_usd, 2), "título soberano do mercado maduro"),
+            ("Prêmio de mercado maduro", _pct(p.erp_maduro, 2), "ERP do mercado de referência"),
+            ("Risco-país", _pct(p.lambda_pais * p.risco_pais, 2),
+             "spread soberano × lambda de exposição"),
+        ]
+    linhas += [
+        ("Beta desalavancado", _num(cc.beta_desalavancado, 2), "do setor, sem estrutura de capital"),
+        ("D/E alvo", _num(p.divida_pl_alvo, 2), "estrutura-alvo, não a de hoje"),
+        ("Beta realavancado", _num(cc.beta_realavancado, 2), "Hamada, com a alíquota de IR"),
+    ]
+    if p.metodo != "local":
+        linhas.append(("Ke (USD nominal)", _pct(cc.ke_usd, 2), "rf + beta × ERP + risco-país"))
+        linhas.append(
+            ("Ke (BRL nominal)", _pct(cc.ke_brl, 2),
+             "convertido pelo diferencial de inflação (" + _pct(macro.inflacao_brl)
+             + " contra " + _pct(macro.inflacao_usd) + ")")
+        )
+    else:
+        linhas.append(("Ke (BRL nominal)", _pct(cc.ke_brl, 2), "rf + beta × ERP local"))
+    linhas += [
+        ("Kd bruto", _pct(cc.kd_bruto_brl, 2),
+         "informado" if p.custo_divida_brl is not None else "sintético: rf + spread de crédito"),
+        ("Kd após IR", _pct(cc.kd_liquido_brl, 2), "com alíquota de " + _pct(cc.aliquota_ir)),
+        ("Peso do capital próprio", _pct(cc.peso_equity), "1 / (1 + D/E)"),
+        ("Peso da dívida", _pct(cc.peso_divida), "D/E / (1 + D/E)"),
+        ("WACC (BRL nominal)", _pct(cc.wacc_brl, 2), "Ke × peso do equity + Kd após IR × peso da dívida"),
+    ]
+    quadro = pd.DataFrame(
+        {"Valor": [v for _, v, _ in linhas], "De onde sai": [o for _, _, o in linhas]},
+        index=[r for r, _, _ in linhas],
+    )
+    quadro.index.name = "Etapa"
+    return _tabela(quadro)
+
+
+def _perpetuidade(resultado, divisor: float, unidade: str) -> str:
+    """O valor terminal com a conta aberta, e nao so o numero.
+
+    E a maior parcela do valor na maioria dos modelos; no material impresso ela
+    e a primeira coisa que a mesa pergunta.
+    """
+    empresa = resultado.empresa
+    perp = empresa.perpetuidade
+    dcf = resultado.dcf
+    macro = empresa.macro
+    itens = []
+    if perp.metodo == "gordon":
+        origem = {
+            "livre": "informado à mão",
+            "ipca": "ancorado no IPCA",
+            "pib_nominal": "ancorado no PIB nominal",
+        }[perp.ancora]
+        itens.append(
+            f"<li><strong>Crescimento perpétuo</strong>: {_e(_pct(perp.crescimento_perpetuo, 2))}, "
+            f"{_e(origem)}. Teto da economia: {_e(_pct(macro.pib_nominal, 2))}.</li>"
+        )
+        if perp.roic_perpetuidade is None:
+            itens.append(
+                "<li><strong>Reinvestimento</strong>: não normalizado — o valor terminal "
+                "cresce o fluxo do último ano projetado, com o capex e o giro que ele tiver."
+                "</li>"
+            )
+            itens.append(
+                "<li><strong>Conta</strong>: FCFF do último ano × (1 + g) ÷ (WACC − g) = "
+                f"{_e(_num(dcf.valor_terminal / divisor))} {_e(unidade)}, no fim do ano "
+                f"{len(dcf.anos)}.</li>"
+            )
+        else:
+            reinveste = perp.crescimento_perpetuo / perp.roic_perpetuidade
+            itens.append(
+                f"<li><strong>Reinvestimento normalizado</strong>: ROIC de "
+                f"{_e(_pct(perp.roic_perpetuidade, 1))} exige reter {_e(_pct(reinveste))} do "
+                "NOPAT perpétuo, para sempre.</li>"
+            )
+            itens.append(
+                "<li><strong>Conta</strong>: NOPAT do último ano × (1 + g) × (1 − g ÷ ROIC) "
+                f"÷ (WACC − g) = {_e(_num(dcf.valor_terminal / divisor))} {_e(unidade)}, no "
+                f"fim do ano {len(dcf.anos)}.</li>"
+            )
+    else:
+        conta = "EBITDA" if perp.base_do_multiplo == "ebitda" else "lucro líquido"
+        itens.append(
+            f"<li><strong>Múltiplo de saída</strong>: {_e(_num(perp.multiplo_saida, 1))}× o "
+            f"{conta} do último ano projetado, o que dá "
+            f"{_e(_num(dcf.valor_terminal / divisor))} {_e(unidade)}.</li>"
+        )
+    itens.append(
+        f"<li><strong>Trazido a valor presente</strong>: "
+        f"{_e(_num(dcf.valor_presente_terminal / divisor))} {_e(unidade)}, "
+        f"{_e(_pct(dcf.peso_perpetuidade))} do Enterprise Value.</li>"
+    )
+    return "<ul>" + "".join(itens) + "</ul>"
+
+
+def _contas_do_modelo(resultado, divisor: float, unidade: str) -> list[str]:
+    """A projecao inteira e o desconto ano a ano -- o caminho do numero.
+
+    Sem isto o material mostra o resultado e esconde a conta, que e exatamente o
+    que o comite pede para ver quando discorda do valor.
+    """
+    proj = resultado.projecao
+    dcf = resultado.dcf
+    partes = ["<h2>As contas, ano a ano</h2>"]
+
+    tabela = proj.tabela() / divisor
+    tabela.index.name = f"Linha ({unidade})"
+    partes.append(_tabela(tabela))
+
+    indicadores = proj.indicadores()
+    indicadores.index.name = "Indicador da projeção"
+    partes.append(
+        '<p class="nota">As margens e razões que a projeção implica — é onde se vê '
+        "se o modelo assume uma empresa diferente da que existe.</p>"
+    )
+    partes.append(_tabela(indicadores, formatos={c: _pct for c in indicadores.columns}))
+
+    fluxos = dcf.tabela_fluxos().T
+    fluxos.index.name = "Ano"
+    fluxos["Fluxo"] = fluxos["Fluxo"] / divisor
+    fluxos["Fluxo descontado"] = fluxos["Fluxo descontado"] / divisor
+    partes.append("<h3>Do fluxo ao valor presente</h3>")
+    partes.append(
+        _tabela(
+            fluxos,
+            formatos={"Fator de desconto": lambda v: _num(v, 4)},
+        )
+    )
+    convencao = (
+        "meio de ano (t − 0,5)" if dcf.meio_de_ano else "fim de ano (t)"
+    )
+    partes.append(
+        f'<p class="nota">Convenção de desconto: {_e(convencao)}. Valores em '
+        f"{_e(unidade)}.</p>"
+    )
+    return partes
+
+
+def _faixa_do_valor(
+    pacote, simulacao, divisor: float, unidade: str, base_simulada=None
+) -> list[str]:
+    """A sensibilidade, o tornado, os cenarios e a simulacao -- a faixa, e nao o ponto.
+
+    O valuation nao e um numero; o material que entrega so o ponto convida a
+    discussao errada, sobre a segunda casa decimal em vez de sobre a premissa.
+    """
+    if pacote is None and simulacao is None:
+        return []
+    partes = ["<h2>Quanto o valor se mexe</h2>"]
+    if pacote is not None:
+        if pacote.wacc_x_g is not None:
+            partes.append("<h3>WACC contra crescimento perpétuo</h3>")
+            partes.append(_tabela_mapa_de_calor(pacote.wacc_x_g, divisor))
+            partes.append(
+                f'<p class="nota">Equity value em {_e(unidade)}. A célula do meio é o '
+                "caso base; células vazias são combinações impossíveis, com crescimento "
+                "perpétuo acima da taxa de desconto.</p>"
+            )
+        if pacote.margem_x_crescimento is not None:
+            partes.append("<h3>Margem EBITDA contra crescimento da receita</h3>")
+            partes.append(_tabela_mapa_de_calor(pacote.margem_x_crescimento, divisor))
+        if pacote.tornado is not None and not pacote.tornado.empty:
+            colunas = [c for c in pacote.tornado.columns if "p.p." in str(c)]
+            if len(colunas) == 2:
+                itens = [
+                    (indice, linha[colunas[0]], linha[colunas[1]])
+                    for indice, linha in pacote.tornado.iterrows()
+                ]
+                partes.append("<figure>")
+                partes.append(
+                    tornado(
+                        itens,
+                        pacote.base,
+                        unidade=unidade,
+                        divisor=divisor,
+                        titulo="O que mais move o valor, a "
+                        f"{_pct(pacote.deslocamento_do_tornado)} de deslocamento",
+                    )
+                )
+                partes.append(
+                    "<figcaption>Cada premissa anda o mesmo tanto para cima e para "
+                    "baixo — é isso que permite compará-las entre si.</figcaption></figure>"
+                )
+        if pacote.cenarios is not None and "equity_value" in pacote.cenarios.index:
+            linha = pacote.cenarios.loc["equity_value"]
+            quadro = pd.DataFrame(
+                {
+                    f"Equity value ({unidade})": [float(v) / divisor for v in linha],
+                    "Contra o caso base": [
+                        float(v) / pacote.base - 1 if pacote.base else float("nan")
+                        for v in linha
+                    ],
+                },
+                index=list(pacote.cenarios.columns),
+            )
+            quadro.index.name = "Cenário"
+            partes.append("<h3>Cenários coerentes</h3>")
+            partes.append(_tabela(quadro, formatos={"Contra o caso base": _pct}))
+            partes.append(
+                '<p class="nota">As premissas não se movem sozinhas: se a demanda cede, '
+                "a margem cede junto com o crescimento. O cenário base reproduz o número "
+                "principal.</p>"
+            )
+    if simulacao is not None:
+        partes.append("<h3>Monte Carlo</h3>")
+        # **A escala e a do que foi simulado.** Valor por acao nao esta na escala
+        # do documento: dividi-lo por milhoes deixaria o eixo em zeros, e a marca
+        # do caso base cairia fora do grafico.
+        por_acao = simulacao.metrica == "valor_por_acao"
+        divisor_simulado = 1.0 if por_acao else divisor
+        unidade_simulada = "R$ por ação" if por_acao else unidade
+        # A referencia e o caso base **da mesma metrica**: marcar o equity dentro
+        # de uma distribuicao de valor por acao seria uma linha no lugar errado.
+        referencia = base_simulada
+        if referencia is None and pacote is not None and pacote.metrica == simulacao.metrica:
+            referencia = pacote.base
+        partes.append(
+            "<figure>"
+            + histograma(
+                simulacao.valores,
+                titulo=f"Distribuição simulada — {simulacao.metrica}",
+                unidade=unidade_simulada,
+                divisor=divisor_simulado,
+                referencia=referencia,
+            )
+            + "<figcaption>"
+            + _e(
+                f"{simulacao.simulacoes:,} rodadas, {simulacao.descartadas:,} descartadas "
+                "por inviabilidade econômica."
+            ).replace(",", ".")
+            + "</figcaption></figure>"
+        )
+        percentis = simulacao.percentis()
+        quadro = pd.DataFrame({f"Valor ({unidade_simulada})": percentis / divisor_simulado})
+        quadro.index.name = "Percentil"
+        partes.append(_tabela(quadro))
+    return partes
 
 
 # ---------------------------------------------------------------------------
@@ -353,8 +945,8 @@ def _avisos(diagnostico) -> str:
         severidade = getattr(a, "severidade", "")
         classe = "aviso" if severidade == "erro" else "aviso atencao"
         blocos.append(
-            f'<div class="{classe}"><div class="titulo">{_e(a.titulo)}</div>'
-            f'<div class="detalhe">{_e(a.detalhe)}</div></div>'
+            f'<div class="{classe}"><div class="titulo">{_negrito(a.titulo)}</div>'
+            f'<div class="detalhe">{_negrito(a.detalhe)}</div></div>'
         )
     return "".join(blocos)
 
@@ -449,7 +1041,7 @@ def montar_html_da_mesa(carteira, data: str = "") -> str:
     divisor, sufixo = escala_do_documento(resumo.get("Equity value", []))
     unidades = {m.unidade for m in legiveis if m.unidade}
     base = next(iter(unidades)) if len(unidades) == 1 else ""
-    rotulo_valor = " ".join(x for x in (base, sufixo) if x) or "valor"
+    rotulo_valor = unidade_na_escala(base, sufixo) or "valor"
 
     partes = [
         "<h1>Modelos lado a lado</h1>",
@@ -542,7 +1134,7 @@ def _pagina_do_banco(empresa, lucro_residual, analise, qualidade, diagnostico, d
     divisor, sufixo = escala_do_documento(
         [v.equity_value, v.patrimonio_inicial, v.valor_presente_terminal]
     )
-    unidade_escala = " ".join(x for x in (unidade, sufixo) if x)
+    unidade_escala = unidade_na_escala(unidade, sufixo)
     pvp = v.equity_value / v.patrimonio_inicial if v.patrimonio_inicial else float("nan")
 
     cartoes = [
@@ -633,6 +1225,82 @@ def _pagina_do_banco(empresa, lucro_residual, analise, qualidade, diagnostico, d
     )
 
 
+def _historico_com_projecao(analise, resultado) -> str:
+    """Receita e EBITDA entregues, e os projetados, no mesmo grafico.
+
+    O corte entre os dois e marcado: num grafico continuo, entregue e projetado
+    se leem como uma serie so.
+    """
+    d = analise.demonstracoes
+    try:
+        receita = d.serie("receita_liquida").dropna()
+        ebitda = d.ebitda().dropna()
+    except Exception:  # noqa: BLE001 - origem sem as contas nao ganha o grafico
+        return ""
+    if receita.empty:
+        return ""
+
+    proj = resultado.projecao
+    historico = pd.DataFrame({"Receita": receita, "EBITDA": ebitda})
+    historico.index = [str(i) for i in historico.index]
+    projetado = pd.DataFrame(
+        {"Receita": proj.receita, "EBITDA": proj.ebitda},
+        index=[str(a) for a in proj.anos],
+    )
+    quadro = pd.concat([historico, projetado])
+    divisor, sufixo = escala_do_documento(quadro.to_numpy(dtype=float).ravel().tolist())
+    unidade = unidade_na_escala(resultado.empresa.unidade or "", sufixo)
+    grafico = barras_agrupadas(
+        quadro,
+        titulo="Receita e EBITDA: entregue e projetado",
+        unidade=unidade,
+        divisor=divisor,
+        projetado_a_partir_de=projetado.index[0],
+    )
+    if not grafico:
+        return ""
+    return (
+        "<figure>"
+        + grafico
+        + "<figcaption>À esquerda do tracejado, o que a companhia publicou; à "
+        "direita, o que o modelo assume.</figcaption></figure>"
+    )
+
+
+def _ifrs16_no_material(visao, divisor: float = 1.0, unidade: str = "") -> str:
+    """As duas leituras do aluguel, lado a lado, sem misturar as bases.
+
+    **Cada linha tem o seu formato**: margem e percentual, divida e moeda na
+    escala do documento. Numa tabela so, o formato por coluna transformava 29,4%
+    em "0,3" e deixava a divida em milhoes num documento em bilhoes.
+    """
+    try:
+        aluguel = float(visao.aluguel.dropna().iloc[-1])
+        reportada = float(visao.margem_ebitda_reportada.dropna().iloc[-1])
+        ex = float(visao.margem_ebitda.dropna().iloc[-1])
+        divida = float(visao.divida_bruta_reportada.dropna().iloc[-1])
+        divida_ex = float(visao.divida_bruta.dropna().iloc[-1])
+    except (AttributeError, IndexError, ValueError):
+        return ""
+    quadro = pd.DataFrame(
+        {
+            "Com IFRS 16 (reportado)": [_pct(reportada), _num(divida / divisor)],
+            "Sem IFRS 16": [_pct(ex), _num(divida_ex / divisor)],
+        },
+        index=["Margem EBITDA", f"Dívida bruta ({unidade})" if unidade else "Dívida bruta"],
+    )
+    quadro.index.name = "Leitura"
+    return (
+        "<h2>O aluguel, dentro e fora do EBITDA</h2>"
+        + _tabela(quadro)
+        + '<p class="nota">O desembolso de aluguel do último exercício foi '
+        + _e(_num(aluguel / divisor))
+        + (f" {_e(unidade)}" if unidade else "")
+        + ". As duas leituras não se misturam: ou dívida com arrendamento sobre EBITDA "
+        "com aluguel dentro, ou dívida sem arrendamento sobre EBITDA sem ele.</p>"
+    )
+
+
 def montar_html(
     resultado=None,
     analise=None,
@@ -643,6 +1311,10 @@ def montar_html(
     lucro_residual=None,
     empresa=None,
     data: str = "",
+    sensibilidades=None,
+    simulacao=None,
+    ifrs16=None,
+    multiplos=None,
 ) -> str:
     """O material do comite, numa pagina HTML autossuficiente.
 
@@ -683,7 +1355,7 @@ def montar_html(
             dcf.valor_presente_terminal,
         ]
     )
-    unidade_escala = " ".join(x for x in (unidade, sufixo) if x)
+    unidade_escala = unidade_na_escala(unidade, sufixo)
 
     cartoes = [
         Cartao(f"Equity value ({unidade_escala})", _num(dcf.equity_value / divisor)),
@@ -744,20 +1416,68 @@ def montar_html(
             )
 
     partes.append("<h2>As premissas que produzem o número</h2>")
-    op = empresa.operacionais
-    horizonte = len(op.crescimento_receita)
-    anos = [f"Ano {i + 1}" for i in range(horizonte)]
-    premissas = pd.DataFrame(
-        {
-            "Crescimento da receita": list(op.crescimento_receita),
-            "Margem EBITDA": list(op.margem_ebitda),
-            "Capex / Receita": list(op.capex_pct_receita),
-            "Depreciação / Receita": list(op.depreciacao_pct_receita),
-        },
-        index=anos,
-    ).T
-    premissas.index.name = "Direcionador"
-    partes.append(_tabela(premissas, formatos={c: _pct for c in premissas.columns}))
+    partes.append(_premissas_operacionais(empresa, analise))
+    partes.append(
+        '<p class="nota">A coluna da direita é a mediana que a companhia entregou no '
+        "histórico importado. Projetar acima dela é uma afirmação sobre mudança, e ela "
+        "precisa de motivo.</p>"
+    )
+
+    partes.append("<h3>Custo de capital</h3>")
+    partes.append(_custo_de_capital(resultado))
+
+    partes.append("<h3>Perpetuidade</h3>")
+    partes.append(_perpetuidade(resultado, divisor, unidade_escala))
+
+    partes.append("<h3>Do Enterprise Value ao acionista</h3>")
+    ponte = resultado.tabela_ponte() / divisor
+    ponte.index.name = f"Item ({unidade_escala})"
+    partes.append(_tabela(ponte))
+
+    macro = empresa.macro
+    partes.append(
+        '<p class="nota">Macro de longo prazo: IPCA de '
+        + _e(_pct(macro.inflacao_brl))
+        + ", PIB real de "
+        + _e(_pct(macro.pib_real))
+        + " (nominal de "
+        + _e(_pct(macro.pib_nominal))
+        + "), alíquota de IR/CSLL de "
+        + _e(_pct(macro.aliquota_ir))
+        + ".</p>"
+    )
+
+    partes += _contas_do_modelo(resultado, divisor, unidade_escala)
+
+    if analise is not None and getattr(analise, "demonstracoes", None) is not None:
+        historico_vs_projecao = _historico_com_projecao(analise, resultado)
+        if historico_vs_projecao:
+            partes.append(historico_vs_projecao)
+
+    # O caso base da metrica simulada sai do proprio resultado -- a pagina le, nao
+    # recalcula -- e fica `None` para metrica que ela nao conhece.
+    base_simulada = None
+    if simulacao is not None:
+        base_simulada = {
+            "equity_value": dcf.equity_value,
+            "enterprise_value": dcf.enterprise_value,
+            "valor_por_acao": dcf.valor_por_acao,
+        }.get(simulacao.metrica)
+    partes += _faixa_do_valor(
+        sensibilidades, simulacao, divisor, unidade_escala, base_simulada
+    )
+
+    if ifrs16 is not None:
+        partes.append(_ifrs16_no_material(ifrs16, divisor, unidade_escala))
+
+    if multiplos is not None and not getattr(multiplos, "empty", True):
+        partes.append("<h2>O que os comparáveis dizem</h2>")
+        partes.append(_tabela(multiplos))
+        partes.append(
+            '<p class="nota">Múltiplos de EV passam pela ponte da dívida; múltiplos de '
+            "equity já produzem o valor do acionista. Trocar os dois é o erro mais "
+            "frequente da avaliação relativa.</p>"
+        )
 
     if investimento is not None:
         partes.append("<h2>Onde foi o dinheiro do investimento</h2>")

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1400 testes
+pytest                        # 1423 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.400 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.423 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -4847,3 +4847,55 @@ Um teste estático (`test_controle_que_muda_o_valor_explica_o_que_faz`) lê as
 telas pela árvore do Python e exige ao menos 90 caracteres de ajuda nesses oito
 controles. Conferido que ele pega: com o `retorno.py` antigo, os dois controles
 de Retorno esperado falham.
+
+### As duas exportações: o que sai do app deixou de ser um resumo
+
+O material do comitê mostrava o resultado e escondia a conta: cartões, um gráfico
+de composição, um de histórico e uma tabela com quatro direcionadores — 12 KB, dois
+gráficos, duas tabelas. Quem discorda do valor discorda de uma premissa, e as
+premissas não estavam lá. A planilha tinha o mesmo problema do outro lado: fórmulas
+vivas só nas quatro abas do modelo, sensibilidade **colada** e apenas se o usuário
+tivesse passado pela tela, nenhum histórico, nenhum diagnóstico, nenhum gráfico.
+
+**O material agora traz a conta inteira**: as premissas operacionais ano a ano com
+a mediana entregue ao lado, o custo de capital passo a passo na construção que foi
+usada, a perpetuidade com a aritmética explícita, a ponte item a item, a projeção
+até o FCFF, o desconto ano a ano, o histórico e a projeção no mesmo gráfico com o
+corte marcado, e a faixa do valor — mapa de calor WACC × g, tornado, cenários e
+Monte Carlo. Medido na Vivara: de 12 para **31 KB**, de 2 para **5 gráficos**, de 2
+para **12 tabelas**, de 5 para **8 seções**.
+
+**As sensibilidades passaram a ser calculadas uma vez só**, em
+`sensibilidade.pacote_padrao`, e lidas pelos dois consumidores. O material formata
+e não calcula — duas implementações do mesmo número divergem no dia em que uma
+delas muda. O pacote usa os mesmos eixos e passos da tela, e a **célula do meio
+reproduz o caso base**: para isso a grade deixou de arredondar o centro, que era o
+que fazia a tabela discordar do número principal na sexta casa.
+
+**Na planilha, a sensibilidade virou fórmula viva.** O módulo dizia que uma tabela
+viva exigiria replicar o modelo inteiro por célula; não exige — as linhas de FCFF e
+de NOPAT já estão na aba de projeção, e cada célula só refaz o desconto e o valor
+terminal com o par (WACC, g) do próprio cabeçalho, somando a mesma ponte da aba
+DCF. O teste compara a grade da planilha, avaliada fora do Excel, com
+`tabela_sensibilidade` do motor: dois caminhos independentes para o mesmo número.
+Com múltiplo de saída a grade não é montada — o crescimento perpétuo não entra na
+conta, e a tabela repetiria a mesma coluna cinco vezes.
+
+A planilha ganhou ainda **Resumo** (a capa, com os gráficos de composição do valor e
+da projeção, tudo por ligação às outras abas), **Histórico** (o que a companhia
+entregou, que faltava para comparar com a projeção) e **Diagnóstico** (os achados,
+no arquivo e não num anexo). São 10 abas contra 5.
+
+**E a página renderizada mostrou três defeitos que nenhuma asserção de texto
+pegaria** — é por isso que ela é aberta no navegador antes de fechar o trabalho:
+
+| Defeito | O que aparecia | Correção |
+|---|---|---|
+| Escala colada na unidade | "EQUITY VALUE (R$ MILHÕES MIL)" com "3,5" para R$ 3,5 bilhões | `unidade_na_escala` soma os expoentes: milhões com mil vira bilhões |
+| Formato por coluna na tabela do IFRS 16 | margem de 29,4% impressa como "0,3"; dívida em milhões num documento em bilhões | formato por linha, e a dívida na escala do documento |
+| Markdown cru nos achados | "**para sempre**", "**nunca erode**" com os asteriscos à vista | escapa e converte para negrito de verdade |
+
+A tela Exportar calcula o pacote sob as **mesmas convenções** do caso base e repassa
+histórico, diagnóstico, qualidade, IFRS 16 e múltiplos. O Monte Carlo continua
+entrando só se o analista o rodou: as distribuições são escolha dele, e inventar
+uma no material seria apresentar como medida uma coisa que ninguém pediu.

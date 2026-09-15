@@ -208,3 +208,84 @@ def test_metrica_desconhecida(empresa_exemplo):
             ("perpetuidade.crescimento_perpetuo", [0.04]),
             metrica="lucro",
         )
+
+
+# ---------------------------------------------------------------------------
+# O pacote padrao: um calculo so, dois consumidores
+# ---------------------------------------------------------------------------
+
+
+def test_o_pacote_reproduz_o_caso_base_no_centro_da_grade(empresa_exemplo):
+    """O centro da tabela **e** o numero principal.
+
+    Se a celula do meio nao reproduz o valor da tela, a tabela inteira perde o
+    sentido -- e a divergencia so apareceria na conferencia de quem recebe.
+    """
+    from valuation import avaliar, pacote_padrao
+
+    resultado = avaliar(empresa_exemplo)
+    pacote = pacote_padrao(empresa_exemplo, resultado)
+
+    assert pacote.base == pytest.approx(resultado.equity_value)
+    centro = pacote.wacc_x_g.iloc[len(pacote.wacc_x_g) // 2, len(pacote.wacc_x_g.columns) // 2]
+    assert centro == pytest.approx(resultado.equity_value, rel=1e-9)
+    base_cenario = pacote.cenarios.loc["equity_value", "Base"]
+    assert base_cenario == pytest.approx(resultado.equity_value, rel=1e-9)
+
+
+def test_o_pacote_carrega_as_convencoes_do_caso_base(empresa_exemplo):
+    """Meio de ano muda o valor: sem a convencao, o "base" nao seria o base."""
+    from valuation import avaliar, pacote_padrao
+
+    resultado = avaliar(empresa_exemplo, meio_de_ano=True)
+    pacote = pacote_padrao(empresa_exemplo, resultado, meio_de_ano=True)
+
+    assert pacote.base == pytest.approx(resultado.equity_value)
+    assert pacote.cenarios.loc["equity_value", "Base"] == pytest.approx(
+        resultado.equity_value, rel=1e-9
+    )
+
+
+def test_wacc_maior_derruba_o_valor_na_grade(empresa_exemplo):
+    from valuation import avaliar, pacote_padrao
+
+    pacote = pacote_padrao(empresa_exemplo, avaliar(empresa_exemplo))
+    coluna = pacote.wacc_x_g.iloc[:, 0]
+    assert coluna.is_monotonic_decreasing, coluna.to_dict()
+
+
+def test_o_tornado_ordena_pela_amplitude_e_diz_o_deslocamento(empresa_exemplo):
+    """O tornado compara premissas entre si, e so vale com o mesmo deslocamento."""
+    from valuation import avaliar, pacote_padrao
+
+    pacote = pacote_padrao(empresa_exemplo, avaliar(empresa_exemplo))
+    tornado = pacote.tornado
+
+    assert list(tornado["Amplitude"]) == sorted(tornado["Amplitude"], reverse=True)
+    assert "WACC" in tornado.index
+    assert "-1 p.p." in tornado.columns and "+1 p.p." in tornado.columns
+    # WACC acima derruba o valor; a coluna "+1 p.p." fica abaixo da "-1 p.p.".
+    assert tornado.loc["WACC", "+1 p.p."] < tornado.loc["WACC", "-1 p.p."]
+
+
+def test_perpetuidade_por_multiplo_nao_ganha_tabela_de_g(empresa_exemplo):
+    """Com multiplo de saida o crescimento perpetuo nao entra na conta.
+
+    Uma tabela com o eixo inerte mostraria a mesma coluna repetida com cara de
+    analise -- pior que ausencia, porque parece medida.
+    """
+    from dataclasses import replace
+
+    from valuation import avaliar, pacote_padrao
+
+    empresa = replace(
+        empresa_exemplo,
+        perpetuidade=replace(
+            empresa_exemplo.perpetuidade, metodo="multiplo", multiplo_saida=8.0
+        ),
+    )
+    pacote = pacote_padrao(empresa, avaliar(empresa))
+
+    assert pacote.wacc_x_g is None
+    assert pacote.margem_x_crescimento is not None
+

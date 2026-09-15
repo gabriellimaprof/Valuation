@@ -67,10 +67,12 @@ from .retorno import (
     tir,
 )
 from .sensibilidade import (
+    PacoteDeSensibilidade,
     Distribuicao,
     ResultadoSimulacao,
     cenarios,
     monte_carlo,
+    pacote_padrao,
     tabela_sensibilidade,
 )
 
@@ -141,6 +143,8 @@ __all__ = [
     "substituir_varios",
     "sugerir_premissas",
     "tabela_comparaveis",
+    "PacoteDeSensibilidade",
+    "pacote_padrao",
     "tabela_sensibilidade",
     "tir",
 ]

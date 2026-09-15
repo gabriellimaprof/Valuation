@@ -315,3 +315,247 @@ def test_o_material_recusa_a_tabela_da_base_numa_serie_trimestral(empresa_exempl
     assert "Onde a companhia cai na base brasileira" in pagina
     assert "Não incluído" in pagina
     assert "trimestral" in pagina
+
+
+# ---------------------------------------------------------------------------
+# As premissas, as contas e a faixa do valor
+# ---------------------------------------------------------------------------
+
+
+def test_o_material_abre_as_premissas_e_as_contas(pagina):
+    """O material mostrava o resultado e escondia a conta.
+
+    Quem discorda do valor discorda de uma premissa, e para isso precisa vê-las:
+    o custo de capital passo a passo, a perpetuidade com a conta aberta, a ponte
+    item a item e a projeção até o FCFF.
+    """
+    for secao in (
+        "Custo de capital",
+        "Perpetuidade",
+        "Do Enterprise Value ao acionista",
+        "As contas, ano a ano",
+        "Do fluxo ao valor presente",
+    ):
+        assert secao in pagina, secao
+
+    # A montagem do WACC, e não só o número final.
+    for etapa in ("Beta realavancado", "Beta desalavancado", "Kd após IR", "Peso da dívida"):
+        assert etapa in pagina, etapa
+    # A projeção inteira, com as linhas que levam ao fluxo.
+    for linha in ("NOPAT", "(-) Capex", "FCFF (fluxo para a firma)", "Fator de desconto"):
+        assert linha in pagina, linha
+
+
+def test_os_numeros_das_contas_sao_os_do_motor(empresa_exemplo):
+    """A página formata; ela não recalcula."""
+    from valuation import avaliar
+    from valuation.apresentacao import _num
+
+    resultado = avaliar(empresa_exemplo)
+    pagina = montar_html(resultado)
+    dcf = resultado.dcf
+
+    assert _num(dcf.valor_terminal) in pagina
+    assert _num(dcf.fatores[-1], 4) in pagina
+    assert _num(resultado.custo_capital.beta_realavancado, 2) in pagina
+
+
+def test_a_perpetuidade_mostra_a_conta_e_o_reinvestimento(empresa_exemplo):
+    """Maior parcela do valor: no papel, a primeira pergunta da mesa."""
+    from valuation import avaliar
+
+    pagina = montar_html(avaliar(empresa_exemplo))
+    assert "Reinvestimento normalizado" in pagina
+    assert "NOPAT do último ano" in pagina
+    assert "Trazido a valor presente" in pagina
+
+
+def test_a_faixa_do_valor_entra_com_o_caso_base_no_centro(empresa_exemplo):
+    """A célula do meio do mapa de calor é o número principal."""
+    from valuation import avaliar, pacote_padrao
+    from valuation.apresentacao import _num
+
+    resultado = avaliar(empresa_exemplo)
+    pacote = pacote_padrao(empresa_exemplo, resultado)
+    pagina = montar_html(resultado, sensibilidades=pacote)
+
+    assert "Quanto o valor se mexe" in pagina
+    assert "WACC contra crescimento perpétuo" in pagina
+    assert "Cenários coerentes" in pagina
+    assert "O que mais move o valor" in pagina
+    assert _num(resultado.equity_value) in pagina
+
+
+def test_sem_pacote_a_pagina_nao_inventa_a_faixa(pagina):
+    """Faixa sem cálculo seria pior que ausência: pareceria medida."""
+    assert "Quanto o valor se mexe" not in pagina
+
+
+def test_o_monte_carlo_entra_com_o_caso_base_marcado(empresa_exemplo):
+    from valuation import Distribuicao, avaliar, monte_carlo
+
+    resultado = avaliar(empresa_exemplo)
+    simulacao = monte_carlo(
+        empresa_exemplo,
+        [
+            Distribuicao(
+                caminho="operacionais.margem_ebitda",
+                tipo="triangular",
+                parametros={"minimo": 0.16, "moda": 0.20, "maximo": 0.24},
+            )
+        ],
+        simulacoes=200,
+    )
+    pagina = montar_html(resultado, simulacao=simulacao)
+
+    assert "Monte Carlo" in pagina
+    assert "Percentil" in pagina
+    assert "caso base" in pagina
+
+
+def test_o_material_do_banco_nao_ganha_as_secoes_do_dcf(empresa_exemplo):
+    """O caminho do banco continua sem DCF — nem premissas, nem contas, nem faixa."""
+    from dataclasses import replace
+
+    pagina = montar_html(
+        None,
+        lucro_residual=_lucro_residual_de_teste(),
+        empresa=replace(empresa_exemplo, nome="Banco Teste"),
+    )
+    for secao in ("As contas, ano a ano", "Quanto o valor se mexe", "Custo de capital"):
+        assert secao not in pagina, secao
+
+
+def test_o_grafico_de_receita_marca_onde_comeca_a_projecao(empresa_exemplo):
+    """Entregue e projetado num gráfico contínuo se leem como uma série só."""
+    import pandas as pd
+
+    from valuation import avaliar
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    anos = [2022, 2023, 2024, 2025]
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0 + 100 * i,
+                "custo_produtos_vendidos": 600.0 + 60 * i,
+                "ebit": 200.0 + 20 * i,
+                "depreciacao_amortizacao": 50.0,
+                "lucro_liquido": 120.0,
+                "lucro_antes_impostos": 170.0,
+                "impostos": 50.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+                "capex": 60.0,
+            }
+            for i, ano in enumerate(anos)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    pagina = montar_html(avaliar(empresa_exemplo), analise=analise)
+
+    assert "entregue e projetado" in pagina
+    assert "projetado" in pagina
+    assert "stroke-dasharray" in pagina
+
+
+def test_o_mapa_de_calor_pinta_o_fundo_e_nao_busca_imagem(empresa_exemplo):
+    """Cor de fundo por estilo embutido: nada de imagem, nada de rede."""
+    from valuation import avaliar, pacote_padrao
+
+    resultado = avaliar(empresa_exemplo)
+    pagina = montar_html(
+        resultado, sensibilidades=pacote_padrao(empresa_exemplo, resultado)
+    )
+    assert 'style="background:#' in pagina
+    assert "url(" not in pagina
+    assert "<script" not in pagina.lower()
+
+
+# ---------------------------------------------------------------------------
+# O que so apareceu com a pagina renderizada
+# ---------------------------------------------------------------------------
+
+
+def test_a_escala_compoe_com_a_unidade_em_vez_de_colar_nela():
+    """"R$ milhões mil" não é rótulo: é o que sobra de colar duas escalas.
+
+    Visto na página da Vivara: equity de R$ 3,5 bilhões escrito como "3,5" sob
+    "EQUITY VALUE (R$ MILHÕES MIL)". As escalas somam — milhões com mil dá
+    bilhões.
+    """
+    from valuation.apresentacao import unidade_na_escala
+
+    assert unidade_na_escala("R$ milhões", "mil") == "R$ bilhões"
+    assert unidade_na_escala("R$ milhões", "mi") == "R$ trilhões"
+    assert unidade_na_escala("R$ mil", "mil") == "R$ milhões"
+    assert unidade_na_escala("R$", "bi") == "R$ bilhões"
+    # Sem escala no documento, a unidade fica como está.
+    assert unidade_na_escala("R$ milhões", "") == "R$ milhões"
+    # Unidade livre não ganha composição inventada.
+    assert unidade_na_escala("sacas", "mil") == "sacas mil"
+
+
+def test_a_pagina_nao_escreve_milhoes_mil(empresa_exemplo):
+    from dataclasses import replace
+
+    from valuation import avaliar
+
+    grande = replace(
+        empresa_exemplo,
+        unidade="R$ milhões",
+        operacionais=replace(empresa_exemplo.operacionais, receita_base=8_000_000.0),
+    )
+    pagina = montar_html(avaliar(grande))
+    assert "milhões mil" not in pagina
+    assert "R$ bilhões" in pagina or "R$ trilhões" in pagina
+
+
+def test_os_avisos_saem_com_negrito_e_nao_com_asterisco(empresa_exemplo):
+    """Os achados são markdown — eles alimentam a tela, o relatório e a página."""
+    from valuation.apresentacao import _negrito
+
+    assert _negrito("cresce **para sempre**") == "cresce <strong>para sempre</strong>"
+    # E o que vem de fora continua escapado.
+    assert _negrito("<script>x</script>") == "&lt;script&gt;x&lt;/script&gt;"
+
+    from valuation.diagnostico import diagnosticar
+    from valuation.modelo import substituir_varios
+    from valuation import avaliar
+
+    empresa = substituir_varios(
+        empresa_exemplo, {"perpetuidade.roic_perpetuidade": 0.40}
+    )
+    resultado = avaliar(empresa)
+    pagina = montar_html(resultado, diagnostico=diagnosticar(resultado))
+    # So os blocos de achado: o CSS da pagina tem um comentario com asteriscos,
+    # e proibi-los na pagina inteira travaria a documentacao do proprio estilo.
+    blocos = re.findall(r'<div class="aviso.*?</div></div>', pagina, re.S)
+    assert blocos, "o diagnostico nao produziu achado nenhum"
+    assert not any("**" in b for b in blocos), blocos
+    assert any("<strong>" in b for b in blocos)
+
+
+def test_a_tabela_do_ifrs16_usa_o_formato_de_cada_linha():
+    """Margem é percentual; dívida é moeda na escala do documento.
+
+    Numa tabela com formato por coluna, 29,4% de margem saía como "0,3" e a
+    dívida ficava em milhões num documento em bilhões.
+    """
+    import pandas as pd
+
+    from valuation.apresentacao import _ifrs16_no_material
+
+    class _Visao:
+        aluguel = pd.Series([134.6], index=[2025])
+        margem_ebitda_reportada = pd.Series([0.294], index=[2025])
+        margem_ebitda = pd.Series([0.249], index=[2025])
+        divida_bruta_reportada = pd.Series([1228.5], index=[2025])
+        divida_bruta = pd.Series([531.3], index=[2025])
+
+    html_ = _ifrs16_no_material(_Visao(), divisor=1000.0, unidade="R$ bilhões")
+    assert "29,4%" in html_ and "24,9%" in html_
+    assert "1,2" in html_ and "0,5" in html_
+    assert "R$ bilhões" in html_
+

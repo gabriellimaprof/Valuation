@@ -210,6 +210,23 @@ def _relatorio(resultado) -> None:
     _material_do_comite(resultado, analise, qualidade, diagnostico, investimento, banco)
 
 
+def _pacote_de_sensibilidade(resultado):
+    """As tabelas da faixa do valor, sob as **mesmas convencoes** do caso base.
+
+    Calculadas aqui e nao no material: a pagina formata e nao calcula. E
+    calculadas sempre, e nao so quando o usuario passou pela tela de
+    Sensibilidade -- o material que sai sem elas entrega um ponto onde o
+    valuation e uma faixa.
+    """
+    from valuation import pacote_padrao
+
+    try:
+        return pacote_padrao(estado.empresa(), resultado, **estado.convencoes())
+    except Exception as erro:  # noqa: BLE001 - o material sai sem a faixa, dizendo por que
+        st.caption(f"A faixa do valor não entrou no material: {erro}")
+        return None
+
+
 def _material_do_comite(
     resultado, analise, qualidade, diagnostico, investimento, banco=None
 ) -> None:
@@ -234,16 +251,30 @@ def _material_do_comite(
     # Enterprise Value, uma ponte e um WACC que a tela de Valor recusou seria
     # contradizer no papel o numero que o usuario viu -- e o material e o que
     # sobra depois que a tela fecha.
-    pagina = montar_html(
-        None if banco else resultado,
-        analise=analise,
-        qualidade=qualidade,
-        diagnostico=None if banco else diagnostico,
-        investimento=None if banco else investimento,
-        lucro_residual=banco[0] if banco else None,
-        empresa=estado.empresa() if banco else None,
-        data=date.today().strftime("%d/%m/%Y"),
-    )
+    from valuation.casos_especiais import ver_ex_ifrs16
+
+    pacote = None if banco else _pacote_de_sensibilidade(resultado)
+    with st.spinner("Montando o material..."):
+        pagina = montar_html(
+            None if banco else resultado,
+            analise=analise,
+            qualidade=qualidade,
+            diagnostico=None if banco else diagnostico,
+            investimento=None if banco else investimento,
+            lucro_residual=banco[0] if banco else None,
+            empresa=estado.empresa() if banco else None,
+            data=date.today().strftime("%d/%m/%Y"),
+            sensibilidades=pacote,
+            # A simulacao **nao e rodada aqui**: ela e cara e as distribuicoes sao
+            # escolha do analista. Entra a que ele rodou na tela.
+            simulacao=None if banco else st.session_state.get("simulacao"),
+            ifrs16=(
+                None
+                if banco or analise is None
+                else ver_ex_ifrs16(analise)
+            ),
+            multiplos=None if banco else _multiplos_do_material(),
+        )
     st.download_button(
         "Baixar o material (.html)",
         data=pagina.encode("utf-8"),
@@ -254,6 +285,31 @@ def _material_do_comite(
         "Abra no navegador e imprima em PDF (Ctrl+P). O arquivo não busca nada "
         "de fora — os gráficos são desenhados nele mesmo."
     )
+    st.caption(
+        "O material traz as premissas ano a ano com a mediana entregue ao lado, a "
+        "montagem do custo de capital, a conta da perpetuidade, a ponte, a projeção "
+        "inteira até o FCFF, o desconto ano a ano e a faixa do valor — tabela "
+        "WACC × g, tornado e cenários. O Monte Carlo entra se você o rodou em "
+        "**Sensibilidade**."
+    )
+
+
+def _multiplos_do_material():
+    """O valor implicito pelos comparaveis, quando ha peer group montado."""
+    comparaveis = estado.comparaveis()
+    if not comparaveis:
+        return None
+    try:
+        from valuation.multiplos import avaliar_por_multiplos
+
+        from .multiplos import _alvo_atual
+
+        alvo = _alvo_atual()
+        if alvo is None:
+            return None
+        return avaliar_por_multiplos(alvo, comparaveis)
+    except Exception:  # noqa: BLE001 - sem peer group utilizavel o material segue sem ele
+        return None
 
 
 def _gerar(resultado, sensibilidade: bool, cenarios: bool, simulacao: bool) -> None:

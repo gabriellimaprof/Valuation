@@ -140,6 +140,181 @@ def cenarios(
     return pd.DataFrame(linhas)
 
 
+# As premissas que o tornado move, com o rotulo que o leitor ve. Sao as mesmas
+# da tela de sensibilidade, e ficam aqui porque agora dois consumidores fora do
+# app -- o material do comite e a planilha -- precisam da mesma lista.
+EIXOS_DO_TORNADO: tuple[tuple[str, str], ...] = (
+    ("WACC", CAMINHO_WACC),
+    ("Crescimento perpétuo", "perpetuidade.crescimento_perpetuo"),
+    ("Margem EBITDA", "operacionais.margem_ebitda"),
+    ("Crescimento da receita", "operacionais.crescimento_receita"),
+    ("Capex / receita", "operacionais.capex_pct_receita"),
+)
+
+# Passo da grade e amplitude do tornado, em pontos percentuais. O passo e o
+# padrao da tela (0,5 p.p., cinco pontos); o tornado usa 1 p.p. porque ele
+# compara premissas entre si, e a comparacao so vale com o mesmo deslocamento.
+PASSO_DA_GRADE = 0.005
+PONTOS_DA_GRADE = 5
+DESLOCAMENTO_DO_TORNADO = 0.01
+# Os cenarios coerentes da tela: margem 3 p.p. e crescimento perpetuo 1 p.p.
+DELTA_MARGEM_DO_CENARIO = 0.03
+DELTA_G_DO_CENARIO = 0.01
+
+
+@dataclass(frozen=True)
+class PacoteDeSensibilidade:
+    """As tabelas que descrevem a faixa do valor, calculadas de uma vez.
+
+    ``wacc_x_g`` sai vazio quando a perpetuidade e por multiplo de saida: ali o
+    crescimento perpetuo nao entra na conta, e uma tabela com um eixo inerte
+    mostraria a mesma coluna repetida com cara de analise.
+    """
+
+    metrica: str
+    base: float
+    wacc_x_g: pd.DataFrame | None
+    margem_x_crescimento: pd.DataFrame | None
+    tornado: pd.DataFrame
+    cenarios: pd.DataFrame | None
+    passo: float
+    deslocamento_do_tornado: float
+
+
+def _centro(empresa: Empresa, resultado: ResultadoValuation, caminho: str) -> float | None:
+    """O valor atual da premissa, que e o centro da grade."""
+    if caminho == CAMINHO_WACC:
+        return float(resultado.dcf.taxa_desconto)
+    objeto: object = empresa
+    for parte in caminho.split("."):
+        objeto = getattr(objeto, parte, None)
+        if objeto is None:
+            return None
+    if isinstance(objeto, (list, tuple)):
+        return float(np.median(objeto)) if len(objeto) else None
+    return float(objeto)
+
+
+def grade(centro: float, passo: float, pontos: int) -> list[float]:
+    """Grade simetrica em torno do caso base, **com o centro intacto**.
+
+    Arredondar o centro muda a celula do meio: com o WACC de 12,3456% virando
+    12,3457%, a tabela deixa de reproduzir o numero principal -- e essa celula e
+    justamente a que quem recebe o material confere primeiro. Os rotulos ja saem
+    com duas casas, entao o arredondamento nao servia nem para a leitura.
+    """
+    metade = pontos // 2
+    return [centro + (i - metade) * passo for i in range(pontos)]
+
+
+def pacote_padrao(
+    empresa: Empresa,
+    resultado: ResultadoValuation,
+    metrica: str = "equity_value",
+    passo: float = PASSO_DA_GRADE,
+    pontos: int = PONTOS_DA_GRADE,
+    deslocamento: float = DESLOCAMENTO_DO_TORNADO,
+    **kwargs,
+) -> PacoteDeSensibilidade:
+    """Monta as sensibilidades padrao sob as **mesmas convencoes** do caso base.
+
+    ``kwargs`` sao as convencoes de calculo (``meio_de_ano``, ``tipo_fluxo``,
+    ``divida_por_ano``). Sem elas o cenario "Base" nao reproduz o numero
+    principal, e o material perde credibilidade na primeira conferencia.
+    """
+    base = _extrair(resultado, metrica)
+    perp = empresa.perpetuidade
+    op = empresa.operacionais
+
+    wacc_x_g = None
+    centro_wacc = _centro(empresa, resultado, CAMINHO_WACC)
+    if perp.metodo == "gordon" and centro_wacc is not None:
+        wacc_x_g = tabela_sensibilidade(
+            empresa,
+            (CAMINHO_WACC, grade(centro_wacc, passo, pontos)),
+            (
+                "perpetuidade.crescimento_perpetuo",
+                grade(perp.crescimento_perpetuo, passo, pontos),
+            ),
+            metrica=metrica,
+            **kwargs,
+        )
+        wacc_x_g.index.name = "WACC"
+        wacc_x_g.columns.name = "Crescimento perpétuo"
+
+    margem_x_crescimento = None
+    centro_margem = _centro(empresa, resultado, "operacionais.margem_ebitda")
+    centro_receita = _centro(empresa, resultado, "operacionais.crescimento_receita")
+    if centro_margem is not None and centro_receita is not None:
+        margem_x_crescimento = tabela_sensibilidade(
+            empresa,
+            ("operacionais.margem_ebitda", grade(centro_margem, passo, pontos)),
+            ("operacionais.crescimento_receita", grade(centro_receita, passo, pontos)),
+            metrica=metrica,
+            **kwargs,
+        )
+        margem_x_crescimento.index.name = "Margem EBITDA"
+        margem_x_crescimento.columns.name = "Crescimento da receita"
+
+    linhas = {}
+    for rotulo, caminho in EIXOS_DO_TORNADO:
+        centro = _centro(empresa, resultado, caminho)
+        if centro is None:
+            continue
+        valores = {}
+        for nome, alvo in (("Abaixo", centro - deslocamento), ("Acima", centro + deslocamento)):
+            try:
+                valores[nome] = _extrair(
+                    avaliar_com(empresa, {caminho: alvo}, **kwargs), metrica
+                )
+            except CombinacaoInviavel:
+                valores[nome] = float("nan")
+        amplitude = abs(valores["Acima"] - valores["Abaixo"])
+        linhas[rotulo] = {
+            "Premissa (base)": centro,
+            f"-{deslocamento * 100:.0f} p.p.": valores["Abaixo"],
+            f"+{deslocamento * 100:.0f} p.p.": valores["Acima"],
+            "Amplitude": amplitude,
+        }
+    tornado = pd.DataFrame(linhas).T
+    if not tornado.empty:
+        tornado = tornado.sort_values("Amplitude", ascending=False)
+        tornado.index.name = "Premissa"
+
+    cenarios_tabela = None
+    if op is not None and centro_margem is not None:
+        cenarios_tabela = cenarios(
+            empresa,
+            {
+                "Pessimista": {
+                    "operacionais.margem_ebitda": centro_margem - DELTA_MARGEM_DO_CENARIO,
+                    "perpetuidade.crescimento_perpetuo": (
+                        perp.crescimento_perpetuo - DELTA_G_DO_CENARIO
+                    ),
+                },
+                "Base": {},
+                "Otimista": {
+                    "operacionais.margem_ebitda": centro_margem + DELTA_MARGEM_DO_CENARIO,
+                    "perpetuidade.crescimento_perpetuo": (
+                        perp.crescimento_perpetuo + DELTA_G_DO_CENARIO
+                    ),
+                },
+            },
+            **kwargs,
+        )
+
+    return PacoteDeSensibilidade(
+        metrica=metrica,
+        base=base,
+        wacc_x_g=wacc_x_g,
+        margem_x_crescimento=margem_x_crescimento,
+        tornado=tornado,
+        cenarios=cenarios_tabela,
+        passo=passo,
+        deslocamento_do_tornado=deslocamento,
+    )
+
+
 @dataclass(frozen=True)
 class Distribuicao:
     """Distribuicao de uma premissa para o Monte Carlo.

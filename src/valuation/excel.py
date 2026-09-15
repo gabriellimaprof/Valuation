@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.chart import BarChart, Reference
+from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -28,7 +28,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from .modelo import ResultadoValuation
 from .premissas import BASES_DO_MULTIPLO
 from .multiplos import Alvo, Comparavel, avaliar_por_multiplos, estatisticas, tabela_comparaveis
-from .sensibilidade import ResultadoSimulacao
+from .sensibilidade import PONTOS_DA_GRADE, PASSO_DA_GRADE, ResultadoSimulacao, grade
 
 PCT = "0.00%"
 PCT1 = "0.0%"
@@ -191,6 +191,8 @@ def exportar_excel(
     cenarios: pd.DataFrame | None = None,
     retorno=None,
     acionista=None,
+    analise=None,
+    diagnostico=None,
 ) -> Path:
     """Gera a planilha completa do valuation e devolve o caminho escrito."""
     caminho = Path(caminho)
@@ -200,7 +202,8 @@ def exportar_excel(
     refs_premissas = _aba_premissas(wb, resultado)
     refs_cc = _aba_custo_capital(wb, resultado, refs_premissas)
     refs_proj = _aba_projecao(wb, resultado, refs_premissas)
-    _aba_dcf(wb, resultado, refs_premissas, refs_cc, refs_proj)
+    refs_dcf = _aba_dcf(wb, resultado, refs_premissas, refs_cc, refs_proj)
+    _aba_sensibilidade_viva(wb, resultado, refs_premissas, refs_proj, refs_dcf)
 
     if retorno is not None:
         _aba_retorno(wb, resultado, retorno, acionista)
@@ -209,12 +212,21 @@ def exportar_excel(
         _aba_multiplos(wb, comparaveis, alvo)
     if sensibilidade is not None:
         _aba_sensibilidade(wb, sensibilidade)
+    if analise is not None:
+        _aba_historico(wb, analise)
+    if diagnostico is not None:
+        _aba_diagnostico(wb, diagnostico)
     if cenarios is not None:
         _aba_cenarios(wb, cenarios)
     if simulacao is not None:
         _aba_monte_carlo(wb, simulacao)
 
     _aba_leia_me(wb, resultado)
+    # O resumo e a **primeira** pagina de quem abre o arquivo, e por isso ele e
+    # montado no fim (precisa das referencias de todas as abas) e movido para o
+    # comeco. Quem recebe um caderno de dez abas sem uma capa comeca pela aba
+    # errada.
+    _aba_resumo(wb, resultado, refs_premissas, refs_cc, refs_proj, refs_dcf)
 
     caminho.parent.mkdir(parents=True, exist_ok=True)
     wb.save(caminho)
@@ -809,6 +821,298 @@ def _aba_dcf(
         + (f" | por acao = {dcf.valor_por_acao:,.2f}" if dcf.valor_por_acao else "")
     )
     aba.ajustar(largura_rotulo=40, n=n)
+    # As referencias viajam para a aba de sensibilidade, que refaz **esta** conta
+    # celula a celula. Sem elas ela teria de reescrever os enderecos a mao, e
+    # endereco fixo espalhado pelo codigo e o que este modulo evita desde o inicio.
+    return {
+        "taxa": taxa,
+        "periodo": periodo,
+        "fluxo": fluxo,
+        "vp_explicito": vp_explicito,
+        "valor_terminal": valor_terminal,
+        "vp_terminal": vp_terminal,
+        "ev": ev,
+        "equity": equity,
+        "ponte": refs_ponte,
+    }
+
+
+def _linha_da_ref(ref: str) -> int:
+    """A linha de uma referencia absoluta (``'DCF'!$B$12`` -> 12)."""
+    return int(ref.split("$")[-1])
+
+
+def _aba_sensibilidade_viva(wb: Workbook, resultado, p: dict, proj: dict, dcf_refs: dict) -> None:
+    """WACC x crescimento perpetuo **com formulas**, e nao com valores colados.
+
+    O modulo dizia que uma tabela viva exigiria replicar o modelo inteiro por
+    celula. Nao exige: as linhas de fluxo e de NOPAT ja estao na aba de projecao,
+    e cada celula so refaz o desconto e o valor terminal com o par (WACC, g) do
+    proprio cabecalho. Quem recebe o arquivo mexe na margem e ve **a tabela
+    inteira** se refazer -- que era exatamente o que a versao colada nao fazia.
+
+    So existe no caminho de Gordon: com multiplo de saida o crescimento perpetuo
+    nao entra na conta, e a tabela mostraria a mesma coluna cinco vezes.
+    """
+    perp = resultado.empresa.perpetuidade
+    if perp.metodo != "gordon":
+        return
+    n = resultado.projecao.horizonte
+    aba = _Aba(wb.create_sheet("Sensibilidade viva"))
+    aba.titulo("Sensibilidade WACC x crescimento perpetuo", largura=PONTOS_DA_GRADE + 2)
+    aba.nota(
+        "Formulas vivas: cada celula refaz o desconto dos fluxos da aba Projecao e "
+        "o valor terminal com o par (WACC, g) do cabecalho, e soma a mesma ponte da "
+        "aba DCF. Mexa numa premissa e a tabela inteira se refaz."
+    )
+    aba.pular()
+
+    taxa_base = float(resultado.dcf.taxa_desconto)
+    linhas = grade(taxa_base, PASSO_DA_GRADE, PONTOS_DA_GRADE)
+    colunas = grade(float(perp.crescimento_perpetuo), PASSO_DA_GRADE, PONTOS_DA_GRADE)
+
+    faixa_fluxo = (
+        f"{_celula(proj['fcff']['0'])}:{_celula(proj['fcff'][str(n - 1)])}"
+    )
+    aba_projecao = proj["fcff"]["0"].split("!")[0]
+    faixa_periodo = (
+        f"{_celula(dcf_refs['periodo']['0'])}:{_celula(dcf_refs['periodo'][str(n - 1)])}"
+    )
+    aba_dcf = dcf_refs["periodo"]["0"].split("!")[0]
+    fluxos = f"{aba_projecao}!{faixa_fluxo}"
+    periodos = f"{aba_dcf}!{faixa_periodo}"
+    ponte = "+".join(dcf_refs["ponte"])
+
+    linha_cabecalho = aba.linha
+    aba.ws.cell(row=linha_cabecalho, column=1, value="WACC \\ g").font = Font(bold=True)
+    for j, g in enumerate(colunas):
+        celula = aba.ws.cell(row=linha_cabecalho, column=2 + j, value=float(g))
+        celula.number_format = PCT
+        celula.font = Font(bold=True)
+        celula.fill = FUNDO_SECAO
+    aba.linha += 1
+
+    primeira = aba.linha
+    for wacc in linhas:
+        linha_atual = aba.linha
+        celula = aba.ws.cell(row=linha_atual, column=1, value=float(wacc))
+        celula.number_format = PCT
+        celula.font = Font(bold=True)
+        for j, _ in enumerate(colunas):
+            coluna = get_column_letter(2 + j)
+            w = f"$A${linha_atual}"
+            g = f"{coluna}${linha_cabecalho}"
+            if perp.roic_perpetuidade is not None:
+                terminal = (
+                    f"{proj['nopat'][str(n - 1)]}*(1+{g})*(1-{g}/{p['roic_perp']})/({w}-{g})"
+                )
+            else:
+                terminal = f"{proj['fcff'][str(n - 1)]}*(1+{g})/({w}-{g})"
+            expressao = (
+                f'=IF({w}<={g},"n/a",'
+                f"SUMPRODUCT({fluxos},1/(1+{w})^{periodos})"
+                f"+({terminal})/(1+{w})^{n}"
+                f"+{ponte})"
+            )
+            destino = aba.ws.cell(row=linha_atual, column=2 + j, value=expressao)
+            destino.number_format = MOEDA
+        aba.linha += 1
+
+    ultima = aba.linha - 1
+    ultima_coluna = get_column_letter(1 + len(colunas))
+    aba.ws.conditional_formatting.add(
+        f"B{primeira}:{ultima_coluna}{ultima}",
+        ColorScaleRule(
+            start_type="min", start_color="F8696B",
+            mid_type="percentile", mid_value=50, mid_color="FFEB84",
+            end_type="max", end_color="63BE7B",
+        ),
+    )
+    aba.pular()
+    aba.nota(
+        f"Conferencia (Python): o centro da tabela e o Equity Value do caso base, "
+        f"{resultado.dcf.equity_value:,.1f}."
+    )
+    aba.nota(
+        "n/a e combinacao impossivel: crescimento perpetuo acima da taxa de desconto "
+        "torna o valor terminal infinito."
+    )
+    aba.ajustar(largura_rotulo=14, largura_dados=16, n=len(colunas) + 1)
+
+
+def _aba_historico(wb: Workbook, analise) -> None:
+    """O que a companhia entregou, ao lado do que o modelo assume.
+
+    A planilha saia sem historico nenhum: quem recebia o arquivo via a projecao
+    sem ter contra o que compara-la, e a primeira pergunta de qualquer revisor e
+    exatamente essa.
+    """
+    aba = _Aba(wb.create_sheet("Historico"))
+    aba.titulo("O que a companhia entregou")
+    origem = getattr(analise.demonstracoes, "origem", "") or "origem nao declarada"
+    aba.nota(f"Fonte: {origem}. Valores como publicados, na unidade da importacao.")
+    aba.pular()
+
+    aba.secao("Demonstracoes")
+    tabela = analise.demonstracoes.valores.copy()
+    tabela.index.name = "Conta"
+    tabela.columns = [str(c) for c in tabela.columns]
+    _escrever_dataframe(aba, tabela, MOEDA, largura=16)
+    aba.pular()
+
+    aba.secao("Indicadores")
+    indicadores = analise.indicadores.copy()
+    indicadores.index.name = "Indicador"
+    indicadores.columns = [str(c) for c in indicadores.columns]
+    _escrever_dataframe(aba, indicadores, PCT1, largura=16)
+
+
+def _aba_diagnostico(wb: Workbook, diagnostico) -> None:
+    """Os achados da critica automatica, do mais grave para o menos.
+
+    Vao no arquivo e nao num anexo: a pergunta que vem da mesa e a que o
+    diagnostico antecipa.
+    """
+    achados = list(getattr(diagnostico, "achados", ()) or ())
+    aba = _Aba(wb.create_sheet("Diagnostico"))
+    aba.titulo("O que pode derrubar a tese")
+    if not achados:
+        aba.nota("Nenhum achado. O modelo passou pelas verificacoes de consistencia.")
+        aba.ajustar(largura_rotulo=28, largura_dados=60, n=3)
+        return
+
+    ordem = {"erro": 0, "alerta": 1, "informacao": 2}
+    achados.sort(key=lambda a: ordem.get(getattr(a, "severidade", ""), 3))
+    omitidas = tuple(getattr(diagnostico, "omitidas", ()) or ())
+    if omitidas:
+        aba.nota(
+            f"{len(omitidas)} verificacoes nao rodaram nesta serie: "
+            + ", ".join(str(i) for i in omitidas)
+        )
+    aba.pular()
+    for rotulo in ("Severidade", "Achado", "Detalhe", "O que fazer"):
+        celula = aba.ws.cell(row=aba.linha, column=1 + ("Severidade", "Achado", "Detalhe", "O que fazer").index(rotulo), value=rotulo)
+        celula.font = Font(bold=True)
+        celula.fill = FUNDO_SECAO
+    aba.linha += 1
+    for achado in achados:
+        for coluna, valor in enumerate(
+            (
+                getattr(achado, "severidade", ""),
+                getattr(achado, "titulo", ""),
+                getattr(achado, "detalhe", ""),
+                getattr(achado, "acao", ""),
+            ),
+            start=1,
+        ):
+            celula = aba.ws.cell(row=aba.linha, column=coluna, value=str(valor))
+            celula.alignment = Alignment(vertical="top", wrap_text=coluna >= 3)
+        aba.linha += 1
+    aba.ws.column_dimensions["A"].width = 14
+    aba.ws.column_dimensions["B"].width = 52
+    aba.ws.column_dimensions["C"].width = 70
+    aba.ws.column_dimensions["D"].width = 50
+
+
+def _aba_resumo(wb: Workbook, resultado, p: dict, cc: dict, proj: dict, dcf_refs: dict) -> None:
+    """A capa do caderno: o numero, de onde ele vem, e os graficos.
+
+    Tudo por **ligacao** as outras abas: mexeu na premissa, o resumo acompanha.
+    Um resumo com valores colados seria a primeira coisa a mentir depois da
+    primeira edicao.
+    """
+    n = resultado.projecao.horizonte
+    aba = _Aba(wb.create_sheet("Resumo"))
+    empresa = resultado.empresa
+    aba.titulo(f"{empresa.nome} - resumo do valuation", largura=n + 3)
+    aba.nota(
+        f"Valores em {empresa.unidade}. Todas as celulas deste resumo sao ligacoes "
+        "para as abas do modelo: mexeu numa premissa, o resumo acompanha."
+    )
+    aba.pular()
+
+    aba.secao("O numero")
+    aba.ligacao("Enterprise Value", f"={dcf_refs['ev']}", MOEDA)
+    aba.ligacao("Equity Value", f"={dcf_refs['equity']}", MOEDA)
+    aba.ligacao("Valor por acao", f'=IF(N({p["acoes"]})=0,"-",{dcf_refs["equity"]}/{p["acoes"]})', MOEDA)
+    aba.ligacao("WACC", f"={cc['wacc']}", PCT)
+    aba.ligacao("Ke", f"={cc['ke_brl']}", PCT)
+    aba.ligacao("Crescimento perpetuo", f"={p['g_perpetuo']}", PCT)
+    aba.formula(
+        "% do valor na perpetuidade",
+        f"={dcf_refs['vp_terminal']}/{dcf_refs['ev']}",
+        PCT1,
+    )
+    aba.pular()
+
+    aba.secao("De onde vem o valor", largura=n + 3)
+    linha_composicao = aba.linha
+    aba.ws.cell(row=aba.linha, column=1, value="Parcela").font = Font(bold=True)
+    aba.ws.cell(row=aba.linha, column=2, value="Valor").font = Font(bold=True)
+    aba.linha += 1
+    primeira_composicao = aba.linha
+    for rotulo, ref in (
+        ("VP dos fluxos explicitos", dcf_refs["vp_explicito"]),
+        ("VP do valor terminal", dcf_refs["vp_terminal"]),
+    ):
+        aba.ws.cell(row=aba.linha, column=1, value=rotulo)
+        celula = aba.ws.cell(row=aba.linha, column=2, value=f"={ref}")
+        celula.number_format = MOEDA
+        celula.font = VERDE_LIGACAO
+        aba.linha += 1
+    ultima_composicao = aba.linha - 1
+
+    grafico_composicao = BarChart()
+    grafico_composicao.title = "Composicao do Enterprise Value"
+    grafico_composicao.type = "bar"
+    dados = Reference(aba.ws, min_col=2, min_row=linha_composicao, max_row=ultima_composicao)
+    categorias = Reference(aba.ws, min_col=1, min_row=primeira_composicao, max_row=ultima_composicao)
+    grafico_composicao.add_data(dados, titles_from_data=True)
+    grafico_composicao.set_categories(categorias)
+    grafico_composicao.height, grafico_composicao.width = 6, 12
+    aba.ws.add_chart(grafico_composicao, f"E{linha_composicao}")
+    aba.pular(2)
+
+    aba.secao("A projecao", largura=n + 3)
+    linha_series = aba.cabecalho_anos(resultado.projecao.anos, coluna_base=False)
+    receita = aba.linha_anual(
+        "Receita liquida", [f"={proj['receita'][str(i)]}" for i in range(n)], MOEDA,
+        fonte=VERDE_LIGACAO,
+    )
+    ebitda = aba.linha_anual(
+        "EBITDA", [f"={proj['ebitda'][str(i)]}" for i in range(n)], MOEDA,
+        fonte=VERDE_LIGACAO,
+    )
+    fcff = aba.linha_anual(
+        "FCFF", [f"={proj['fcff'][str(i)]}" for i in range(n)], MOEDA,
+        fonte=VERDE_LIGACAO,
+    )
+    primeira_serie = _linha_da_ref(receita["0"])
+    ultima_serie = _linha_da_ref(fcff["0"])
+
+    grafico = BarChart()
+    grafico.title = "Receita, EBITDA e FCFF projetados"
+    grafico.y_axis.title = empresa.unidade
+    dados = Reference(
+        aba.ws, min_col=1, max_col=2 + n, min_row=primeira_serie, max_row=ultima_serie
+    )
+    grafico.add_data(dados, titles_from_data=True, from_rows=True)
+    grafico.set_categories(
+        Reference(aba.ws, min_col=3, max_col=2 + n, min_row=linha_series)
+    )
+    grafico.height, grafico.width = 8, 18
+    aba.ws.add_chart(grafico, f"B{aba.linha + 1}")
+    aba.pular(16)
+
+    aba.nota(
+        "Azul e premissa editavel, preto e formula da propria aba, verde e "
+        "referencia a outra aba. As abas Premissas, Custo de Capital, Projecao, "
+        "DCF e Sensibilidade viva recalculam sozinhas."
+    )
+    aba.ajustar(largura_rotulo=32, largura_dados=16, n=n + 2)
+    # Movida para o comeco: e a capa, e foi montada por ultimo porque precisa das
+    # referencias de todas as abas.
+    wb.move_sheet(aba.ws.title, offset=-(len(wb.worksheets) - 1))
 
 
 def _aba_retorno(wb: Workbook, resultado, retorno, acionista) -> None:
@@ -1078,10 +1382,19 @@ def _aba_leia_me(wb: Workbook, resultado: ResultadoValuation) -> None:
         ("  Preto", "formula calculada dentro da propria aba"),
         ("  Verde", "referencia trazida de outra aba"),
         ("", ""),
-        ("Abas com formulas vivas", "Premissas, Custo de Capital, Projecao, DCF"),
+        ("Comece pelo", "Resumo - o numero, a composicao do valor e os graficos"),
+        (
+            "Abas com formulas vivas",
+            "Resumo, Premissas, Custo de Capital, Projecao, DCF, Sensibilidade viva",
+        ),
         (
             "Abas com valores fixos",
-            "Multiplos, Sensibilidade, Cenarios, Monte Carlo - recalculadas so no Python",
+            "Historico, Diagnostico, Multiplos, Sensibilidade, Cenarios, Monte Carlo",
+        ),
+        (
+            "Sensibilidade viva",
+            "cada celula refaz o desconto e o valor terminal com o par (WACC, g) do "
+            "cabecalho - mexa numa premissa e a tabela se refaz",
         ),
         ("", ""),
         ("Empresa", resultado.empresa.nome),

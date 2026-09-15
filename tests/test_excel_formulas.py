@@ -304,3 +304,154 @@ def test_excel_reproduz_arrendamento_e_giro_inicial(empresa_exemplo, tmp_path, n
         linha = _localizar_linha(aba_dcf, rotulo)
         obtido = _buscar(valores, "DCF", f"B{linha}", caminho)
         assert obtido == pytest.approx(esperado, rel=1e-9), rotulo
+
+
+# ---------------------------------------------------------------------------
+# A sensibilidade viva, o resumo e as abas novas
+# ---------------------------------------------------------------------------
+
+
+def test_a_sensibilidade_viva_reproduz_a_do_motor(empresa_exemplo, tmp_path):
+    """Cada celula refaz o desconto na planilha; o motor faz por reavaliacao.
+
+    Sao dois caminhos independentes para o mesmo numero -- e e isso que a
+    conferencia vale. A versao antiga colava valores, e a planilha nao
+    recalculava nada ao mexer numa premissa.
+    """
+    from openpyxl import load_workbook
+
+    from valuation.sensibilidade import (
+        PASSO_DA_GRADE,
+        PONTOS_DA_GRADE,
+        grade,
+        tabela_sensibilidade,
+    )
+
+    resultado = avaliar(empresa_exemplo)
+    caminho = tmp_path / "modelo_sensibilidade.xlsx"
+    exportar_excel(resultado, caminho)
+
+    esperado = tabela_sensibilidade(
+        empresa_exemplo,
+        ("wacc", grade(resultado.dcf.taxa_desconto, PASSO_DA_GRADE, PONTOS_DA_GRADE)),
+        (
+            "perpetuidade.crescimento_perpetuo",
+            grade(
+                empresa_exemplo.perpetuidade.crescimento_perpetuo,
+                PASSO_DA_GRADE,
+                PONTOS_DA_GRADE,
+            ),
+        ),
+    )
+
+    valores = _valores_calculados(caminho)
+    ws = load_workbook(caminho)["Sensibilidade viva"]
+    linha_cabecalho = _localizar_linha(ws, "WACC \\ g")
+    for i in range(len(esperado)):
+        for j in range(len(esperado.columns)):
+            celula = f"{chr(ord('B') + j)}{linha_cabecalho + 1 + i}"
+            obtido = _buscar(valores, "Sensibilidade viva", celula, caminho)
+            assert obtido == pytest.approx(
+                float(esperado.iat[i, j]), rel=1e-6
+            ), f"{celula} ({esperado.index[i]} x {esperado.columns[j]})"
+
+
+def test_o_resumo_e_a_primeira_aba_e_le_as_outras(empresa_exemplo, tmp_path):
+    """Quem recebe um caderno de dez abas sem capa comeca pela aba errada."""
+    from openpyxl import load_workbook
+
+    resultado = avaliar(empresa_exemplo)
+    caminho = tmp_path / "modelo_resumo.xlsx"
+    exportar_excel(resultado, caminho)
+
+    wb = load_workbook(caminho)
+    assert wb.sheetnames[0] == "Resumo"
+
+    valores = _valores_calculados(caminho)
+    aba = wb["Resumo"]
+    for rotulo, esperado in (
+        ("Enterprise Value", resultado.dcf.enterprise_value),
+        ("Equity Value", resultado.dcf.equity_value),
+        ("WACC", resultado.custo_capital.wacc_brl),
+    ):
+        linha = _localizar_linha(aba, rotulo)
+        obtido = _buscar(valores, "Resumo", f"B{linha}", caminho)
+        assert obtido == pytest.approx(esperado, rel=1e-9), rotulo
+
+    # E os graficos existem: o resumo e visual, nao mais uma tabela.
+    assert len(aba._charts) == 2
+
+
+def test_o_historico_e_o_diagnostico_entram_quando_existem(empresa_exemplo, tmp_path):
+    """A planilha saia sem historico: a projecao chegava sem o que a compara."""
+    import pandas as pd
+    from openpyxl import load_workbook
+
+    from valuation.diagnostico import diagnosticar
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    anos = [2023, 2024, 2025]
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0 + 100 * i,
+                "custo_produtos_vendidos": 600.0,
+                "ebit": 200.0,
+                "depreciacao_amortizacao": 50.0,
+                "lucro_liquido": 120.0,
+                "lucro_antes_impostos": 170.0,
+                "impostos": 50.0,
+                "ativo_total": 1500.0,
+                "patrimonio_liquido": 700.0,
+                "capex": 60.0,
+            }
+            for i, ano in enumerate(anos)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="T", valores=valores, unidade="R$ mi"))
+    # ROIC perpetuo de 40% garante achado: sem isto o modelo de exemplo passa
+    # limpo, a aba sai com "nenhum achado" e o teste nao exercita a tabela.
+    from valuation.modelo import substituir_varios
+
+    resultado = avaliar(
+        substituir_varios(empresa_exemplo, {"perpetuidade.roic_perpetuidade": 0.40})
+    )
+    caminho = tmp_path / "modelo_completo.xlsx"
+    exportar_excel(
+        resultado, caminho, analise=analise, diagnostico=diagnosticar(resultado, analise)
+    )
+
+    wb = load_workbook(caminho)
+    assert "Historico" in wb.sheetnames
+    assert "Diagnostico" in wb.sheetnames
+    historico = wb["Historico"]
+    assert _localizar_linha(historico, "receita_liquida")
+    diagnostico = wb["Diagnostico"]
+    assert diagnostico.cell(row=_localizar_linha(diagnostico, "Severidade"), column=2).value == "Achado"
+
+
+def test_sem_historico_a_planilha_nao_inventa_a_aba(empresa_exemplo, tmp_path):
+    from openpyxl import load_workbook
+
+    caminho = tmp_path / "modelo_sem_historico.xlsx"
+    exportar_excel(avaliar(empresa_exemplo), caminho)
+    assert "Historico" not in load_workbook(caminho).sheetnames
+
+
+def test_perpetuidade_por_multiplo_nao_ganha_grade_de_g(empresa_exemplo, tmp_path):
+    """Com multiplo de saida o g nao entra na conta: a grade repetiria a coluna."""
+    from dataclasses import replace
+
+    from openpyxl import load_workbook
+
+    empresa = replace(
+        empresa_exemplo,
+        perpetuidade=replace(
+            empresa_exemplo.perpetuidade, metodo="multiplo", multiplo_saida=8.0
+        ),
+    )
+    caminho = tmp_path / "modelo_multiplo.xlsx"
+    exportar_excel(avaliar(empresa), caminho)
+    assert "Sensibilidade viva" not in load_workbook(caminho).sheetnames
+
