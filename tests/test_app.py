@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from pathlib import Path
+
 import pytest
 
 from app.componentes import _markdown_para_html, formatar, tabela_formatada
@@ -914,3 +916,72 @@ def test_o_bloco_do_acionista_nao_quebra_sem_atribuicao(monkeypatch):
     monkeypatch.setattr(tela, "secao", lambda *a, **k: chamou.setdefault("sim", True))
     tela._leitura_do_acionista(analise)
     assert chamou == {}
+
+
+# ---------------------------------------------------------------------------
+# Os controles que mudam o valor explicam o que fazem
+# ---------------------------------------------------------------------------
+
+# Rotulo -> tela. Sao as escolhas que trocam o numero, e nao navegacao ou formato.
+CONTROLES_QUE_MUDAM_O_VALOR = {
+    "Tipo de fluxo": "valor.py",
+    "Método": "premissas.py",
+    "Normalizar reinvestimento": "premissas.py",
+    "Informar Kd diretamente": "custo_capital.py",
+    "Filtrar por porte": "multiplos.py",
+    "Estatística aplicada ao alvo": "multiplos.py",
+    "Destino do caixa": "retorno.py",
+    "Múltiplo de saída": "retorno.py",
+}
+AJUDA_MINIMA = 90
+
+
+def _ajudas_dos_controles(arquivo):
+    import ast
+
+    caminho = Path(__file__).resolve().parent.parent / "app" / "paginas" / arquivo
+    arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+    achados = {}
+    for no in ast.walk(arvore):
+        if not isinstance(no, ast.Call) or not no.args:
+            continue
+        if not isinstance(no.args[0], ast.Constant) or not isinstance(no.args[0].value, str):
+            continue
+        ajuda = next((k.value for k in no.keywords if k.arg == "help"), None)
+        texto = 0
+        if ajuda is not None:
+            # O texto de ajuda pode vir concatenado, em f-string ou condicional:
+            # conta toda string literal dentro da expressao.
+            texto = max(
+                [0]
+                + [
+                    len(n.value)
+                    for n in ast.walk(ajuda)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                ]
+                + [
+                    sum(
+                        len(p.value)
+                        for p in n.values
+                        if isinstance(p, ast.Constant) and isinstance(p.value, str)
+                    )
+                    for n in ast.walk(ajuda)
+                    if isinstance(n, ast.JoinedStr)
+                ]
+            )
+        achados.setdefault(no.args[0].value, []).append(texto)
+    return achados
+
+
+@pytest.mark.parametrize("rotulo, arquivo", sorted(CONTROLES_QUE_MUDAM_O_VALOR.items()))
+def test_controle_que_muda_o_valor_explica_o_que_faz(rotulo, arquivo):
+    """A queixa: "Normalizar reinvestimento" nao dizia o que era, nem a alternativa.
+
+    O levantamento das telas achou mais seis escolhas que mudam o numero sem
+    ajuda nenhuma ou com uma frase. Ajuda curta demais nao diz o que muda ao
+    trocar, que e a pergunta de quem esta diante da caixa.
+    """
+    ajudas = _ajudas_dos_controles(arquivo).get(rotulo)
+    assert ajudas, f"controle {rotulo!r} nao encontrado em {arquivo}"
+    assert max(ajudas) >= AJUDA_MINIMA, f"{rotulo!r}: ajuda de {max(ajudas)} caracteres"
+

@@ -392,6 +392,15 @@ def _configuracao() -> None:
         ["FCFF (para a firma)", "FCFE (para o acionista)"],
         index=0 if config["tipo_fluxo"] == "fcff" else 1,
         horizontal=True,
+        help=(
+            "FCFF: o caixa da operação para todos os financiadores, antes dos juros. "
+            "Desconta-se pelo WACC, dá o valor da empresa, e a dívida sai na ponte. "
+            "FCFE: o que sobra para o acionista depois dos juros e do movimento da "
+            "dívida. Desconta-se pelo Ke, já dá o valor do acionista e pede o "
+            "cronograma da dívida, que aparece abaixo. Na teoria os dois chegam ao "
+            "mesmo valor do acionista quando o cronograma é coerente com o D/E do "
+            "WACC; distância grande costuma ser essa incoerência."
+        ),
     )
     meio = colunas[1].checkbox(
         "Convenção de meio de ano",

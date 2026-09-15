@@ -102,7 +102,13 @@ def _fluxos_do_acionista(resultado):
     politica_nome = colunas[0].selectbox(
         "Destino do caixa",
         ["Payout sobre o lucro", "Distribuir todo o caixa livre"],
-        help="O payout é limitado pelo caixa que de fato sobra no ano.",
+        help=(
+            "Payout sobre o lucro: distribui a fração escolhida do lucro líquido, "
+            "limitada ao caixa que de fato sobra no ano. Distribuir todo o caixa "
+            "livre: o acionista recebe o fluxo livre inteiro. O que não é "
+            "distribuído abate dívida se a caixa ao lado estiver marcada; senão, "
+            "fica na empresa."
+        ),
     )
     payout = colunas[1].slider(
         "Payout (%)",
@@ -213,7 +219,17 @@ def _decompor(resultado, acionista):
     # divide pelo lucro da companhia, e nao pelo lucro por acao.
     if por_acao and acoes:
         preco = preco * acoes
-    escolha_saida = colunas[2].selectbox("Múltiplo de saída", list(SAIDAS))
+    escolha_saida = colunas[2].selectbox(
+        "Múltiplo de saída",
+        list(SAIDAS),
+        help=(
+            "A que P/L a posição é vendida no fim do horizonte. O do DCF usa o "
+            "múltiplo que o próprio valuation implica naquele ano — coerente com o "
+            "valor intrínseco. O da entrada supõe que o mercado paga o mesmo que "
+            "hoje, sem re-rating. O escolhido serve para testar uma tese de "
+            "re-rating, e é a origem mais comum de retorno que o negócio não gera."
+        ),
+    )
     modo = SAIDAS[escolha_saida]
 
     if lucro_entrada <= 0:

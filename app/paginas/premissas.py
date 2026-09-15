@@ -410,6 +410,14 @@ def _perpetuidade(empresa, analise=None) -> None:
         ["Crescimento perpétuo (Gordon)", "Múltiplo de saída"],
         index=0 if perpetuidade.metodo == "gordon" else 1,
         horizontal=True,
+        help=(
+            "Gordon: o valor terminal é o fluxo do ano seguinte dividido por "
+            "(taxa − g), com o crescimento e o reinvestimento à vista. Múltiplo de "
+            "saída: o valor terminal é o EBITDA ou o lucro do último ano vezes um "
+            "múltiplo. Ancora no que o mercado paga hoje, mas embute crescimento, "
+            "retorno e taxa sem mostrá-los — e um múltiplo de ciclo de alta fica "
+            "carregado para sempre."
+        ),
     )
     usar_gordon = metodo.startswith("Crescimento")
 

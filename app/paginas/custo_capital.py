@@ -648,7 +648,15 @@ def _montagem(empresa, premissas) -> None:
         # se o alvo escolhido e alavancado para o padrao brasileiro.
         _baliza_do_divida_pl(divida_pl)
     informar_kd = colunas[1].checkbox(
-        "Informar Kd diretamente", value=premissas.custo_divida_brl is not None
+        "Informar Kd diretamente",
+        value=premissas.custo_divida_brl is not None,
+        help=(
+            "Marcado: o Kd é o número ao lado — a sugestão do histórico usa o juro "
+            "pago na DFC sobre a dívida média, no último exercício plausível. "
+            "Desmarcado: o Kd é montado como taxa livre de risco mais o spread de "
+            "crédito (Kd sintético), que serve quando a empresa quase não tem "
+            "dívida ou o juro pago não mede custo."
+        ),
     )
     kd = colunas[2].number_input(
         "Custo da dívida bruto (%)",

@@ -223,9 +223,16 @@ def _pares_por_perfil() -> None:
             "Filtrar por porte",
             value=np.isfinite(receita),
             disabled=not np.isfinite(receita),
-            help=None if np.isfinite(receita) else
-            "A companhia não está no universo, então não há receita comparável "
-            "para medir porte.",
+            help=(
+                "Só entram pares cuja receita esteja dentro da faixa ao lado, contada "
+                "nos dois sentidos: com 10, de um décimo a dez vezes a receita da "
+                "companhia. Porte muito diferente muda risco, margem e o múltiplo que "
+                "o mercado paga — desmarcado, o par mais parecido em perfil entra "
+                "mesmo que seja cem vezes maior."
+                if np.isfinite(receita)
+                else "A companhia não está no universo, então não há receita "
+                "comparável para medir porte."
+            ),
         )
         faixa = colunas[2].number_input(
             "Faixa de porte (x receita)", 2.0, 50.0, 10.0, step=1.0,
@@ -650,6 +657,12 @@ def _implicito(alvo, comparaveis) -> None:
         "Estatística aplicada ao alvo",
         ["Mediana", "Media", "1o quartil", "3o quartil"],
         index=0,
+        help=(
+            "Qual múltiplo dos pares se aplica à companhia. A mediana é a "
+            "referência: com poucos pares, a média se deixa puxar por um múltiplo "
+            "extremo. Os quartis dão a faixa — o 1º é a leitura conservadora, o 3º "
+            "a otimista."
+        ),
     )
     tabela = avaliar_por_multiplos(alvo, comparaveis, referencia)
     st.html(tabela_de_indicadores(tabela, "numero"))

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1392 testes
+pytest                        # 1400 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.392 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.400 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -4822,3 +4822,28 @@ Ela importa mais do que parecia: com a caixa marcada o valor terminal sai do NOP
 e não depende do fluxo do último ano, então um erro de reinvestimento no período
 explícito — como a renovação de arrendamento que não era cobrada — fica nos cinco
 anos. Desmarcada, o mesmo erro vai para a perpetuidade.
+
+**E ela não era a única.** Um levantamento das telas pela árvore do código —
+todo `checkbox`, `radio`, `toggle` e `selectbox`, com o tamanho da ajuda — achou
+mais seis escolhas que mudam o número sem ajuda nenhuma ou com uma frase:
+
+| Controle | Tela | Antes |
+|---|---|---|
+| Tipo de fluxo (FCFF ou FCFE) | Valor | sem ajuda |
+| Método da perpetuidade (Gordon ou múltiplo) | Premissas | sem ajuda |
+| Informar Kd diretamente | Custo de capital | sem ajuda |
+| Estatística aplicada ao alvo | Múltiplos | sem ajuda |
+| Filtrar por porte | Múltiplos | sem ajuda quando habilitado |
+| Múltiplo de saída | Retorno esperado | sem ajuda |
+| Destino do caixa | Retorno esperado | uma frase |
+
+Cada ajuda agora diz **o que acontece em cada opção**, e não só o nome dela: o
+Kd desmarcado vira taxa livre de risco mais spread; o múltiplo de saída embute
+crescimento, retorno e taxa sem mostrá-los; a sobra de caixa que não é
+distribuída fica na empresa se a amortização estiver desmarcada. Navegação e
+formato (país, unidade, versão guardada) ficaram de fora de propósito.
+
+Um teste estático (`test_controle_que_muda_o_valor_explica_o_que_faz`) lê as
+telas pela árvore do Python e exige ao menos 90 caracteres de ajuda nesses oito
+controles. Conferido que ele pega: com o `retorno.py` antigo, os dois controles
+de Retorno esperado falham.
