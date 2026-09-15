@@ -531,27 +531,21 @@ def empresa_ex_ifrs16(empresa, visao: VisaoExIFRS16):
     quem escolheu o D/E alvo escolheu com a divida cheia na cabeca. O ajuste
     fica com quem tem o julgamento.
 
-    As duas avaliacoes **nao coincidem**, e isso nao e defeito
-    ----------------------------------------------------------
+    As duas avaliacoes **nao coincidem**, e a maior parte da distancia era defeito
+    ------------------------------------------------------------------------------
 
-    Escrevi aqui, antes de medir, que elas deveriam ficar proximas -- afinal o
-    IFRS 16 e mudanca de apresentacao. Nao ficam, e a razao e economica.
+    Estava escrito aqui que a base pos-IFRS 16 "supoe que o aluguel acaba". Nao
+    supoe: a projecao mantem o passivo como percentual da receita para sempre --
+    a rede continua com as lojas -- e cobrava so a **variacao** do saldo, que e
+    contrato novo menos o principal amortizado. O contrato que vence e e renovado
+    nunca era cobrado, e o EBITDA daquela loja seguia no fluxo. Na Vivara, cobrar
+    a renovacao leva o equity pos-IFRS 16 de R$ 3.949 mi para R$ 3.475 mi. Ver
+    ``PremissasOperacionais.arrendamento_renovacao_pct_receita``.
 
-    O passivo de arrendamento no balanco e o valor presente dos alugueis do
-    **prazo contratado**. Uma rede de lojas nao para de pagar aluguel quando os
-    contratos vencem: renova. Na base pos-IFRS 16 o modelo desconta esse passivo
-    finito e nunca mais cobra aluguel; na base pre-IFRS 16 o aluguel sai do
-    fluxo **para sempre**, inclusive na perpetuidade.
-
-    Medido num caso sem crescimento, aluguel de 10 ao ano e passivo de 37,9
-    (cinco anos a 10%): o valor presente perpetuo do aluguel apos imposto ao
-    WACC e **49,4**. A diferenca de 11,5 e exatamente o que a leitura
-    pos-IFRS 16 ganha por supor que o aluguel acaba.
-
-    A direcao do efeito depende de crescimento e da relacao entre o passivo
-    contratado e o aluguel perpetuo, entao nao ha regra de sinal -- ha duas
-    leituras, e a distancia entre elas mede quanto do valor vem da hipotese de
-    que o aluguel termina.
+    O que ainda separa as duas bases **nao foi decomposto**. Candidatos: o
+    passivo e descontado a taxa do contrato e o aluguel ex-IFRS 16 ao WACC; o D/E
+    alvo nao e convertido; e a premissa de saldo sobre receita parte da mediana,
+    que pode estar longe do saldo de hoje.
     """
     from dataclasses import replace as _replace
 
@@ -587,6 +581,7 @@ def empresa_ex_ifrs16(empresa, visao: VisaoExIFRS16):
             depreciacao_pct_receita=novas_depreciacoes,
             arrendamento_pct_receita=None,
             arrendamento_inicial=None,
+            arrendamento_renovacao_pct_receita=None,
         ),
         ponte=_replace(
             empresa.ponte,
@@ -598,10 +593,10 @@ def empresa_ex_ifrs16(empresa, visao: VisaoExIFRS16):
 def aluguel_perpetuo(visao: VisaoExIFRS16, wacc: float, aliquota: float = 0.34) -> float:
     """Valor presente do aluguel apos imposto, cobrado para sempre.
 
-    E o numero que falta na leitura pos-IFRS 16. O balanco traz o passivo do
-    **prazo contratado**; quem aluga ponto comercial renova, e o compromisso
-    economico nao termina com o contrato. Comparar os dois diz quanto de valor
-    o modelo ganha por supor que o aluguel acaba.
+    O balanco traz o passivo do **prazo contratado**; quem aluga ponto comercial
+    renova, e o compromisso economico nao termina com o contrato. Comparar os dois
+    mostra quanto do compromisso esta fora do balanco -- e e esse pedaco que a
+    projecao pos-IFRS 16 precisa cobrar como renovacao de contrato.
     """
     aluguel = visao.aluguel.dropna()
     if aluguel.empty or not np.isfinite(wacc) or wacc <= 0:

@@ -455,6 +455,10 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
         colunas["Arrendamento / receita"] = [
             _pct(v) for v in op.arrendamento_pct_receita
         ]
+    if op.arrendamento_renovacao_pct_receita is not None:
+        colunas["Renovação de arrendamento / receita"] = [
+            _pct(v) for v in op.arrendamento_renovacao_pct_receita
+        ]
     quadro = pd.DataFrame(colunas, index=anos)
     quadro.index.name = "Ano"
 
@@ -530,6 +534,13 @@ def _premissas(resultado: ResultadoValuation) -> list[str]:
             f"{_pct(op.arrendamento_pct_receita[0])} dela, e a adição de cada ano "
             "sai do fluxo. Contrato novo de aluguel não passa pelo capex — sem "
             "esta linha, uma rede que abre pontos mostra FCFF que não tem."
+        )
+    if op.arrendamento_renovacao_pct_receita is not None:
+        linhas.append(
+            f"- **Renovação de arrendamento**: "
+            f"{_pct(op.arrendamento_renovacao_pct_receita[0])} da receita ao ano, o "
+            "contrato que vence e é renovado. A variação do saldo não o vê, e com o "
+            "arrendamento na dívida ele é investimento como o capex."
         )
 
     cc = resultado.custo_capital

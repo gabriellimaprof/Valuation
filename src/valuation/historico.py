@@ -951,6 +951,52 @@ def _anos_desde(analise: AnaliseHistorica, rotulo) -> tuple[float | None, list[f
     return fim - inicio, [float(v) for v in serie.iloc[posicao + 1:]]
 
 
+# O principal de arrendamento pago sobre o saldo medio, na mediana da base: 22,7%,
+# um prazo implicito de 4,4 anos. Medido em 753 companhias-ano com arrendamento
+# relevante e principal publicado, safra 2019-2025 (P10 5,9%, P90 63,7%).
+PRINCIPAL_SOBRE_SALDO_MEDIANO = 0.227
+
+
+def _renovacao_de_arrendamento(d, saldo, horizonte, justificativas, alertas):
+    """O contrato que vence e e renovado, como percentual da receita.
+
+    Sai do **principal pago no ultimo exercicio**. Medido em 216 companhias com
+    arrendamento relevante: 162 (75%) o publicam, e prever o do ano seguinte erra
+    0,31 pp pelo ultimo ano, 0,42 pp pela mediana dos tres ultimos e 0,49 pp pela
+    mediana.
+
+    **Quem nao publica fica com a coluna em zero, e sabe por que.** Estimar pelo
+    saldo e pelo prazo mediano da base erra 1,0 pp na mediana e **8,2 pp no P90** --
+    justamente em quem tem contrato longo, como terra agricola e shopping, onde o
+    prazo de 4,4 anos cobraria renovacao demais. A estimativa vai no alerta como
+    referencia, e a coluna aparece para ser preenchida.
+    """
+    receita = d.serie("receita_liquida")
+    principal = d.serie("arrendamento_principal_pago").abs()
+    pct = (principal / receita).replace([np.inf, -np.inf], np.nan).dropna()
+    pct = pct[pct > 0]
+    if not pct.empty:
+        ultimo = float(pct.iloc[-1])
+        justificativas["arrendamento_renovacao_pct_receita"] = (
+            f"Principal de arrendamento pago em {pct.index[-1]}, {str(round(ultimo * 100, 1)).replace('.', ',')}% da "
+            "receita: é o contrato que vence e é renovado. A variação do saldo não o "
+            "vê — ela é contrato novo menos o principal amortizado —, e sem esta "
+            "linha uma rede que só repõe os pontos teria o aluguel sumindo do fluxo."
+        )
+        return [ultimo] * horizonte
+
+    receita_final = receita.dropna()
+    if not receita_final.empty and float(receita_final.iloc[-1]) > 0:
+        estimativa = saldo * PRINCIPAL_SOBRE_SALDO_MEDIANO / float(receita_final.iloc[-1])
+        alertas.append(
+            "A DFC não traz o principal de arrendamento pago, e sem ele a renovação dos "
+            "contratos não é cobrada: o FCFF sai maior do que é. Com o prazo mediano da "
+            f"base (4,4 anos), a renovação seria {str(round(estimativa * 100, 1)).replace('.', ',')}% da receita — informe "
+            "em Premissas, na coluna de renovação, se os contratos forem parecidos."
+        )
+    return [0.0] * horizonte
+
+
 def ultimo_kd_plausivel(analise: AnaliseHistorica) -> tuple[float, object | None]:
     """O juro pago sobre a divida media do ultimo exercicio plausivel, e o exercicio.
 
@@ -1189,18 +1235,34 @@ def sugerir_premissas(
     )
     arrendamento_pct = None
     arrendamento_inicial = None
+    renovacao_pct = None
     if arrendamento.notna().any():
         razao = (arrendamento / d.serie("receita_liquida")).replace(
             [np.inf, -np.inf], np.nan
         ).dropna()
         if not razao.empty and float(razao.median()) > 0.02:
-            arrendamento_pct = [float(razao.median())] * horizonte
+            # **O ultimo ano, e nao a mediana.** Saldo de arrendamento e estoque, e
+            # estoque persiste. Medido prevendo a razao do ano seguinte sem olhar o
+            # futuro, 825 previsoes em 196 companhias com arrendamento relevante:
+            #
+            #     mediana                   erro mediano 2,57 pp   P90 16,7
+            #     mediana dos 3 ultimos                  2,17 pp       15,2
+            #     ultimo ano                             1,64 pp       10,9
+            #
+            # E a mediana abria um degrau no ano 1, porque o saldo de partida e o de
+            # hoje: a Vivara, com 23,0% hoje e mediana de 26,4%, pagava R$ 130 mi de
+            # "contrato novo" no primeiro ano que eram so a razao voltando a mediana.
+            ultima = float(razao.iloc[-1])
+            arrendamento_pct = [ultima] * horizonte
             arrendamento_inicial = float(arrendamento.dropna().iloc[-1])
             justificativas["arrendamento_pct_receita"] = (
-                f"Passivo de arrendamento mediano de {float(razao.median()):.1%} da "
-                "receita. Crescendo com ela, a adicao anual vira saida de caixa: "
-                "contrato novo de aluguel nao passa pelo capex, e sem esta linha o "
-                "FCFF sairia maior do que e."
+                f"Passivo de arrendamento de {str(round(ultima * 100, 1)).replace('.', ',')}% da receita em "
+                f"{razao.index[-1]}. Crescendo com ela, a adição anual vira saída de "
+                "caixa: contrato novo de aluguel não passa pelo capex, e sem esta "
+                "linha o FCFF sairia maior do que é."
+            )
+            renovacao_pct = _renovacao_de_arrendamento(
+                d, arrendamento_inicial, horizonte, justificativas, alertas
             )
 
     operacionais = PremissasOperacionais(
@@ -1212,6 +1274,7 @@ def sugerir_premissas(
         capital_giro_pct_receita=[giro_pct] * horizonte,
         arrendamento_pct_receita=arrendamento_pct,
         arrendamento_inicial=arrendamento_inicial,
+        arrendamento_renovacao_pct_receita=renovacao_pct,
         capital_giro_inicial=(
             float(d.capital_giro().dropna().iloc[-1])
             if d.capital_giro().notna().any()

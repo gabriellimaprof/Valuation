@@ -351,6 +351,17 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     op = empresa.operacionais
     aba.secao("Operacionais", largura=n + 3)
     refs["receita_base"] = aba.entrada("Receita liquida do ano base", op.receita_base, MOEDA)
+    # Os saldos de partida que a projecao usa. Sem eles o Excel reconstruia o ano
+    # base como receita x percentual do ano 1 -- e todo modelo derivado do
+    # historico, que parte do saldo publicado, calculava outra variacao no ano 1.
+    if op.capital_giro_inicial is not None:
+        refs["giro_inicial"] = aba.entrada(
+            "Capital de giro do ano base", op.capital_giro_inicial, MOEDA
+        )
+    if op.arrendamento_pct_receita is not None and op.arrendamento_inicial is not None:
+        refs["arrend_inicial"] = aba.entrada(
+            "Passivo de arrendamento do ano base", op.arrendamento_inicial, MOEDA
+        )
     aba.pular()
     aba.cabecalho_anos(resultado.projecao.anos)
     refs["crescimento"] = aba.linha_anual(
@@ -368,6 +379,20 @@ def _aba_premissas(wb: Workbook, resultado: ResultadoValuation) -> dict[str, obj
     refs["giro_pct"] = aba.linha_anual(
         "Capital de giro / Receita", list(op.capital_giro_pct_receita), PCT, fonte=AZUL_ENTRADA
     )
+    if op.arrendamento_pct_receita is not None:
+        refs["arrend_pct"] = aba.linha_anual(
+            "Arrendamento / Receita (saldo)",
+            list(op.arrendamento_pct_receita),
+            PCT,
+            fonte=AZUL_ENTRADA,
+        )
+    if op.arrendamento_renovacao_pct_receita is not None:
+        refs["renov_pct"] = aba.linha_anual(
+            "Renovacao de arrendamento / Receita",
+            list(op.arrendamento_renovacao_pct_receita),
+            PCT,
+            fonte=AZUL_ENTRADA,
+        )
 
     aba.ajustar(n=n)
     return refs
@@ -563,7 +588,11 @@ def _aba_projecao(
         "Capital de giro liquido (saldo)",
         [f"={receita[str(i)]}*{col('giro_pct', i)}" for i in range(n)],
         MOEDA,
-        base=f"={p['receita_base']}*{col('giro_pct', 0)}",
+        base=(
+            f"={p['giro_inicial']}"
+            if "giro_inicial" in p
+            else f"={p['receita_base']}*{col('giro_pct', 0)}"
+        ),
     )
     var_giro = aba.linha_anual(
         "(-) Variacao do capital de giro",
@@ -573,11 +602,47 @@ def _aba_projecao(
         ],
         MOEDA,
     )
+    # Arrendamento: o crescimento do saldo e o contrato renovado, as duas saidas
+    # que a projecao do motor desconta do FCFF.
+    saidas_de_arrendamento = []
+    if "arrend_pct" in p:
+        aba.pular()
+        saldo_arrend = aba.linha_anual(
+            "Passivo de arrendamento (saldo)",
+            [f"={receita[str(i)]}*{col('arrend_pct', i)}" for i in range(n)],
+            MOEDA,
+            base=(
+                f"={p['arrend_inicial']}"
+                if "arrend_inicial" in p
+                else f"={p['receita_base']}*{col('arrend_pct', 0)}"
+            ),
+        )
+        saidas_de_arrendamento.append(
+            aba.linha_anual(
+                "(-) Adicoes de arrendamento",
+                [
+                    f"=-({saldo_arrend[str(i)]}-"
+                    f"{saldo_arrend['base'] if i == 0 else saldo_arrend[str(i - 1)]})"
+                    for i in range(n)
+                ],
+                MOEDA,
+            )
+        )
+    if "renov_pct" in p:
+        saidas_de_arrendamento.append(
+            aba.linha_anual(
+                "(-) Renovacao de arrendamento",
+                [f"=-{receita[str(i)]}*{col('renov_pct', i)}" for i in range(n)],
+                MOEDA,
+            )
+        )
+
     aba.pular()
     fcff = aba.linha_anual(
         "FCFF (fluxo para a firma)",
         [
             f"={nopat[str(i)]}+{dep_volta[str(i)]}+{capex[str(i)]}+{var_giro[str(i)]}"
+            + "".join(f"+{linha[str(i)]}" for linha in saidas_de_arrendamento)
             for i in range(n)
         ],
         MOEDA,

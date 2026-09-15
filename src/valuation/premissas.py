@@ -181,6 +181,17 @@ class PremissasOperacionais:
     # passivo vira saida de caixa, como a variacao do capital de giro.
     arrendamento_pct_receita: list[float] | None = None
     arrendamento_inicial: float | None = None
+    # **O contrato que vence e e renovado tambem e investimento**, e a linha acima
+    # nao o ve: a variacao do saldo e contrato novo **menos** o principal
+    # amortizado. Numa rede que so repoe os pontos o saldo fica parado, a variacao
+    # e zero, e o aluguel some do fluxo enquanto o EBITDA das lojas continua para
+    # sempre. O principal dos contratos atuais ja esta no passivo que a ponte
+    # subtrai; o que faltava cobrar e o contrato que o substitui.
+    #
+    # Medido na Vivara, no proprio motor: cobrar a renovacao -- o principal pago,
+    # 2,5% da receita na mediana -- leva o equity de R$ 3.949 mi para R$ 3.475 mi.
+    # Percentual da receita, e sai do fluxo como o capex.
+    arrendamento_renovacao_pct_receita: list[float] | None = None
 
     def __post_init__(self) -> None:
         if self.receita_base <= 0:
@@ -194,6 +205,10 @@ class PremissasOperacionais:
         }
         if self.arrendamento_pct_receita is not None:
             tamanhos["arrendamento_pct_receita"] = len(self.arrendamento_pct_receita)
+        if self.arrendamento_renovacao_pct_receita is not None:
+            tamanhos["arrendamento_renovacao_pct_receita"] = len(
+                self.arrendamento_renovacao_pct_receita
+            )
         if len(set(tamanhos.values())) != 1:
             raise ValueError(
                 f"As listas de premissas operacionais tem tamanhos diferentes: {tamanhos}"

@@ -146,6 +146,10 @@ def _ajustar_horizonte(operacionais, horizonte: int):
         extras["arrendamento_pct_receita"] = redimensionar(
             operacionais.arrendamento_pct_receita
         )
+    if operacionais.arrendamento_renovacao_pct_receita is not None:
+        extras["arrendamento_renovacao_pct_receita"] = redimensionar(
+            operacionais.arrendamento_renovacao_pct_receita
+        )
     return replace(
         operacionais,
         crescimento_receita=redimensionar(operacionais.crescimento_receita),
@@ -175,6 +179,11 @@ def _editor(operacionais, anos: list[int], analise) -> None:
         colunas_tabela["Arrendamento / receita (%)"] = [
             v * 100 for v in operacionais.arrendamento_pct_receita
         ]
+    tem_renovacao = operacionais.arrendamento_renovacao_pct_receita is not None
+    if tem_renovacao:
+        colunas_tabela[COLUNA_RENOVACAO] = [
+            v * 100 for v in operacionais.arrendamento_renovacao_pct_receita
+        ]
     tabela = pd.DataFrame(colunas_tabela, index=[str(a) for a in anos])
 
     editada = st.data_editor(
@@ -197,6 +206,14 @@ def _editor(operacionais, anos: list[int], analise) -> None:
             "esta linha, uma rede que abre lojas mostra EBITDA subindo, capex parado "
             "e FCFF generoso, enquanto a dívida cresce todo ano."
         )
+    if tem_renovacao:
+        st.caption(
+            "**Renovação de arrendamento / receita** é o contrato que vence e é "
+            "renovado. A linha de cima só vê a **variação** do saldo — contrato novo "
+            "menos o principal amortizado —, então uma rede que apenas repõe os pontos "
+            "teria o aluguel sumindo do fluxo enquanto o EBITDA das lojas continua. "
+            "A sugestão usa o principal pago na DFC."
+        )
 
     colunas = st.columns([1, 3])
     if colunas[0].button("Aplicar", type="primary"):
@@ -207,8 +224,16 @@ def _editor(operacionais, anos: list[int], analise) -> None:
             capex_pct_receita=[v / 100 for v in editada.iloc[:, 3]],
             capital_giro_pct_receita=[v / 100 for v in editada.iloc[:, 4]],
         )
+        # **Pelo nome da coluna, e nao pela posicao**: a coluna de renovacao pode
+        # existir sem a de saldo, e a posicao 5 passaria a ser a outra.
         if tem_arrendamento:
-            novas["arrendamento_pct_receita"] = [v / 100 for v in editada.iloc[:, 5]]
+            novas["arrendamento_pct_receita"] = [
+                v / 100 for v in editada["Arrendamento / receita (%)"]
+            ]
+        if tem_renovacao:
+            novas["arrendamento_renovacao_pct_receita"] = [
+                v / 100 for v in editada[COLUNA_RENOVACAO]
+            ]
         estado.substituir_bloco("operacionais", replace(operacionais, **novas))
         st.rerun()
 
@@ -284,6 +309,8 @@ ANCORAS = {
 }
 
 
+
+COLUNA_RENOVACAO = "Renovação de arrendamento / receita (%)"
 
 # O indicador do histórico que baliza cada coluna do editor, na mesma ordem.
 BALIZAS = (
@@ -551,7 +578,13 @@ def _campos_do_gordon(perpetuidade, analise, ipca: float, pib_nominal: float):
         "Normalizar reinvestimento",
         value=(perpetuidade.roic_perpetuidade is not None)
         or (perpetuidade.roe_perpetuidade is not None),
-        help=f"Desconta do fluxo perpétuo a taxa de reinvestimento g/{sigla}.",
+        help=(
+            f"Marcado: o fluxo perpétuo parte do {'lucro' if para_o_acionista else 'NOPAT'} "
+            f"e desconta o reinvestimento que o crescimento exige, g/{sigla}. "
+            "Desmarcado: o valor terminal cresce o fluxo do último ano projetado, com "
+            "o capex, o giro e o arrendamento que ele tiver. A explicação completa "
+            "está logo abaixo."
+        ),
     )
     roic_real = False
     roic = 0.0
@@ -609,6 +642,26 @@ def _campos_do_gordon(perpetuidade, analise, ipca: float, pib_nominal: float):
                 ),
             )
             _evidencia_do_fosso(analise)
+
+    base = "lucro líquido" if para_o_acionista else "NOPAT"
+    if normalizar and roic:
+        roic_nominal = (1 + roic / 100) * (1 + ipca) - 1 if roic_real else roic / 100
+        colunas[2].caption(
+            f"Com g de {formatar(crescimento / 100, 'pct')} e {sigla} de "
+            f"{formatar(roic_nominal, 'pct')}, a perpetuidade reinveste "
+            f"**{formatar((crescimento / 100) / roic_nominal, 'pct')}** do {base} "
+            "todo ano."
+        )
+    elif not normalizar:
+        colunas[2].caption(
+            "Desmarcado: a perpetuidade cresce o fluxo do **último ano projetado**. "
+            "Só é seguro se aquele ano já for normal — confira em **Valor** o capex, o "
+            "giro e o arrendamento dele."
+        )
+    conceito(
+        "normalizar_reinvestimento",
+        "Normalizar reinvestimento: o que muda ao marcar ou desmarcar",
+    )
 
     return ancora, crescimento, previsto, normalizar, roic_real, roic, para_o_acionista
 

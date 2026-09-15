@@ -42,6 +42,7 @@ class Projecao:
     fcff: np.ndarray
     arrendamento: np.ndarray | None = None
     variacao_arrendamento: np.ndarray | None = None
+    renovacao_arrendamento: np.ndarray | None = None
     juros: np.ndarray | None = None
     variacao_divida: np.ndarray | None = None
     fcfe: np.ndarray | None = None
@@ -69,6 +70,8 @@ class Projecao:
         }
         if self.variacao_arrendamento is not None:
             linhas["(-) Adicoes de arrendamento"] = -self.variacao_arrendamento
+        if self.renovacao_arrendamento is not None:
+            linhas["(-) Renovacao de arrendamento"] = -self.renovacao_arrendamento
         linhas["FCFF (fluxo para a firma)"] = self.fcff
         if self.fcfe is not None:
             linhas["(-) Juros apos IR"] = -self.juros * (1 - self._aliquota_implicita())
@@ -199,9 +202,19 @@ def projetar(
             arrendamento_inicial = operacionais.receita_base * pct_arrendamento[0]
         variacao_arrendamento = np.diff(arrendamento, prepend=arrendamento_inicial)
 
+    # E o contrato que vence e e renovado, que a variacao do saldo nao ve -- ver
+    # `PremissasOperacionais.arrendamento_renovacao_pct_receita`.
+    renovacao_arrendamento = None
+    if operacionais.arrendamento_renovacao_pct_receita is not None:
+        renovacao_arrendamento = receita * np.asarray(
+            operacionais.arrendamento_renovacao_pct_receita, dtype=float
+        )
+
     fcff = nopat + depreciacao - capex - variacao_capital_giro
     if variacao_arrendamento is not None:
         fcff = fcff - variacao_arrendamento
+    if renovacao_arrendamento is not None:
+        fcff = fcff - renovacao_arrendamento
 
     anos = [operacionais.ano_base + i + 1 for i in range(n)]
 
@@ -248,6 +261,7 @@ def projetar(
         variacao_capital_giro=variacao_capital_giro,
         arrendamento=arrendamento,
         variacao_arrendamento=variacao_arrendamento,
+        renovacao_arrendamento=renovacao_arrendamento,
         fcff=fcff,
         juros=juros,
         variacao_divida=variacao_divida,

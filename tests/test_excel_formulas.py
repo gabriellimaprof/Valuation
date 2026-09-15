@@ -257,3 +257,50 @@ def test_a_ancora_do_g_viaja_para_a_planilha_como_formula(empresa_exemplo, tmp_p
     linha_pib = _localizar_linha(ws, "Crescimento nominal da economia")
     nominal = _buscar(valores, "Premissas", f"B{linha_pib}", caminho)
     assert nominal == pytest.approx(ancorada.macro.pib_nominal, abs=1e-9)
+
+
+@pytest.mark.parametrize("normalizado", [True, False])
+def test_excel_reproduz_arrendamento_e_giro_inicial(empresa_exemplo, tmp_path, normalizado):
+    """O FCFF do Excel nao tinha linha de arrendamento, e o giro do ano base saia do ano 1.
+
+    Nenhum dos dois aparecia no teste de paridade porque o modelo de exemplo nao
+    tem arrendamento nem saldo de giro de partida -- e todo modelo derivado do
+    historico tem os dois. Sem normalizar, o valor terminal cresce o FCFF do ultimo
+    ano, entao a renovacao tem de estar nele.
+    """
+    from dataclasses import replace
+
+    from openpyxl import load_workbook
+
+    op = empresa_exemplo.operacionais
+    h = len(op.crescimento_receita)
+    empresa = replace(
+        empresa_exemplo,
+        operacionais=replace(
+            op,
+            capital_giro_inicial=op.receita_base * op.capital_giro_pct_receita[0] * 0.8,
+            arrendamento_pct_receita=[0.25] * h,
+            arrendamento_inicial=op.receita_base * 0.20,
+            arrendamento_renovacao_pct_receita=[0.03] * h,
+        ),
+    )
+    if not normalizado:
+        empresa = replace(
+            empresa, perpetuidade=replace(empresa.perpetuidade, roic_perpetuidade=None)
+        )
+    resultado = avaliar(empresa)
+    caminho = tmp_path / "modelo_arrendamento.xlsx"
+    exportar_excel(resultado, caminho)
+
+    valores = _valores_calculados(caminho)
+    wb = load_workbook(caminho)
+    aba_dcf = wb["DCF"]
+    for rotulo, esperado in [
+        ("VP dos fluxos do periodo explicito", resultado.dcf.valor_presente_explicito),
+        ("Valor terminal (fim do ano n)", resultado.dcf.valor_terminal),
+        ("Enterprise Value", resultado.dcf.enterprise_value),
+        ("Equity Value", resultado.dcf.equity_value),
+    ]:
+        linha = _localizar_linha(aba_dcf, rotulo)
+        obtido = _buscar(valores, "DCF", f"B{linha}", caminho)
+        assert obtido == pytest.approx(esperado, rel=1e-9), rotulo

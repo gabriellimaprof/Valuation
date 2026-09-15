@@ -428,3 +428,147 @@ def test_o_aluguel_da_dva_nao_substitui_o_desembolso_da_dfc():
     )
     assert dva is not None and desembolso > 0
     assert dva < desembolso / 3, "a DVA nao pode estar medindo o aluguel inteiro"
+
+
+# ---------------------------------------------------------------------------
+# O contrato que vence e e renovado
+# ---------------------------------------------------------------------------
+
+
+def test_renovacao_de_arrendamento_reduz_o_fcff():
+    """A variacao do saldo e contrato novo menos principal; a renovacao fica fora dela."""
+    so_saldo = projetar(_operacionais(arrendamento_pct_receita=[0.30] * 5), PremissasMacro())
+    com = projetar(
+        _operacionais(
+            arrendamento_pct_receita=[0.30] * 5,
+            arrendamento_renovacao_pct_receita=[0.03] * 5,
+        ),
+        PremissasMacro(),
+    )
+    assert com.renovacao_arrendamento == pytest.approx(com.receita * 0.03)
+    assert com.fcff == pytest.approx(so_saldo.fcff - com.receita * 0.03)
+    assert "(-) Renovacao de arrendamento" in com.tabela().index
+    assert "(-) Renovacao de arrendamento" not in so_saldo.tabela().index
+
+
+def test_rede_que_so_repoe_pontos_ainda_paga_a_renovacao():
+    """Saldo parado: a variacao e zero, e sem a renovacao o aluguel sumiria do fluxo.
+
+    Era o defeito: a rede mantinha as lojas -- e o EBITDA delas -- para sempre, e
+    so o crescimento do passivo era cobrado.
+    """
+    parada = PremissasOperacionais(
+        receita_base=1000.0,
+        crescimento_receita=[0.0] * 5,
+        margem_ebitda=[0.20] * 5,
+        depreciacao_pct_receita=[0.05] * 5,
+        capex_pct_receita=[0.05] * 5,
+        capital_giro_pct_receita=[0.10] * 5,
+        arrendamento_pct_receita=[0.30] * 5,
+        arrendamento_inicial=300.0,
+    )
+    sem = projetar(parada, PremissasMacro())
+    assert sem.variacao_arrendamento == pytest.approx([0.0] * 5)
+
+    com = projetar(replace(parada, arrendamento_renovacao_pct_receita=[0.04] * 5), PremissasMacro())
+    assert com.fcff == pytest.approx(sem.fcff - 40.0)
+
+
+def test_renovacao_com_horizonte_diferente_e_recusada():
+    with pytest.raises(ValueError):
+        _operacionais(arrendamento_renovacao_pct_receita=[0.03] * 3)
+
+
+def test_a_renovacao_sobrevive_ao_arquivo_salvo(empresa_exemplo):
+    from valuation.projeto import Projeto, desserializar, serializar
+
+    com = replace(
+        empresa_exemplo,
+        operacionais=_operacionais(
+            arrendamento_pct_receita=[0.30] * 5,
+            arrendamento_renovacao_pct_receita=[0.03] * 5,
+        ),
+    )
+    voltou = desserializar(serializar(Projeto(empresa=com))).empresa
+    assert voltou.operacionais.arrendamento_renovacao_pct_receita == pytest.approx([0.03] * 5)
+
+
+def test_a_conversao_ex_ifrs16_zera_a_renovacao():
+    """Antes do IFRS 16 o aluguel ja sai como despesa: cobrar a renovacao contaria duas vezes."""
+    from valuation.casos_especiais import empresa_ex_ifrs16
+
+    visao = ver_ex_ifrs16(_rede(arrendamento=300.0))
+    empresa = replace(
+        _empresa_rede(),
+        operacionais=_operacionais(
+            arrendamento_pct_receita=[0.30] * 5,
+            arrendamento_renovacao_pct_receita=[0.03] * 5,
+        ),
+    )
+    convertida = empresa_ex_ifrs16(empresa, visao)
+    assert convertida.operacionais.arrendamento_pct_receita is None
+    assert convertida.operacionais.arrendamento_renovacao_pct_receita is None
+
+
+# ---------------------------------------------------------------------------
+# A sugestao: o saldo de hoje, e a renovacao pelo principal pago
+# ---------------------------------------------------------------------------
+
+
+def test_a_sugestao_parte_do_saldo_de_hoje_e_nao_da_mediana():
+    """Saldo e estoque: o ultimo ano preve o seguinte com 1,64 pp contra 2,57 pp.
+
+    A mediana abria um degrau no ano 1 -- o saldo de partida e o de hoje --, e a
+    Vivara pagava R$ 130 mi de contrato novo que era so a razao voltando a mediana.
+    """
+    from valuation.historico import sugerir_premissas
+
+    sugestao = sugerir_premissas(_rede(), horizonte=5)
+    # Saldo de 900 sobre receita de 1.100 no ultimo ano; a mediana seria 0,859.
+    assert sugestao.operacionais.arrendamento_pct_receita == pytest.approx([900.0 / 1100.0] * 5)
+    assert sugestao.operacionais.arrendamento_inicial == pytest.approx(900.0)
+
+
+def test_a_sugestao_cobra_a_renovacao_pelo_principal_do_ultimo_ano():
+    """75% das companhias com arrendamento relevante publicam o principal pago."""
+    from valuation.historico import sugerir_premissas
+
+    sugestao = sugerir_premissas(_rede(), horizonte=5)
+    # Principal de 110 sobre receita de 1.100 em 2024.
+    assert sugestao.operacionais.arrendamento_renovacao_pct_receita == pytest.approx([0.10] * 5)
+    justificativa = sugestao.justificativas["arrendamento_renovacao_pct_receita"]
+    assert "2024" in justificativa
+    assert "10,0%" in justificativa
+
+
+def test_sem_principal_publicado_a_renovacao_fica_em_zero_e_avisa():
+    """Estimar pelo prazo mediano erra 8,2 pp no P90: vai no alerta, e nao no fluxo.
+
+    A coluna aparece zerada para ser preenchida -- sem ela, a tela de Premissas nao
+    teria onde informar a renovacao.
+    """
+    from valuation.historico import sugerir_premissas
+
+    sugestao = sugerir_premissas(_rede(aluguel_principal=0.0), horizonte=5)
+    assert sugestao.operacionais.arrendamento_renovacao_pct_receita == pytest.approx([0.0] * 5)
+    alerta = next((a for a in sugestao.alertas if "principal de arrendamento" in a), None)
+    assert alerta is not None, sugestao.alertas
+    # 900 x 22,7% / 1.100 = 18,6% da receita, pelo prazo mediano de 4,4 anos.
+    assert "18,6%" in alerta
+    assert "4,4 anos" in alerta
+
+
+def test_o_relatorio_explica_a_renovacao():
+    from valuation.relatorio import montar
+
+    empresa = replace(
+        _empresa_rede(),
+        operacionais=_operacionais(
+            arrendamento_pct_receita=[0.30] * 5,
+            arrendamento_renovacao_pct_receita=[0.03] * 5,
+        ),
+    )
+    texto = montar(avaliar(empresa))
+    assert "Renovação de arrendamento / receita" in texto
+    assert "contrato que vence e é renovado" in texto
+

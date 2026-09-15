@@ -538,6 +538,7 @@ def _fluxos(resultado, unidade: str) -> None:
 
 def _ponte(resultado, unidade: str) -> None:
     conceito("ponte", "Da empresa inteira para a fatia do acionista")
+    _arrendamento_na_divida()
 
     ponte = resultado.empresa.ponte
     itens = [
@@ -623,6 +624,36 @@ def _arrendamento(ponte, unidade: str) -> None:
             "que o modelo não desconta de ninguém."
         )
     st.warning(escapar_cifrao(aviso))
+
+
+def _arrendamento_na_divida() -> None:
+    """Por que o arrendamento esta na divida bruta, com o peso dele nesta companhia.
+
+    So aparece para quem aluga, e so com a ponte desta companhia -- pela mesma
+    razao de `_duas_dividas_liquidas`: antes de derivar, a ponte e a da empresa de
+    partida, e o peso do arrendamento seria o de outra divida.
+    """
+    analise = estado.analise()
+    if analise is None or estado.modelo_fora_do_historico() is not None:
+        return
+    d = analise.demonstracoes
+    arrendamento = (
+        d.serie("arrendamento_curto_prazo")
+        .add(d.serie("arrendamento_longo_prazo"), fill_value=0)
+        .dropna()
+    )
+    if arrendamento.empty or float(arrendamento.iloc[-1]) <= 0:
+        return
+    conceito("arrendamento_divida", "Por que o arrendamento entra na dívida bruta")
+    ano = arrendamento.index[-1]
+    parte = float(arrendamento.iloc[-1])
+    total = float(d.divida_bruta().get(ano, float("nan")))
+    if total == total and total > 0:
+        st.caption(
+            f"Nesta companhia, **{em_texto(parte, d.unidade)}** dos "
+            f"{em_texto(total, d.unidade)} de dívida bruta em {ano} "
+            f"(**{formatar(parte / total, 'pct')}**) são arrendamento."
+        )
 
 
 def _duas_dividas_liquidas(ponte, unidade: str) -> None:

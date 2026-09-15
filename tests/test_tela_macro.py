@@ -482,3 +482,44 @@ def _limpar_cache_de_taxa() -> None:
     from app.paginas.custo_capital import _taxa_real_do_dia
 
     _taxa_real_do_dia.clear()
+
+
+# ---------------------------------------------------------------------------
+# Normalizar reinvestimento: o que e, e o que muda ao desmarcar
+# ---------------------------------------------------------------------------
+
+
+def _textos(teste) -> str:
+    partes = [str(m.value) for m in teste.markdown] + [str(c.value) for c in teste.caption]
+    return " ".join(partes)
+
+
+def test_a_caixa_de_normalizar_diz_o_que_muda_ao_desmarcar():
+    """A queixa: pelo app nao ficava claro o que e, nem a alternativa ao desmarcar."""
+    teste = _rodar(TELA_PREMISSAS)
+    caixa = next(c for c in teste.checkbox if c.label == "Normalizar reinvestimento")
+    assert "Desmarcado" in caixa.help
+    assert "último ano projetado" in caixa.help
+
+    texto = _textos(teste)
+    assert "Normalizar reinvestimento: o que muda ao marcar ou desmarcar" in texto
+    assert "g = taxa de reinvestimento × ROIC" in texto
+
+
+def test_marcado_a_tela_mostra_quanto_a_perpetuidade_reinveste():
+    """g de 4,5% sobre ROIC de 15%: 30% do NOPAT volta ao negocio todo ano."""
+    teste = _rodar(
+        TELA_PREMISSAS,
+        {"perpetuidade.crescimento_perpetuo": 0.045, "perpetuidade.roic_perpetuidade": 0.15},
+    )
+    texto = _textos(teste)
+    assert "a perpetuidade reinveste" in texto
+    assert "30,0%" in texto
+
+
+def test_desmarcado_a_tela_avisa_que_o_ultimo_ano_vira_perpetuidade():
+    teste = _rodar(TELA_PREMISSAS, {"perpetuidade.roic_perpetuidade": None})
+    caixa = next(c for c in teste.checkbox if c.label == "Normalizar reinvestimento")
+    assert caixa.value is False
+    assert "Desmarcado: a perpetuidade cresce o fluxo do **último ano projetado**" in _textos(teste)
+

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1375 testes
+pytest                        # 1392 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -164,17 +164,75 @@ ao contrário, esconde. Cobertura: 258 das 467 companhias publicam o principal,
 184 os juros — sem os juros o ajuste é declarado como **piso**. A depreciação do
 direito de uso viria mais direto, mas só 10% a publicam.
 
-**As duas bases não coincidem no valuation, e a diferença tem nome.** Escrevi
-que deveriam, já que IFRS 16 é apresentação. Errado: o balanço reconhece o
-aluguel do **prazo contratado**, e quem aluga ponto renova. Medido num caso sem
-crescimento, aluguel de 10/ano e passivo de 37,9 — o VP perpétuo do aluguel após
-imposto ao WACC é **49,4**. Na Raia Drogasil: passivo de R$ 4,4 bi contra R$ 9,3
-bi de aluguel perpétuo. A distância é quanto do valor vem de supor que o aluguel
-acaba, e a aba IFRS 16 mostra as duas avaliações lado a lado.
+**Por que o arrendamento é dívida — e o que isso obriga o fluxo a cobrar.** O
+passivo do IFRS 16 é o valor presente de parcelas fixas já contratadas: um
+financiamento do ponto. Para o valuation é dívida (Koller, Damodaran), e o app o
+trata assim na ponte, no D/E e no Kd. Mas a conta só fecha se o fluxo concordar em
+três lugares: o aluguel não sai do EBITDA; o custo de capital inclui o
+arrendamento; e **todo contrato novo ou renovado é investimento**, como o capex. A
+tela Valor explica isso ao lado da ponte (`conceito("arrendamento_divida")`), com o
+peso do arrendamento na dívida bruta da companhia.
 
-`empresa_ex_ifrs16` converte as quatro pontas de uma vez (margem, depreciação,
-adições projetadas, ponte). **O D/E alvo não é convertido** — quem o escolheu
-escolheu com a dívida cheia em mente.
+**O terceiro lugar estava furado, e o texto que havia aqui o explicava errado.** A
+projeção descontava só a **variação** do saldo — contrato novo menos o principal
+amortizado. O contrato que vence e é renovado não muda o saldo e nunca era
+cobrado, enquanto o EBITDA daquela loja seguia no fluxo para sempre. Estava
+escrito que "as duas bases não coincidem porque a leitura pós-IFRS 16 supõe que o
+aluguel acaba". Não supõe: a projeção mantinha o passivo como percentual da
+receita para sempre. Era inconsistência, e não hipótese.
+
+A correção é `arrendamento_renovacao_pct_receita`: o principal pago na DFC, como
+percentual da receita, sai do fluxo como o capex. E o saldo sugerido passou a ser o
+**do último ano**, e não a mediana. As duas escolhas foram medidas prevendo o ano
+seguinte sem olhar o futuro, na base 2019-2025:
+
+| Prever o ano seguinte | Mediana | Mediana dos 3 últimos | **Último ano** |
+|---|---|---|---|
+| Arrendamento / receita (825 previsões, 196 companhias) | 2,57 pp | 2,17 pp | **1,64 pp** |
+| Principal pago / receita (569 previsões) | 0,49 pp | 0,42 pp | **0,31 pp** |
+
+A mediana do saldo ainda abria um degrau no ano 1, porque o saldo de partida é o de
+hoje: a Vivara pagava R$ 130 mi de "contrato novo" no primeiro ano que eram só a
+razão voltando da mediana (26,4%) ao patamar atual (23,0%).
+
+Das 216 companhias com arrendamento relevante, 162 (75%) têm o principal lido.
+Quem não tem fica com a coluna **zerada e visível**, e um alerta dá a estimativa
+pelo prazo mediano da base (principal de 22,7% do saldo, 4,4 anos) — sem cobrá-la,
+porque ela erra 8,2 pp no P90, justamente em contrato longo (terra agrícola,
+shopping).
+
+No motor, com as mesmas premissas e só a regra de arrendamento mudando:
+
+| Companhia | Equity antes | Depois |
+|---|---|---|
+| Vivara | 3.949 | **3.496** (−11,5%) |
+| Raia Drogasil | 15.138 | **11.223** (−25,9%) |
+| Grupo Mateus | 4.939 | **4.190** (−15,2%) |
+| Azzas 2154 | 10.163 | 11.047 (+8,7%) |
+| Lojas Renner | 7.964 | 8.872 (+11,4%) |
+
+**Azzas e Renner sobem porque a renovação delas saiu zero — e não deveria.** As
+duas publicam o pagamento como "Contraprestação de arrendamento" (R$ 795 mi na
+Renner e R$ 297 mi na Azzas, em 2025), rótulo que a leitura do principal não
+reconhece; e o "juro de arrendamento" que o app lê delas é o **apropriado** no
+ajuste ao lucro (6.01.01), na Renner ainda misturado com empréstimos. É o próximo
+de-para, e "contraprestação" costuma ser principal mais juros — não dá para
+tratá-la inteira como principal.
+
+**O Excel também não cobrava arrendamento nenhum**, e o teste de paridade não via,
+porque o modelo de exemplo não tem arrendamento nem saldo de giro de partida. O
+FCFF da planilha ganhou as linhas de adição e de renovação, e o capital de giro do
+ano base passou a vir do saldo que a projeção usa, e não de receita × % do ano 1 —
+diferença que todo modelo derivado do histórico tinha no primeiro ano. O teste
+novo falha sem as linhas (conferido com o `excel.py` antigo) e passa com elas.
+
+As duas bases continuam não coincidindo, e **o resto da distância não foi
+decomposto**: o passivo é descontado à taxa do contrato e o aluguel ex-IFRS 16 ao
+WACC, e o D/E alvo não é convertido.
+
+`empresa_ex_ifrs16` converte as cinco pontas de uma vez (margem, depreciação,
+adições e renovação projetadas, ponte). **O D/E alvo não é convertido** — quem o
+escolheu escolheu com a dívida cheia em mente.
 
 **O juro pago é padronizado para o operacional, abaixo do capital de giro.** O
 IFRS deixa a companhia escolher onde classificar juro pago, e a base se divide:
@@ -1281,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.375 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.392 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -4748,3 +4806,19 @@ Em ordem de valor:
 - **Diga o que não verificou.** Vale mais que parecer confiante.
 - **Comentários explicam o porquê, não o quê.** O código diz o que faz.
 - Commits em português, descrevendo a decisão e não só a mudança.
+
+### A tela explica o que as caixas fazem
+
+"Normalizar reinvestimento" dizia só "desconta do fluxo perpétuo a taxa de
+reinvestimento g/ROIC": não dizia o que é, nem o que acontece ao desmarcar. Agora
+a ajuda da caixa diz os dois lados; a legenda mostra a conta do caso (g de 4,5%
+sobre ROIC de 15%: a perpetuidade reinveste 30% do NOPAT todo ano) ou, com a caixa
+desmarcada, avisa que a perpetuidade passa a crescer o fluxo do **último ano
+projetado**; e a explicação completa fica logo abaixo
+(`conceito("normalizar_reinvestimento")`), no formato de sempre — o que é, por que
+importa para o valor, o erro comum.
+
+Ela importa mais do que parecia: com a caixa marcada o valor terminal sai do NOPAT
+e não depende do fluxo do último ano, então um erro de reinvestimento no período
+explícito — como a renovação de arrendamento que não era cobrada — fica nos cinco
+anos. Desmarcada, o mesmo erro vai para a perpetuidade.

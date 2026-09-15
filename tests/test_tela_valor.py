@@ -377,3 +377,72 @@ def test_o_veredito_do_beta_concorda_com_o_pvp():
     indiferenca = numero(metricas["Beta de indiferença"])
     pvp = numero(metricas["P/VP implícito"])
     assert (indiferenca > usado) == (pvp > 1.0), (usado, indiferenca, pvp)
+
+
+# ---------------------------------------------------------------------------
+# Por que o arrendamento entra na divida bruta
+# ---------------------------------------------------------------------------
+
+DADOS_CVM = RAIZ / "tests" / "dados" / "cvm"
+
+SCRIPT_COM_HISTORICO = (
+    "import sys\n"
+    f"for caminho in ({str(RAIZ)!r}, {str(RAIZ / 'src')!r}):\n"
+    "    if caminho not in sys.path:\n"
+    "        sys.path.insert(0, caminho)\n"
+    "from pathlib import Path\n"
+    "import streamlit as st\n"
+    "from app import estado\n"
+    "from valuation.importacao.cvm import importar_cvm\n"
+    "estado.iniciar()\n"
+    "if not st.session_state.get('derivado'):\n"
+    f"    dfs = importar_cvm(5410, [2023, 2024], cache=Path({str(DADOS_CVM)!r}))\n"
+    "    estado.definir_demonstracoes(dfs.escalar(1e6, 'R$ milhões'))\n"
+    "    if st.session_state.get('derivar', True):\n"
+    "        estado.derivar_premissas_do_historico()\n"
+    "    st.session_state['derivado'] = True\n"
+    "from app.paginas import valor\n"
+    "valor.render()\n"
+)
+
+
+def _rodar_com_historico(derivar: bool = True) -> AppTest:
+    teste = AppTest.from_string(SCRIPT_COM_HISTORICO, default_timeout=240)
+    teste.session_state["derivar"] = derivar
+    teste.run()
+    assert not teste.exception, [str(e.value) for e in teste.exception]
+    return teste
+
+
+def _texto_da_tela(teste) -> str:
+    return " ".join(
+        [str(m.value) for m in teste.markdown] + [str(c.value) for c in teste.caption]
+    )
+
+
+def test_a_ponte_explica_por_que_o_arrendamento_e_divida():
+    """WEG do fixture: R$ 823 mi dos R$ 4.418 mi de divida bruta de 2024 sao arrendamento."""
+    texto = _texto_da_tela(_rodar_com_historico())
+    assert "Por que o arrendamento entra na dívida bruta" in texto
+    assert "financiamento do ponto" in texto
+    assert "novo ou renovado" in texto.replace("**", "")
+    assert "são arrendamento" in texto
+    assert "18,6%" in texto
+
+
+def test_sem_historico_a_ponte_nao_fala_de_arrendamento():
+    """A empresa de partida nao tem demonstracoes: nao ha peso para mostrar."""
+    teste = AppTest.from_string(SCRIPT, default_timeout=240)
+    teste.run()
+    assert "Por que o arrendamento entra na dívida bruta" not in _texto_da_tela(teste)
+
+
+def test_antes_de_derivar_a_ponte_nao_mistura_as_empresas():
+    """Importar nao deriva: ate o clique, a ponte e da empresa de partida.
+
+    O peso do arrendamento sairia das demonstracoes da WEG sobre a divida de outra
+    ponte -- a mesma guarda de `_duas_dividas_liquidas`.
+    """
+    texto = _texto_da_tela(_rodar_com_historico(derivar=False))
+    assert "Por que o arrendamento entra na dívida bruta" not in texto
+

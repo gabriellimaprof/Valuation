@@ -99,6 +99,24 @@ CONCEITOS: dict[str, str] = {
         "relação fundamental **g = taxa de reinvestimento × ROIC**. Se a projeção cresce "
         "sem reinvestir na proporção correta, o modelo está criando valor do nada."
     ),
+    "normalizar_reinvestimento": (
+        "**Normalizar reinvestimento** decide de onde sai o fluxo da perpetuidade.\n\n"
+        "**Marcado**, o app não usa o fluxo do último ano projetado: parte do NOPAT e "
+        "desconta o reinvestimento que o crescimento perpétuo exige, pela relação "
+        "**g = taxa de reinvestimento × ROIC**. O fluxo perpétuo é "
+        "NOPAT × (1 + g) × (1 − g / ROIC): crescer 4,5% ao ano com ROIC de 15% exige "
+        "reinvestir 30% do NOPAT, para sempre. No fluxo para o acionista, a mesma conta "
+        "usa o lucro líquido e o ROE.\n\n"
+        "**Desmarcado**, o valor terminal cresce o fluxo do último ano projetado: "
+        "FCFF × (1 + g). Serve quando aquele ano já é normal — capex, capital de giro e "
+        "arrendamento no ritmo de longo prazo.\n\n"
+        "**Por que importa para o valor:** a perpetuidade costuma ser a maior parte do "
+        "valor, e o último ano projetado raramente é normal. Capex baixo depois de um "
+        "ciclo de investimento, ou alto no meio de uma expansão, fica carregado para "
+        "sempre.\n\n"
+        "**Erro comum:** desmarcar com crescimento perpétuo alto e um último ano de "
+        "capex baixo — o modelo cresce para sempre sem pagar pelo crescimento."
+    ),
     "capital_giro": (
         "O **capital de giro** operacional é recebíveis mais estoques menos fornecedores: "
         "o dinheiro preso no ciclo do negócio. Quando a receita cresce, ele cresce junto e "
@@ -111,6 +129,25 @@ CONCEITOS: dict[str, str] = {
         "(*Equity Value*): tira a dívida, devolve o caixa e ajusta minoritários, "
         "contingências e ativos não operacionais. É onde mora boa parte dos erros de "
         "valuation na prática, porque cada item tem sinal próprio e é fácil trocar."
+    ),
+    "arrendamento_divida": (
+        "Desde o **IFRS 16** (CPC 06), o contrato de aluguel vira passivo no balanço: "
+        "o valor presente das parcelas que a empresa já se comprometeu a pagar. "
+        "Economicamente é um **financiamento do ponto** — pagamento fixo, com juro "
+        "embutido, que não depende de a loja vender. Para o valuation, é dívida: a "
+        "ponte o subtrai do *Enterprise Value*, e o custo de capital o inclui no D/E e "
+        "no Kd.\n\n"
+        "**Por que importa para o valor:** a mesma rede pode ser dona dos pontos, com "
+        "a dívida do financiamento, ou alugá-los, com o passivo de arrendamento. Tratar "
+        "só a primeira como dívida faria a segunda parecer menos alavancada e valer "
+        "mais sem ser.\n\n"
+        "**A conta só fecha se o fluxo concordar:** com o arrendamento na dívida, o "
+        "aluguel não sai do fluxo — o EBITDA é o pós-IFRS 16 —, e todo contrato **novo "
+        "ou renovado** é investimento, como o capex. É o que as linhas de arrendamento "
+        "da projeção cobram.\n\n"
+        "**Erro comum:** cruzar as bases. Dívida com arrendamento ao lado de um fluxo "
+        "que já desconta o aluguel conta o mesmo compromisso duas vezes; dívida sem "
+        "arrendamento ao lado de um fluxo que não desconta o aluguel não conta nenhuma."
     ),
     "multiplos": (
         "**Múltiplos** avaliam por comparação: se empresas parecidas valem 8x EBITDA, "
