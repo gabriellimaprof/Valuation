@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from valuation.dados_setoriais import BETA_DESALAVANCADO_SEM_SETOR
@@ -166,4 +167,47 @@ def test_sem_exercicio_plausivel_nao_ha_ultimo_kd(weg):
 
     kd, ano = ultimo_kd_plausivel(_com_kd(weg, {2024: 0.001, 2025: 0.002}))
     assert ano is None and kd != kd
+
+
+def _com_kd_em_ordem(weg, valores_por_ano):
+    """Como `_com_kd`, com as colunas em ordem: ano novo entra no fim do quadro."""
+    analise = _com_kd(weg, valores_por_ano)
+    return replace(
+        analise, indicadores=analise.indicadores.reindex(columns=sorted(analise.indicadores.columns))
+    )
+
+
+def test_kd_de_dois_anos_atras_pede_conferencia(weg):
+    """10 das 358 companhias: a sugestao usava o custo de outra empresa, calada."""
+    sugestao = sugerir_premissas(
+        _com_kd_em_ordem(weg, {2022: 0.09, 2023: 0.001, 2024: 0.002, 2025: 0.001})
+    )
+    assert sugestao.custo_capital.custo_divida_brl == pytest.approx(0.09)
+    alerta = next((a for a in sugestao.alertas if "O Kd sugerido vem de 2022" in a), None)
+    assert alerta is not None, sugestao.alertas
+    assert "3 anos antes" in alerta
+    assert "0,1%, 0,2%, 0,1%" in alerta
+
+
+def test_kd_de_um_ano_atras_nao_alerta(weg):
+    sugestao = sugerir_premissas(_com_kd_em_ordem(weg, {2024: 0.09, 2025: 0.001}))
+    assert not any("O Kd sugerido vem de" in a for a in sugestao.alertas)
+
+
+def test_o_atraso_le_o_rotulo_do_ano_movel():
+    """A tela de custo de capital recebe `3T24` tanto quanto `2024`."""
+    from valuation.historico import _anos_desde
+
+    class _Analise:
+        indicadores = pd.DataFrame(
+            {"3T23": [0.08], "3T24": [0.001], "3T25": [0.002]},
+            index=["Custo da divida pelo caixa"],
+        )
+
+        def linha(self, nome):
+            return self.indicadores.loc[nome]
+
+    atraso, depois = _anos_desde(_Analise(), "3T23")
+    assert atraso == pytest.approx(2.0)
+    assert depois == [pytest.approx(0.001), pytest.approx(0.002)]
 

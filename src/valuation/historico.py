@@ -910,6 +910,47 @@ def acoes_utilizaveis(acoes, patrimonio_liquido) -> bool:
     return float(patrimonio_liquido) / float(acoes) <= VALOR_POR_ACAO_IMPLAUSIVEL
 
 
+# Quantos anos o Kd sugerido pode ficar para tras antes de pedir conferencia.
+#
+# Medido na safra 2021-2025, ja com o de-para do juro pago: das 358 companhias
+# com juro pago, 322 tem o ultimo exercicio plausivel no ultimo ano, 12 um ano
+# antes, e **10 (2,8%) dois anos ou mais** -- quase todas em recuperacao judicial
+# ou com divida pequena demais para a razao medir custo (Baumer, BrasilAgro, SBF).
+# Um ano de atraso e um exercicio fora da faixa; dois ja e o custo de outra
+# empresa, e a sugestao usa-lo calada seria o defeito que a Simpar mostrou.
+ATRASO_DO_KD_RELEVANTE = 2
+
+
+def _anos_desde(analise: AnaliseHistorica, rotulo) -> tuple[float | None, list[float]]:
+    """Quantos anos separam ``rotulo`` da ultima leitura do juro pago, e as leituras depois dele.
+
+    Le o rotulo de exercicio (``2024``) e o de ano movel (``3T24``): a tela de
+    custo de capital recebe os dois.
+    """
+    from .importacao.series import periodo_do_rotulo
+
+    if rotulo is None or "Custo da divida pelo caixa" not in analise.indicadores.index:
+        return None, []
+    serie = analise.linha("Custo da divida pelo caixa").dropna()
+    if serie.empty or rotulo not in serie.index:
+        return None, []
+
+    def em_anos(valor):
+        periodo = periodo_do_rotulo(valor)
+        if periodo is not None:
+            return periodo[0] + (periodo[1] - 1) / 4
+        try:
+            return float(int(valor))
+        except (TypeError, ValueError):
+            return None
+
+    inicio, fim = em_anos(rotulo), em_anos(serie.index[-1])
+    if inicio is None or fim is None:
+        return None, []
+    posicao = list(serie.index).index(rotulo)
+    return fim - inicio, [float(v) for v in serie.iloc[posicao + 1:]]
+
+
 def ultimo_kd_plausivel(analise: AnaliseHistorica) -> tuple[float, object | None]:
     """O juro pago sobre a divida media do ultimo exercicio plausivel, e o exercicio.
 
@@ -1287,6 +1328,17 @@ def sugerir_premissas(
         if not np.isfinite(kd):
             kd = analise.mediana("Custo da divida efetivo")
             kd_origem = "despesas financeiras sobre a divida media"
+
+    atraso, depois = _anos_desde(analise, ano_do_kd)
+    if atraso is not None and atraso >= ATRASO_DO_KD_RELEVANTE:
+        lidos = ", ".join(f"{v:.1%}".replace(".", ",") for v in depois)
+        alertas.append(
+            f"O Kd sugerido vem de {ano_do_kd}, {atraso:.0f} anos antes da última "
+            f"leitura: as seguintes saíram {lidos}, fora da faixa de "
+            f"{KD_MINIMO_PLAUSIVEL:.0%} a {KD_MAXIMO_PLAUSIVEL:.0%} — juro quase zero "
+            "(capitalizado ou não pago) ou dívida pequena demais para a razão medir "
+            f"custo. Confira se o custo de {ano_do_kd} ainda vale para a empresa de hoje."
+        )
 
     aliquota_hist = analise.mediana("Aliquota efetiva de IR")
     if np.isfinite(aliquota_hist) and abs(aliquota_hist - aliquota_ir) > 0.05:

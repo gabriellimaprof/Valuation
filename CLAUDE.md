@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1372 testes
+pytest                        # 1375 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1281,7 +1281,7 @@ não é verificação.
 
 ## Estado atual
 
-1.372 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.375 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -2764,6 +2764,16 @@ juro pago, medido linha a linha") a Simpar vai a Kd de 11,0% (2025) e WACC de
 continua no sintetico -- mas porque nao publica juro pago, e nao porque o swap
 que se lia como juro dava 1,2%.
 
+**E o atraso agora avisa.** Quando o ultimo exercicio plausivel fica dois anos ou
+mais atras da ultima leitura, a sugestao continua usando-o e diz isso: "O Kd
+sugerido vem de 2022, 3 anos antes da ultima leitura: as seguintes sairam 0,1%,
+0,2%, 0,1%, fora da faixa de 3% a 25% ...". Medido com o de-para do juro pago:
+das 358 companhias com juro pago, 322 tem o ultimo plausivel no ultimo ano, 12 um
+ano antes e **10 (2,8%) dois ou mais** -- quase todas em recuperacao judicial ou
+com divida pequena demais para a razao medir custo (Baumer, BrasilAgro, SBF). Um
+ano e um exercicio fora da faixa; dois ja e o custo de outra empresa. O atraso le
+rotulo de exercicio (`2024`) e de ano movel (`3T24`), porque a tela recebe os dois.
+
 ### Os betas setoriais saem da planilha oficial do Damodaran
 
 Com a sugestao de WACC usando o beta do setor, a tabela de `dados_setoriais`
@@ -2801,6 +2811,21 @@ que nao estava nas dependencias, e `carregar_betas_damodaran` lia so a primeira
 aba -- que na edicao de 2026 e "Explanation & FAQs", com a tabela em "Industry
 Averages". O leitor agora procura o cabecalho em todas as abas, e `xlrd` foi
 declarado. O teste monta uma planilha nessa ordem, sem rede.
+
+**Bancos e seguradoras conferidos contra o beta observado.** Os 0,95 e 0,85
+tinham ficado sem medicao. Beta semanal contra o Ibovespa, pelo mesmo Yahoo que o
+app usa para cotacao, nos cinco anos ate set/2026:
+
+| | n | Mediana 5 anos | 2 anos | Blume 5 anos | No app |
+|---|---|---|---|---|---|
+| Bancos (ITUB4, BBDC4, BBAS3, SANB11, BPAC11, ABCB4, BRSR6, BMGB4, BAZA3) | 9 | 0,93 | 1,02 | **0,95** | 0,95 |
+| Seguros (BBSE3, PSSA3, CXSE3, IRBR3, WIZC3) | 5 | 0,74 | 0,83 | **0,82** | 0,85 |
+
+**Os dois ficam.** O de bancos bate com o ajustado de Blume; o de seguros fica
+tres centesimos acima do ajustado e do de 2 anos, dentro de uma dispersao grande
+(BBSE3 0,44, IRBR3 1,24). A amostra e pequena e o indice e local, entao isto e
+conferencia de ordem de grandeza, e nao calibracao. BPAN4 nao voltou do Yahoo
+(404).
 
 ### A margem sugerida parte da reportada, e nao da recorrente
 
