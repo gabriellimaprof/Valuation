@@ -2774,6 +2774,28 @@ com divida pequena demais para a razao medir custo (Baumer, BrasilAgro, SBF). Um
 ano e um exercicio fora da faixa; dois ja e o custo de outra empresa. O atraso le
 rotulo de exercicio (`2024`) e de ano movel (`3T24`), porque a tela recebe os dois.
 
+**O juro apropriado nao virou fonte do Kd -- medi e rejeitei.** Onde nao ha juro
+pago que se leia, muitas companhias abrem no ajuste ao lucro (6.01.01) o juro
+apropriado sobre emprestimos, sem cambio ("Juros provisionados de emprestimos",
+"Despesas de juros sobre dividas financeiras"). Parecia o degrau natural antes
+do sintetico. Medido na safra 2021-2025, prevendo o juro pago do ano seguinte sem
+olhar o futuro:
+
+| Estimador | n | Erro mediano | Dentro de 2 pp | P90 |
+|---|---|---|---|---|
+| Ultimo pago plausivel (onde ha os dois) | 265 | **1,67 pp** | 56% | 6,1 |
+| Ultimo apropriado plausivel (os mesmos) | 265 | 2,02 pp | 50% | 6,5 |
+| Apropriado, onde nao ha pago plausivel | **18** | 2,34 pp | 44% | 9,0 |
+
+No mesmo ano ele nao tem vies (razao mediana de 1,02 contra o pago), mas erra
+mais, e o caso em que acrescentaria alguma coisa sao **18 previsoes e 13
+companhias** -- quase todas pequenas ou em recuperacao judicial (Hoteis Othon,
+OSX, Rio Alto, Minupar). A unica grande e a Marfrig, com 8,1% em 2025. Um terceiro
+caminho para o Kd, com P90 de 9 p.p., para 3% da base, nao se paga: a Marfrig fica
+no sintetico, e quem quiser usa "Informar Kd diretamente". **O que nao foi
+medido**: o erro do sintetico nesses mesmos casos, porque ele usa a curva de hoje
+e o alvo e o juro de anos passados.
+
 ### Os betas setoriais saem da planilha oficial do Damodaran
 
 Com a sugestao de WACC usando o beta do setor, a tabela de `dados_setoriais`
