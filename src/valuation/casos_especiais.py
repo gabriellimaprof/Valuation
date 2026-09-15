@@ -480,6 +480,12 @@ def ver_ex_ifrs16(analise: AnaliseHistorica) -> VisaoExIFRS16 | None:
 
     aluguel = principal.fillna(0).add(juros.fillna(0), fill_value=0)
     aluguel = aluguel.where(aluguel != 0)
+    # **Serie de zeros nao e serie.** A Movida publica "Arrendamento financeiro -
+    # Pagamento" zerado e o resto misturado com divida: a guarda acima via uma
+    # serie nao-vazia, e a visao saia com aluguel nulo e margem **igual a
+    # reportada** -- exatamente o que devolver `None` existe para evitar.
+    if aluguel.dropna().empty:
+        return None
 
     ebitda = d.ebitda()
     ebit = d.serie("ebit")

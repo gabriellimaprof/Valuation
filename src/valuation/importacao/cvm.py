@@ -1393,16 +1393,44 @@ def _somar_arrendamento_fora_da_divida(
 # Estas contas **nao entram** em REGRAS_SOMADAS de proposito. La cada linha
 # alimenta uma regra so, e o juro de arrendamento precisa continuar contando
 # para ``juros_pagos`` -- ele e juro. Aqui ele e lido de novo, para outro fim.
+# **"Pagos" e "contraprestacao" tambem sao desembolso.** O padrao antigo pedia
+# "pagamento", e deixava de fora "Arrendamentos pagos" (17 companhias) e
+# "Contraprestacao de arrendamento", que e como a Renner e a Azzas publicam --
+# elas saiam sem principal nenhum, e com isso sem renovacao de contrato cobrada
+# no fluxo. Com os dois rotulos entram R$ 13,5 bi em 33 companhias.
 _MARCA_PRINCIPAL_ARRENDAMENTO = re.compile(
-    r"(pagament|amortiza|liquida|desembols|quita)", re.I
+    r"(contraprest|pagament|pag[oa]s?\b|amortiza|liquida|desembols|quita)", re.I
 )
 _MARCA_JUROS_ARRENDAMENTO = re.compile(r"juro", re.I)
 # Linhas que falam de arrendamento sem ser desembolso do arrendatario.
+#
+# Os cinco ultimos entraram com a "contraprestacao": a CVLB publica "Descontos
+# nas contraprestacoes do passivo de arrendamento" e a Petrobras, "Encerramento
+# antecipado e alteracoes em pagamentos de contratos de arrendamento" (R$ 13,6
+# bi) -- remensuracao de contrato, e nao caixa que saiu.
 _NAO_E_DESEMBOLSO_DE_ARRENDAMENTO = re.compile(
     r"receb|a receber|aliena|venda|baixa|subarrend|sublocac|adi[çc][ãa]o|novo|"
-    r"deprecia|amortiza[çc][ãa]o d[eo] direito|valor residual",
+    r"deprecia|amortiza[çc][ãa]o d[eo] direito|valor residual|"
+    r"desconto|revers|provis|multa|encerrament|altera|remensur|cancelament",
     re.I,
 )
+
+# **A linha que mistura divida e arrendamento nao diz quanto e arrendamento.**
+# "Pagamento de emprestimos, financiamentos, debentures e arrendamentos" era lida
+# como principal de arrendamento inteiro: R$ 110 bi em 16 companhias, e a Movida
+# saia com aluguel de 85% da receita, a Vamos com 115% -- numeros que nenhuma
+# rede de aluguel tem. O que ela perde aqui e a **atribuicao ao arrendamento**:
+# ela continua sendo divida paga, contando em `juros_pagos` e no principal da
+# divida, que e outra pergunta.
+_ARRENDAMENTO_MISTURADO_COM_DIVIDA = re.compile(
+    r"empr[ée]stim|financiament|deb[êe]ntur|notas? comerc|risco sacado", re.I
+)
+# A secao 6.01.01 e o ajuste ao lucro: "Juros sobre passivo de arrendamento" ali
+# e **apropriacao**, e nao desembolso. Medido onde existem as duas leituras, a
+# apropriacao nao serve de substituta: mediana de 1,00x, mas so 39% dentro de
+# 10% do pago, 15% acima do dobro e cauda de 300x. Sem a linha paga, o aluguel
+# fica declarado como piso -- que a visao ex-IFRS 16 ja sabe dizer.
+_AJUSTE_AO_LUCRO = "6.01.01"
 
 
 def arrendamento_no_caixa(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]:
@@ -1424,8 +1452,13 @@ def arrendamento_no_caixa(linhas: list[LinhaCVM]) -> dict[str, dict[int, float]]
             continue
         if _NAO_E_DESEMBOLSO_DE_ARRENDAMENTO.search(texto):
             continue
+        # Misturada com divida: nao da para dizer quanto e arrendamento.
+        if _ARRENDAMENTO_MISTURADO_COM_DIVIDA.search(texto):
+            continue
 
         if _MARCA_JUROS_ARRENDAMENTO.search(texto):
+            if linha.codigo.startswith(_AJUSTE_AO_LUCRO):
+                continue
             chave = "juros"
         elif _MARCA_PRINCIPAL_ARRENDAMENTO.search(texto) and linha.codigo.startswith("6.03"):
             # So na secao de financiamento: "pagamento" na secao operacional

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1423 testes
+pytest                        # 1436 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.423 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.436 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -4899,3 +4899,65 @@ A tela Exportar calcula o pacote sob as **mesmas convenções** do caso base e r
 histórico, diagnóstico, qualidade, IFRS 16 e múltiplos. O Monte Carlo continua
 entrando só se o analista o rodou: as distribuições são escolha dele, e inventar
 uma no material seria apresentar como medida uma coisa que ninguém pediu.
+
+### O de-para do desembolso de arrendamento
+
+A renovação de contrato virou premissa, e ela sai do **principal pago na DFC** —
+o que colocou a leitura desse desembolso no caminho crítico do valuation. Ela
+tinha três defeitos, e o maior deles não era o que faltava ler, e sim o que era
+lido a mais.
+
+**Linha que mistura dívida e arrendamento era lida como arrendamento inteiro.**
+"Pagamento de empréstimos, financiamentos, debêntures e arrendamentos" e
+variantes: **R$ 110 bi em 16 companhias**. O efeito no modelo era grosseiro e
+estava à vista de quem olhasse:
+
+| | Aluguel / receita | Margem EBITDA ex-IFRS 16 | Renovação sugerida |
+|---|---|---|---|
+| Vamos | 115,1% → **0** | −51,7% → declarada ausente | 83,4% → 0 |
+| Movida | 85,4% → **0** | −46,6% → declarada ausente | 56,9% → 0 |
+| Ecorodovias | 79,8% → **0** | −30,9% → declarada ausente | 61,7% → 0 |
+| Grendene | 15,6% → **0,7%** | 0,8% → 16,5% | — |
+
+Nenhuma rede aluga 115% da receita. **O que a linha misturada perde é a
+atribuição ao arrendamento, e não a existência**: ela continua contando em
+`juros_pagos` e no principal da dívida. São duas perguntas diferentes — "isto é
+juro pago?" e "quanto disto é arrendamento?" —, e juntá-las produzia o quadro
+acima.
+
+**O juro de arrendamento saía do ajuste ao lucro (6.01.01), que é apropriação.**
+Pior: quando a companhia publica as duas linhas, ele entrava **duas vezes**. A
+Raia Drogasil publica "Despesas de Juros - Arrendamento" no ajuste ao lucro e
+"Juros Pagos - Arrendamentos" no operacional; o aluguel de 2024 saía R$ 1.659,4
+mi contra R$ 1.259,0 mi de verdade, e a margem ex-IFRS 16, **6,55% no lugar de
+7,58%**. O teste da farmácia travava `reportada > ex × 1,5` — um corte calibrado
+sobre a dupla contagem, hoje 1,43x.
+
+Onde só existe a apropriação (29 das 216 companhias com arrendamento relevante),
+ela **não** substitui o pago: medido onde as duas existem, a razão tem mediana de
+1,00x, mas só 39% ficam dentro de 10%, 15% passam do dobro e a cauda chega a
+300x. Essas companhias ficam com o aluguel declarado como **piso**, que a visão
+ex-IFRS 16 já sabe dizer. Usar a apropriação como medida do *custo* do aluguel —
+numa conta separada, que nunca alimente caixa nem renovação — é alternativa
+plausível e **não medida**; fica anotada, não implementada.
+
+**E o principal não reconhecia "pagos" nem "contraprestação".** Renner (R$ 795
+mi) e Azzas (R$ 297 mi) publicam "Contraprestação de arrendamento" e saíam sem
+principal nenhum — logo, sem renovação cobrada no fluxo. Com os rótulos novos
+entram **R$ 13,5 bi em 33 companhias**; a Renner passa de 2,1% para 5,0% de
+aluguel sobre receita, e a Azzas de 0,8% para 3,3%. Junto vieram os vetos que a
+"contraprestação" exige: desconto, reversão, provisão, multa, encerramento,
+alteração, remensuração e cancelamento — a Petrobras publica R$ 13,6 bi de
+"Encerramento antecipado e alterações em pagamentos de contratos de
+arrendamento", que é remensuração e não caixa.
+
+Efeito na base: principal lido em **256 → 273** companhias; juro de arrendamento
+em **197 → 118**; e a renovação sugerida, que precisa do principal, em **156 →
+169** das 216 com arrendamento relevante (21 ganham, 8 perdem — e as 8 perdem o
+que era amortização de dívida).
+
+**Série de zeros não é série.** A Movida publica "Arrendamento financeiro -
+Pagamento" zerado e o resto misturado; a guarda de `ver_ex_ifrs16` olhava se a
+série estava *vazia*, e a visão saía com aluguel nulo e margem **igual à
+reportada** — exatamente o que devolver `None` existe para evitar. Agora Movida e
+Vamos declaram ausência; Vivara, que tem as duas linhas, não se mexe.

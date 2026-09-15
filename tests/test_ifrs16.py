@@ -139,9 +139,14 @@ def test_farmacia_de_verdade_muda_de_leitura():
     assert v is not None and v.relevante
     reportada = float(v.margem_ebitda_reportada.dropna().iloc[-1])
     ex = float(v.margem_ebitda.dropna().iloc[-1])
-    assert reportada > ex * 1.5, "o aluguel devia derrubar a margem pela metade"
+    # **O corte era 1,5x e vinha de uma dupla contagem.** A RD publica o juro de
+    # arrendamento duas vezes -- "Despesas de Juros - Arrendamento" no ajuste ao
+    # lucro (6.01.01) e "Juros Pagos - Arrendamentos" no operacional --, e a
+    # leitura antiga somava as duas: aluguel de R$ 1.659,4 mi em 2024 contra
+    # R$ 1.259,0 mi de verdade, e margem ex de 6,55% no lugar de 7,58%.
+    assert reportada > ex * 1.35, "o aluguel devia derrubar a margem em um terco"
     assert 0.09 < reportada < 0.13
-    assert 0.04 < ex < 0.09
+    assert 0.06 < ex < 0.09
 
 
 # ---------------------------------------------------------------------------
@@ -571,4 +576,134 @@ def test_o_relatorio_explica_a_renovacao():
     texto = montar(avaliar(empresa))
     assert "Renovação de arrendamento / receita" in texto
     assert "contrato que vence e é renovado" in texto
+
+
+# ---------------------------------------------------------------------------
+# O de-para do desembolso de arrendamento
+# ---------------------------------------------------------------------------
+
+
+def _linha(codigo, descricao, valor, ano=2024):
+    from valuation.importacao.cvm import LinhaCVM
+
+    return LinhaCVM(
+        codigo=codigo, descricao=descricao, valor=valor, ano=ano,
+        demonstracao="dfc", escala="MIL", escopo="con",
+    )
+
+
+def test_linha_misturada_com_divida_nao_vira_arrendamento():
+    """"Pagamento de emprestimos, financiamentos, debentures e arrendamentos".
+
+    Ela nao diz quanto e arrendamento, e era lida inteira como principal: R$ 110
+    bi em 16 companhias. A Movida aparecia com aluguel de 85% da receita e a
+    Vamos, 115% -- numeros que nenhuma rede de aluguel tem.
+    """
+    from valuation.importacao.cvm import arrendamento_no_caixa
+
+    componentes = arrendamento_no_caixa(
+        [
+            _linha("6.03.04", "Amortização de Empréstimos e Financiamentos, Debêntures e Arrendamentos", -8344.0),
+            _linha("6.03.06", "Pagamentos de Arrendamentos", -858.7),
+        ]
+    )
+    assert componentes["principal"] == {2024: pytest.approx(858.7)}
+
+
+def test_linha_misturada_continua_sendo_divida_paga():
+    """O que ela perde e a **atribuicao ao arrendamento**, e nao a existencia."""
+    from valuation.importacao.cvm import REGRAS_SOMADAS
+
+    regra = next(r for r in REGRAS_SOMADAS if r.chave == "juros_pagos")
+    assert regra.casa(
+        _linha("6.01.03.02", "Pagamento de Juros, Empréstimos e Financiamentos, Debêntures e Arrendamentos", -2579.1)
+    )
+
+
+def test_juro_de_arrendamento_do_ajuste_ao_lucro_nao_e_desembolso():
+    """A Raia Drogasil publica o mesmo juro duas vezes, e ele entrava dobrado.
+
+    6.01.01 e ajuste ao lucro: "Despesas de Juros - Arrendamento" ali e
+    apropriacao. Medido onde existem as duas leituras, a apropriacao tambem nao
+    serve de substituta: mediana de 1,00x, mas so 39% dentro de 10% do pago e
+    15% acima do dobro.
+    """
+    from valuation.importacao.cvm import arrendamento_no_caixa
+
+    componentes = arrendamento_no_caixa(
+        [
+            _linha("6.01.01.12", "Despesas de Juros - Arrendamento", 400.4),
+            _linha("6.01.03.03", "Juros Pagos - Arrendamentos", -400.4),
+            _linha("6.03.05", "Pagamentos de Arrendamentos", -858.7),
+        ]
+    )
+    assert componentes["juros"] == {2024: pytest.approx(400.4)}
+    assert componentes["principal"] == {2024: pytest.approx(858.7)}
+
+
+@pytest.mark.parametrize(
+    "rotulo",
+    [
+        "Arrendamentos pagos",
+        "Arrendamento pago",
+        "Contraprestação de arrendamentos",
+        "Contraprestação de arrendamento mercantil financeiro",
+        "Passivos de Arrendamento Pagos",
+    ],
+)
+def test_o_principal_reconhece_pagos_e_contraprestacao(rotulo):
+    """Renner e Azzas publicam "contraprestacao" e saiam sem principal nenhum."""
+    from valuation.importacao.cvm import arrendamento_no_caixa
+
+    componentes = arrendamento_no_caixa([_linha("6.03.06", rotulo, -795.2)])
+    assert componentes["principal"] == {2024: pytest.approx(795.2)}, rotulo
+
+
+@pytest.mark.parametrize(
+    "rotulo",
+    [
+        "Descontos nas contraprestações do passivo de arrendamento",
+        "Encerramento antecipado e alterações em pagamentos de contratos de arrendamento",
+        "Reversão das Provisões de Multas por Cancelamento de Contratos de Arrendamento",
+        "Adição de direito de uso",
+    ],
+)
+def test_remensuracao_de_contrato_nao_e_desembolso(rotulo):
+    """Caixa que nao saiu: a Petrobras tem R$ 13,6 bi so de encerramento."""
+    from valuation.importacao.cvm import arrendamento_no_caixa
+
+    componentes = arrendamento_no_caixa([_linha("6.03.06", rotulo, -13600.0)])
+    assert componentes == {"principal": {}, "juros": {}}, rotulo
+
+
+def test_aluguel_todo_zerado_nao_vira_visao_ex_ifrs16():
+    """Serie de zeros nao e serie: a Movida saia com margem igual a reportada.
+
+    Ela publica "Arrendamento financeiro - Pagamento" zerado e o resto misturado
+    com divida. A guarda olhava se a serie estava **vazia**, e serie de zeros nao
+    esta -- a visao vinha com aluguel nulo, que e o que devolver `None` evita.
+    """
+    import pandas as pd
+
+    from valuation.historico import analisar
+    from valuation.importacao import Demonstracoes
+
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 1000.0,
+                "ebit": 120.0,
+                "depreciacao_amortizacao": 80.0,
+                "divida_curto_prazo": 100.0,
+                "divida_longo_prazo": 300.0,
+                "caixa_equivalentes": 50.0,
+                "arrendamento_curto_prazo": 60.0,
+                "arrendamento_longo_prazo": 240.0,
+                "arrendamento_principal_pago": 0.0,
+            }
+            for ano in (2023, 2024)
+        }
+    )
+    analise = analisar(Demonstracoes(empresa="Locadora", valores=valores))
+    assert ver_ex_ifrs16(analise) is None
 
