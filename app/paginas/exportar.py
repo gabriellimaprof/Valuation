@@ -177,6 +177,7 @@ def _relatorio(resultado) -> None:
             investimento=investimento,
             respostas_qualitativas=estado.respostas_qualitativas(),
             ifrs16=ver_ex_ifrs16(analise) if analise is not None else None,
+            insumos=_insumos_datados(),
             lucro_residual=banco[0] if banco else None,
             historico_do_banco=banco[1] if banco else None,
             vrio_do_banco=banco[2] if banco else None,
@@ -208,6 +209,24 @@ def _relatorio(resultado) -> None:
         st.markdown(escapar_cifrao(texto))
 
     _material_do_comite(resultado, analise, qualidade, diagnostico, investimento, banco)
+
+
+def _insumos_datados():
+    """De quando e cada numero do modelo, para os entregaveis dizerem.
+
+    O material e o relatorio sobrevivem a sessao: quem abre o arquivo semanas
+    depois nao tem a barra lateral para consultar.
+    """
+    from valuation import validade
+
+    analise = estado.analise()
+    return validade.insumos(
+        empresa=estado.empresa(),
+        demonstracoes=analise.demonstracoes if analise is not None else None,
+        preco_em=estado.data_do_preco(),
+        setor=estado.config().get("setor"),
+        rf_em=estado.data_do_rf(),
+    )
 
 
 def _pacote_de_sensibilidade(resultado):
@@ -274,6 +293,7 @@ def _material_do_comite(
                 else ver_ex_ifrs16(analise)
             ),
             multiplos=None if banco else _multiplos_do_material(),
+            insumos=_insumos_datados(),
         )
     st.download_button(
         "Baixar o material (.html)",

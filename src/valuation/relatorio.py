@@ -1056,6 +1056,7 @@ def montar(
     historico_do_banco=None,
     vrio_do_banco=None,
     data: str = "",
+    insumos=None,
 ) -> str:
     """Monta o relatorio completo em markdown.
 
@@ -1099,9 +1100,38 @@ def montar(
         _qualitativo(evidencias, respostas_qualitativas),
         _qualitativo_vrio(vrio, respostas_qualitativas),
         _riscos(diagnostico),
+        _fontes_e_datas(insumos),
         _limites(resultado, analise, qualidade),
     ]
     return "\n\n".join("\n".join(bloco) for bloco in blocos) + "\n"
+
+
+def _fontes_e_datas(insumos) -> list[str]:
+    """De quando e cada insumo -- a secao que o diff de tres meses compara.
+
+    O relatorio existe para ser rodado de novo e diffado. Sem as datas, o diff
+    mostra o numero mudando e nao mostra **o que** mudou de origem.
+    """
+    if not insumos:
+        return []
+    quadro = pd.DataFrame(
+        {
+            "Medido em": [
+                i.medido_em.strftime("%d/%m/%Y") if i.medido_em else "—" for i in insumos
+            ],
+            "Move": [i.move for i in insumos],
+            "Situação": [
+                "pede atualização" if i.vencido() else "ok" for i in insumos
+            ],
+        },
+        index=[i.nome for i in insumos],
+    )
+    quadro.index.name = "Insumo"
+    linhas = ["## De quando é cada número", "", _tabela_markdown(quadro), ""]
+    for insumo in insumos:
+        if insumo.vencido():
+            linhas.append(f"- **{insumo.nome}**: {insumo.detalhe} {insumo.como_atualizar}")
+    return linhas
 
 
 def sumario(diagnostico: Diagnostico | None) -> str:

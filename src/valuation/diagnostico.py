@@ -323,6 +323,10 @@ def diagnosticar(
     analise: AnaliseHistorica | None = None,
     crescimento_nominal_economia: float | None = None,
     retorno=None,
+    preco_em=None,
+    setor: str | None = None,
+    cache=None,
+    rf_em=None,
 ) -> Diagnostico:
     """Roda a bateria de verificacoes sobre um valuation ja calculado.
 
@@ -352,6 +356,7 @@ def diagnosticar(
     if analise is not None:
         achados += _checar_ciclo_de_caixa(analise)
     achados += _checar_custo_de_capital(resultado, wacc, analise)
+    achados += _checar_validade(resultado, analise, preco_em, setor, cache, rf_em)
     achados += _checar_estrutura_do_valor(resultado)
     # Nao exige historico: a hipotese esta nas premissas e no resultado, e
     # vale igual para quem modelou a mao sem importar demonstracao nenhuma.
@@ -825,6 +830,58 @@ def _checar_tax_shield(resultado: ResultadoValuation, analise) -> list[Achado]:
             referencia="Damodaran, Applied Corporate Finance, cap. 4",
         )
     ]
+
+
+def _checar_validade(
+    resultado: ResultadoValuation, analise, preco_em, setor, cache, rf_em=None
+) -> list[Achado]:
+    """Insumo datado que passou da validade vira achado, um por linha.
+
+    **O diagnostico criticava coerencia e ignorava idade.** Um modelo retomado
+    tres meses depois continua fechando todas as identidades -- e esta avaliando
+    a empresa com a curva de juros de outro trimestre. Coerente e atual sao
+    coisas diferentes, e so a primeira tinha quem perguntasse.
+
+    A severidade sai do que o insumo move, e nao da idade: o que mexe no WACC
+    muda o valor em ponto percentual; o que mexe na base de percentis muda a
+    comparacao, e nao o numero. Ver `validade.insumos`.
+    """
+    from . import validade
+
+    severidades = {
+        validade.MOVE_O_WACC: ALERTA,
+        validade.MOVE_O_FLUXO: ALERTA,
+        validade.MOVE_O_PRECO: INFORMACAO,
+        validade.MOVE_A_REFERENCIA: INFORMACAO,
+    }
+    velhos = validade.vencidos(
+        empresa=resultado.empresa,
+        demonstracoes=getattr(analise, "demonstracoes", None),
+        preco_em=preco_em,
+        cache=cache,
+        setor=setor,
+        rf_em=rf_em,
+    )
+    achados = []
+    for insumo in velhos:
+        idade = insumo.idade_em_dias()
+        if idade is not None and insumo.valido_por_dias is not None:
+            quanto = (
+                f"{idade} dias, e o limite e {insumo.valido_por_dias}"
+            )
+        else:
+            quanto = "a fonte publicou algo mais recente"
+        achados.append(
+            Achado(
+                codigo=f"insumo_vencido_{insumo.chave}",
+                severidade=severidades.get(insumo.move, INFORMACAO),
+                titulo=f"{insumo.nome} pede atualização",
+                detalhe=f"{insumo.detalhe} Tem {quanto}. Move o {insumo.move}.",
+                acao=insumo.como_atualizar,
+                referencia="",
+            )
+        )
+    return achados
 
 
 def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:

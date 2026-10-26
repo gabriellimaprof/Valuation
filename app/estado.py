@@ -496,7 +496,58 @@ def diagnostico() -> Diagnostico | None:
         resultado_atual,
         analise=analise(),
         retorno=st.session_state.get("decomposicao_tsr"),
+        # **O que envelheceu entra pela mesma porta do resto da critica.** O
+        # preco ja guardava a data, e o setor ja viaja no config -- sem eles o
+        # registro de validade teria de adivinhar a origem do beta e a idade da
+        # conclusao sobre o preco, e adivinhar ali e pior do que calar.
+        preco_em=data_do_preco(),
+        setor=config().get("setor"),
+        rf_em=data_do_rf(),
     )
+
+
+def registrar_data_do_rf(em: str | None = None) -> None:
+    """Guarda quando a taxa livre de risco foi aplicada.
+
+    Mora no `config` pelo mesmo motivo do preco: e ele que viaja no projeto
+    salvo. Um valuation reaberto em marco mostrava o WACC montado sobre a curva
+    de agosto sem nada dizer.
+    """
+    from datetime import date
+
+    definir_config("rf_brl_em", em or date.today().isoformat())
+
+
+def data_do_rf():
+    """A data em que a taxa livre de risco foi aplicada, se houver."""
+    from datetime import date
+
+    guardada = config().get("rf_brl_em")
+    if not guardada:
+        return None
+    try:
+        return date.fromisoformat(str(guardada))
+    except ValueError:
+        return None
+
+
+def data_do_preco():
+    """A data em que o preco em avaliacao foi informado, se houver.
+
+    `definir_preco` ja a grava desde sempre, no `config` que viaja no projeto
+    salvo. Faltava quem a lesse: a margem de seguranca saia como "32%" num
+    valuation reaberto meses depois, contra uma cotacao que nao era mais a de
+    mercado.
+    """
+    from datetime import date
+
+    guardado = preco()
+    if not guardado or not guardado.get("em"):
+        return None
+    try:
+        return date.fromisoformat(str(guardado["em"]))
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------------------

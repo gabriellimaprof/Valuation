@@ -381,6 +381,7 @@ def _buscar_ntnb(ipca: float) -> None:
         )
         if st.button("Usar esta taxa", key="usar_ntnb", type="primary"):
             estado.atualizar({"custo_capital.rf_brl": rf_local(real, ipca)})
+            estado.registrar_data_do_rf()
             st.session_state.pop("ntnb_buscada", None)
             st.rerun()
 
@@ -706,6 +707,10 @@ def _montagem(empresa, premissas) -> None:
                     "macro.aliquota_ir": aliquota / 100,
                 }
             )
+            # A taxa aplicada tem data: ela veio da curva de um dia, e a curva
+            # se move. Sem isto o app parava de avisar justamente quando o
+            # numero vinha do mercado.
+            estado.registrar_data_do_rf()
         except ValueError as erro:
             st.error(str(erro))
         else:

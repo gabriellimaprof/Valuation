@@ -159,6 +159,25 @@ def _barra_lateral() -> None:
             if quando:
                 st.caption(f"Preço de {quando}")
 
+        # **O que envelheceu, visivel de qualquer tela.** O diagnostico ja traz
+        # cada insumo vencido como achado, mas ele fica a uma tela de distancia
+        # -- e a pergunta "isto ainda vale?" aparece justamente quando se esta
+        # mexendo na premissa, e nao quando se abre a critica.
+        from valuation import validade
+
+        analise_atual = estado.analise()
+        frescor = validade.resumo(
+            empresa=empresa,
+            demonstracoes=(
+                analise_atual.demonstracoes if analise_atual is not None else None
+            ),
+            preco_em=estado.data_do_preco(),
+            setor=estado.config().get("setor"),
+            rf_em=estado.data_do_rf(),
+        )
+        if "atualização" in frescor:
+            st.caption(f"⏳ {frescor}")
+
         diag = estado.diagnostico()
         if diag is not None and len(diag):
             st.divider()

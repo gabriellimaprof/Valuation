@@ -1225,6 +1225,44 @@ def _pagina_do_banco(empresa, lucro_residual, analise, qualidade, diagnostico, d
     )
 
 
+def _fontes_e_datas(insumos) -> str:
+    """De quando e cada numero, e o que ja pede atualizacao.
+
+    **O entregavel sobrevive a sessao.** Quem abre o PDF em dezembro nao tem
+    como saber que a curva de juros dentro dele e de agosto, nem que o preco e
+    de outro trimestre -- e e exatamente a pergunta que a mesa faz quando o
+    material volta semanas depois.
+    """
+    if not insumos:
+        return ""
+    linhas = {}
+    for insumo in insumos:
+        idade = insumo.idade_em_dias()
+        linhas[insumo.nome] = {
+            "Medido em": (
+                insumo.medido_em.strftime("%d/%m/%Y") if insumo.medido_em else "—"
+            ),
+            "Idade": f"{idade} dias" if idade is not None else "—",
+            "Move": insumo.move,
+            "Situação": "pede atualização" if insumo.vencido() else "dentro da validade",
+        }
+    quadro = pd.DataFrame(linhas).T
+    quadro.index.name = "Insumo"
+    vencidos = [i for i in insumos if i.vencido()]
+    nota = (
+        '<p class="nota">Todos os insumos datados estão dentro da validade.</p>'
+        if not vencidos
+        else '<p class="nota"><strong>'
+        + _e(
+            f"{len(vencidos)} de {len(insumos)} pedem atualização"
+        )
+        + ".</strong> "
+        + _e(" ".join(i.como_atualizar for i in vencidos))
+        + "</p>"
+    )
+    return "<h2>Fontes e datas</h2>" + _tabela(quadro) + nota
+
+
 def _historico_com_projecao(analise, resultado) -> str:
     """Receita e EBITDA entregues, e os projetados, no mesmo grafico.
 
@@ -1315,6 +1353,7 @@ def montar_html(
     simulacao=None,
     ifrs16=None,
     multiplos=None,
+    insumos=None,
 ) -> str:
     """O material do comite, numa pagina HTML autossuficiente.
 
@@ -1512,6 +1551,8 @@ def montar_html(
             f"Conversão mediana de {_e(_pct(getattr(qualidade, 'conversao_mediana', float('nan'))))} "
             "do EBITDA em caixa.</p>"
         )
+
+    partes.append(_fontes_e_datas(insumos))
 
     partes.append(
         "<footer>Gerado pelo app de valuation a partir dos Dados Abertos da CVM. "

@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1441 testes
+pytest                        # 1464 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.441 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.464 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -5023,3 +5023,65 @@ inclusive nos de prejuízo fiscal, onde o benefício não existe. A projeção m
 compensação para o imposto sobre o EBIT, mas o shield do Kd é constante. São 207
 companhias (49%) com ao menos um ano de prejuízo no período, e o efeito disso no
 valor **não foi medido**.
+
+### O modelo sabe dizer o que nele envelheceu
+
+Um valuation é uma fotografia de fontes com **datas diferentes**: a demonstração
+é de um exercício, a curva de juros é do dia, o beta setorial é da revisão anual,
+o preço é de quando o analista olhou a tela. Retomado três meses depois, o mesmo
+arquivo continua devolvendo um número — e continua fechando todas as identidades.
+**Coerente e atual são coisas diferentes, e só a primeira tinha quem perguntasse.**
+
+As peças de validade já existiam, espalhadas e sem ninguém que as somasse: a
+NTN-B embarcada tem data (`NTNB_MEDIDA_EM`, 23/08/2026) e corte de 90 dias; os
+betas têm `ATUALIZADO_EM`; `referencias.safra()` compara a safra medida com o DFP
+mais novo em cache; a tela de Dados sabe rebuscar a CVM; e `definir_preco` grava
+a data do preço desde sempre — **faltava quem a lesse**.
+
+`validade.py` é o registro único: cada insumo declara quando foi medido, por
+quanto vale, **o que ele move** (WACC, fluxo, preço, referência) e como
+atualizar. A lista sai ordenada pelo que mais move o valor, e o diagnóstico
+virou o primeiro consumidor — um achado por insumo vencido, com severidade pelo
+que ele move: ALERTA para WACC e fluxo, INFORMAÇÃO para preço e base.
+
+**O módulo cala onde não sabe**, e isso é metade do desenho:
+
+| Situação | Por quê |
+|---|---|
+| `rf_brl` informado na tela | o campo já foi resolvido; a referência embarcada não entra na conta |
+| Caminho em dólar | a taxa real brasileira não participa do Ke |
+| Beta sem setor declarado | a premissa não distingue beta da tabela de beta digitado — quem sabe é a tela, que guarda o setor |
+| Sem DFP em cache | não há com o que comparar; afirmar que envelheceu seria inventar |
+| Coluna com rótulo ilegível | ausência de resposta, e não um ano chutado |
+
+**A série trimestral envelhece por trimestre, e esse era o buraco.** A detecção
+existente compara exercícios, e quem importou o 1T26 e volta em outubro tem a
+mesma "2026" na coluna — nada acusava. Agora a regra é o **prazo da CVM**: o ITR
+vence 45 dias após o fim do trimestre (ICVM 480, art. 29), e o aviso compara o
+trimestre importado com o mais recente cujo prazo venceu. O texto diz *prazo*, e
+não publicação: companhia atrasa, e abrir o zip do ITR — dezenas de MB — a cada
+diagnóstico para confirmar seria caro. O 4T não entra: ele vira a DFP, com prazo
+próprio.
+
+**Os três entregáveis passaram a dizer de quando é cada número.** O material do
+comitê e o relatório ganharam a seção "Fontes e datas" — medido em, idade, o que
+move, situação —, e a barra lateral ganhou o selo (`⏳ 2 de 5 insumos pedem
+atualização`), que aparece só quando há o que atualizar. O entregável é o que
+sobrevive à sessão: quem abre o PDF em dezembro não tem a barra lateral para
+consultar, e era ali que a informação faltava.
+
+**E um buraco no meu próprio desenho.** Eu calava quando `rf_brl` estava
+preenchido — "quem informou já resolveu o campo". Resolveu **naquele dia**: a
+taxa veio da curva de uma data, e a curva se move. O app parava de avisar
+justamente no caso em que o número veio do mercado. Agora a tela grava a data ao
+aplicar a curva (`config["rf_brl_em"]`, que viaja no projeto salvo como o preço
+já viajava), e a taxa informada entra na lista com validade de 90 dias. Sem data
+gravada — projeto antigo, ou número digitado à mão — o módulo continua calado,
+porque não dá para afirmar idade que não se sabe.
+
+**Dois defeitos apareceram ao escrever, e os dois viraram teste.** A série de ano
+móvel tem coluna `3T25`, e a leitura exigia inteiro: `max() arg is an empty
+sequence`, pego pelo teste de omissão do diagnóstico. E o teste do `rf` vencido
+dependia do calendário — hoje a referência tem 64 dias e **não** venceu, então
+ele passaria agora e falharia sozinho em dezembro; a data é envelhecida dentro do
+teste.
