@@ -929,3 +929,90 @@ def test_o_achado_de_juro_capitalizado_le_a_mediana_da_base(empresa_exemplo):
     # em literais adjacentes trocaria todos os pontos do texto.
     assert "sem desembolso. Descolar" in achado.detalhe
 
+
+# ---------------------------------------------------------------------------
+# O tax shield que o WACC deduz, contra o imposto que a empresa paga
+# ---------------------------------------------------------------------------
+
+
+def _analise_com_aliquota(efetiva: float, anos=(2023, 2024, 2025)):
+    """Uma analise em que a aliquota efetiva e exatamente a pedida.
+
+    O LAIR e positivo em todos os anos de proposito: `_divisao_segura` descarta
+    denominador nao positivo, e um ano de prejuizo sairia como ausencia -- que e
+    outro caso, e nao o que este teste mede.
+    """
+    lair = 1000.0
+    valores = pd.DataFrame(
+        {
+            ano: {
+                "receita_liquida": 5000.0,
+                "ebit": 1200.0,
+                "depreciacao_amortizacao": 200.0,
+                "lucro_antes_impostos": lair,
+                "impostos": lair * efetiva,
+                "lucro_liquido": lair * (1 - efetiva),
+                "patrimonio_liquido": 3000.0,
+                "ativo_total": 6000.0,
+            }
+            for ano in anos
+        }
+    )
+    return analisar(Demonstracoes(empresa="Teste", valores=valores, unidade="R$ milhões"))
+
+
+def _achado_do_shield(empresa_exemplo, efetiva: float, divida_pl: float = 1.0):
+    from valuation import avaliar, substituir_varios
+
+    empresa = substituir_varios(
+        empresa_exemplo,
+        {"custo_capital.divida_pl_alvo": divida_pl, "custo_capital.custo_divida_brl": 0.13},
+    )
+    diagnostico = diagnosticar(avaliar(empresa), _analise_com_aliquota(efetiva))
+    return next(
+        (a for a in diagnostico.achados if a.codigo.startswith("tax_shield")), None
+    )
+
+
+def test_o_aviso_dispara_quando_a_empresa_paga_muito_menos_que_a_premissa(empresa_exemplo):
+    """Medido: o efeito passa de 1,0 p.p. em 26,6% das companhias com Kd legivel.
+
+    Com Kd de 13% e metade da estrutura em divida, uma efetiva de 5% contra os
+    34% nominais vale 1,9 p.p. de WACC -- e o WACC menor faz o valor maior, sem
+    que nada diga por que.
+    """
+    achado = _achado_do_shield(empresa_exemplo, efetiva=0.05)
+
+    assert achado is not None
+    assert achado.codigo == "tax_shield_acima_do_imposto_pago"
+    assert "34%" in achado.titulo and "5,0%" in achado.titulo
+    assert "p.p. de WACC" in achado.detalhe
+    # A ressalva economica vai junto: o que desconta o juro e a marginal.
+    assert "marginal" in achado.detalhe
+    assert "Lucro Presumido" in achado.detalhe
+
+
+def test_o_aviso_cala_quando_a_aliquota_bate_com_a_premissa(empresa_exemplo):
+    assert _achado_do_shield(empresa_exemplo, efetiva=0.33) is None
+
+
+def test_sem_divida_relevante_o_shield_nao_muda_nada(empresa_exemplo):
+    """O efeito e ponderado pelo peso da divida: sem divida, nao ha shield."""
+    assert _achado_do_shield(empresa_exemplo, efetiva=0.05, divida_pl=0.02) is None
+
+
+def test_sem_historico_o_aviso_nao_se_inventa(empresa_exemplo):
+    """A aliquota efetiva vem do historico; sem ele nao ha o que comparar."""
+    from valuation import avaliar
+
+    diagnostico = diagnosticar(avaliar(empresa_exemplo))
+    assert not any(a.codigo.startswith("tax_shield") for a in diagnostico.achados)
+
+
+def test_o_aviso_tambem_dispara_quando_a_empresa_paga_mais(empresa_exemplo):
+    """O sinal vale nos dois sentidos: com efetiva alta, o WACC sai maior."""
+    achado = _achado_do_shield(empresa_exemplo, efetiva=0.60)
+
+    assert achado is not None and achado.codigo == "tax_shield_abaixo_do_imposto_pago"
+    assert "maior" in achado.detalhe
+

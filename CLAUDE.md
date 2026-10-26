@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1436 testes
+pytest                        # 1441 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.436 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.441 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -4961,3 +4961,65 @@ Pagamento" zerado e o resto misturado; a guarda de `ver_ex_ifrs16` olhava se a
 série estava *vazia*, e a visão saía com aluguel nulo e margem **igual à
 reportada** — exatamente o que devolver `None` existe para evitar. Agora Movida e
 Vamos declaram ausência; Vivara, que tem as duas linhas, não se mexe.
+
+### O tax shield deduz 34%, e boa parte da base não paga isso
+
+O Kd é **bruto** em toda a entrada — o campo da tela, a sugestão pelo juro pago na
+DFC e o sintético `rf + spread` —, e o imposto entra uma vez só, na montagem do
+WACC: `kd_liquido = kd_bruto × (1 − t)`. O `t` é `macro.aliquota_ir`, cujo padrão
+é `ALIQUOTA_IR_BRASIL = 0,34` (IRPJ 15% + adicional de 10% + CSLL 9%), editável na
+tela de Custo de capital. **A mesma alíquota serve a três coisas ao mesmo tempo**:
+o shield do Kd, o Hamada que realavanca o beta e o imposto sobre o EBIT na
+projeção (esse sim com a trava dos 30% para prejuízo fiscal).
+
+A derivação do histórico **não** troca a nominal pela efetiva: ela avisa quando a
+distância passa de 5 p.p. e deixa a escolha com quem lê. O que faltava era dizer
+**quanto custa** essa escolha.
+
+**Medido na safra 2021-2025**, com a alíquota efetiva de cada companhia (mediana
+de `impostos / LAIR`, que `_divisao_segura` só calcula em ano de lucro):
+
+| Alíquota efetiva | Companhias (de 382 medidas) |
+|---|---|
+| 0% a 15% | 146 (38%) — **77 delas sem nenhum ano de prejuízo** |
+| 15% a 30% | 147 (39%) |
+| 30% a 38% (perto da nominal) | 36 (9%) |
+| Acima de 38% | 51 (13%) |
+
+Os quartis são P25 **9,3%**, mediana **19,9%**, P75 29,3%: a alíquota nominal
+descreve a minoria da base. E **não é artefato de prejuízo** — das 146 abaixo de
+15%, 77 não tiveram prejuízo nenhum no período; é benefício de verdade (JCP,
+subvenção, Lucro Presumido).
+
+**Nem é defeito de sinal, e eu suspeitei que fosse.** A CVM publica `3.08` com a
+convenção de **somar ao LAIR**: na WEG ela vem −1.371,7 e na Vivara +31,7. A
+identidade confirma a leitura (587,8 + 31,7 = 619,5, o lucro líquido publicado):
+a Vivara teve **crédito** tributário líquido, e não despesa. O que existe é um
+piso de apresentação — o `clip(0, 1)` transforma efetiva negativa em "0,0%", que
+se lê como "não paga" quando o fato é "recebeu crédito".
+
+**O achado novo diz o efeito, em pontos percentuais de WACC**, e não a diferença
+de alíquota: `peso da dívida × Kd bruto × (nominal − efetiva)`. Medido nas 293
+companhias com Kd pelo caixa plausível: P50 **0,5 p.p.**, P75 0,9, P90 1,6. O
+corte é **1,0 p.p.**, que acusa **26,6%** da base — 0,5 acusaria 55%, que é o
+"dispara sempre" que este projeto já pagou duas vezes. Com peso de dívida abaixo
+de 10% ele não roda: sem dívida, o shield não muda nada.
+
+| | Efetiva | Kd | Peso da dívida | Efeito | Dispara? |
+|---|---|---|---|---|---|
+| Hypera | 0,0% | 12,3% | 42,6% | **1,78 p.p.** | sim |
+| Smart Fit | 11,2% | 10,0% | 70,8% | **1,62 p.p.** | sim |
+| Vivara | 0,0% | 8,4% | 29,4% | 0,84 p.p. | não |
+| Intelbras | 0,0% | 9,6% | 22,8% | 0,74 p.p. | não |
+| WEG | 15,5% | 3,6% | 22,7% | 0,15 p.p. | não |
+
+**O achado avisa e não corrige**, e a razão é econômica: o que desconta o juro é a
+alíquota **marginal**, não a efetiva. Efetiva baixa por JCP ou incentivo
+transitório não reduz o shield; Lucro Presumido ou incentivo permanente reduz. A
+série não distingue os dois casos — quem distingue é quem conhece a empresa.
+
+**O que fica por fazer, declarado**: o WACC aplica `(1 − t)` em todos os anos,
+inclusive nos de prejuízo fiscal, onde o benefício não existe. A projeção modela a
+compensação para o imposto sobre o EBIT, mas o shield do Kd é constante. São 207
+companhias (49%) com ao menos um ano de prejuízo no período, e o efeito disso no
+valor **não foi medido**.

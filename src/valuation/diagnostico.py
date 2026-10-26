@@ -351,7 +351,7 @@ def diagnosticar(
     achados += _checar_capex_perpetuo(resultado)
     if analise is not None:
         achados += _checar_ciclo_de_caixa(analise)
-    achados += _checar_custo_de_capital(resultado, wacc)
+    achados += _checar_custo_de_capital(resultado, wacc, analise)
     achados += _checar_estrutura_do_valor(resultado)
     # Nao exige historico: a hipotese esta nas premissas e no resultado, e
     # vale igual para quem modelou a mao sem importar demonstracao nenhuma.
@@ -674,7 +674,27 @@ def _checar_reinvestimento(
     return achados
 
 
-def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list[Achado]:
+# Quanto o tax shield precisa mover o WACC para merecer o achado, e o peso de
+# divida abaixo do qual ele nao move nada.
+#
+# O efeito e ``peso da divida x Kd bruto x (aliquota da premissa - efetiva)``.
+# Medido na safra 2021-2025, nas 293 companhias com Kd pelo caixa plausivel e
+# aliquota efetiva medida: P50 **0,5 p.p.**, P75 0,9, P90 1,6. Um corte em 0,5
+# acusaria 55% da base -- o defeito de "dispara sempre" que este projeto ja pagou
+# duas vezes --, e 1,0 p.p. acusa **26,6%**, perto do quartil que um sinal deve
+# acusar.
+#
+# **A aliquota efetiva nao e artefato de prejuizo**: `_divisao_segura` descarta
+# LAIR nao positivo, entao ela so e medida em ano de lucro. Das 146 companhias
+# com efetiva abaixo de 15%, **77 nao tiveram prejuizo nenhum** no periodo -- e
+# aliquota baixa de verdade, por JCP, subvencao ou Lucro Presumido.
+EFEITO_DO_TAX_SHIELD_RELEVANTE = 0.01
+PESO_DA_DIVIDA_IRRELEVANTE = 0.10
+
+
+def _checar_custo_de_capital(
+    resultado: ResultadoValuation, wacc: float, analise=None
+) -> list[Achado]:
     achados = []
     cc = resultado.custo_capital
     premissas = resultado.empresa.custo_capital
@@ -728,6 +748,8 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
             )
         )
 
+    achados += _checar_tax_shield(resultado, analise)
+
     if premissas.divida_pl_alvo > DIVIDA_PL_ALTA:
         achados.append(
             Achado(
@@ -744,6 +766,65 @@ def _checar_custo_de_capital(resultado: ResultadoValuation, wacc: float) -> list
         )
 
     return achados
+
+
+def _checar_tax_shield(resultado: ResultadoValuation, analise) -> list[Achado]:
+    """O WACC deduz imposto a aliquota da premissa; a empresa paga outra.
+
+    O Kd entra no WACC liquido de imposto -- ``Kd x (1 - t)`` --, e ``t`` e a
+    aliquota do bloco macro, 34% por padrao (IRPJ 15% + adicional 10% + CSLL 9%).
+    Quando a companhia paga muito menos que isso, o WACC sai menor do que seria,
+    e **o valor sai maior**, sem que nada diga por que.
+
+    **O achado nao corrige, e a razao e economica**: o que desconta o juro e a
+    aliquota **marginal**, nao a efetiva. Efetiva baixa por JCP ou incentivo
+    transitorio nao significa shield menor; Lucro Presumido ou incentivo
+    permanente, sim. A serie nao distingue os dois casos -- quem distingue e
+    quem conhece a empresa --, entao o que o app faz e dizer **quanto custa** a
+    escolha, em pontos percentuais de WACC.
+    """
+    if analise is None or "Aliquota efetiva de IR" not in analise.indicadores.index:
+        return []
+    efetiva = analise.mediana("Aliquota efetiva de IR")
+    if not np.isfinite(efetiva):
+        return []
+
+    cc = resultado.custo_capital
+    nominal = cc.aliquota_ir
+    if cc.peso_divida < PESO_DA_DIVIDA_IRRELEVANTE:
+        return []
+
+    efeito = cc.peso_divida * cc.kd_bruto_brl * (nominal - efetiva)
+    if abs(efeito) < EFEITO_DO_TAX_SHIELD_RELEVANTE:
+        return []
+
+    direcao = "menor" if efeito > 0 else "maior"
+    return [
+        Achado(
+            codigo="tax_shield_acima_do_imposto_pago"
+            if efeito > 0
+            else "tax_shield_abaixo_do_imposto_pago",
+            severidade=INFORMACAO,
+            titulo=(
+                f"O WACC deduz imposto a {_pct(nominal, 0)}, e a empresa paga "
+                f"{_pct(efetiva, 1)} na mediana"
+            ),
+            detalhe=(
+                f"O Kd entra no WACC liquido de imposto, e com {_pct(cc.peso_divida, 0)} "
+                f"de divida na estrutura-alvo a diferenca vale **{_num(abs(efeito) * 100, 2)} "
+                f"p.p. de WACC** — usar a aliquota efetiva deixaria o WACC "
+                f"{_pct(abs(efeito), 2)} {direcao}. O que desconta o juro, porem, e a "
+                "aliquota **marginal**: efetiva baixa por JCP ou incentivo transitorio "
+                "nao reduz o shield, mas Lucro Presumido ou incentivo permanente reduz."
+            ),
+            acao=(
+                "Se o beneficio fiscal for estrutural, troque a aliquota de IR/CSLL em "
+                "Custo de capital — ela vale para o shield, para o Hamada e para o "
+                "imposto da projecao ao mesmo tempo."
+            ),
+            referencia="Damodaran, Applied Corporate Finance, cap. 4",
+        )
+    ]
 
 
 def _checar_estrutura_do_valor(resultado: ResultadoValuation) -> list[Achado]:
