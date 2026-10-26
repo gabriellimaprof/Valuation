@@ -30,6 +30,27 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 SAIDA = Path(__file__).parent / "telas"
+
+
+def limpar_a_saida() -> int:
+    """Apaga as imagens da passada anterior, e diz quantas.
+
+    **A varredura acumulava indefinidamente.** Ela roda por agendamento toda
+    segunda, grava uma imagem por tela (quatorze) vezes cada passada -- e as
+    imagens de janeiro continuavam ali em outubro: 470 arquivos e **153 MB**,
+    que encheram o disco e derrubaram a suite com `No space left on device` em
+    testes que nao tem nada a ver com navegador.
+
+    A pasta e descartavel por construcao (esta no `.gitignore`), e o que vale e
+    sempre a passada mais recente: imagem velha misturada com nova e pior que
+    nenhuma, porque ninguem sabe qual e de qual execucao.
+    """
+    if not SAIDA.exists():
+        return 0
+    antigas = sorted(SAIDA.glob("*.png"))
+    for imagem in antigas:
+        imagem.unlink()
+    return len(antigas)
 # Prefixo das imagens, para uma passada nao sobrescrever a outra.
 PREFIXO = ""
 EMPRESA = "WEG"
@@ -274,6 +295,9 @@ if __name__ == "__main__":
         escolhida = "trimestral"
     elif "--movel" in sys.argv:
         escolhida = "movel"
+    apagadas = limpar_a_saida()
+    if apagadas:
+        print(f"{apagadas} imagem(ns) da passada anterior apagadas.")
     raise SystemExit(
         percorrer(argumentos[0] if argumentos else "8501", visao=escolhida)
     )

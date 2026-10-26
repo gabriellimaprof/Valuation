@@ -5085,3 +5085,22 @@ sequence`, pego pelo teste de omissão do diagnóstico. E o teste do `rf` vencid
 dependia do calendário — hoje a referência tem 64 dias e **não** venceu, então
 ele passaria agora e falharia sozinho em dezembro; a data é envelhecida dentro do
 teste.
+
+### A varredura acumulava imagem até encher o disco
+
+Ela grava uma imagem por tela a cada passada e roda **por agendamento toda
+segunda**, e nada apagava as anteriores: 470 arquivos e **153 MB** em
+`tools/telas`, com imagens de janeiro ao lado das de outubro. O custo não
+apareceu ali — apareceu na suíte, com `OSError: No space left on device` em
+testes de `referencias` e `pares` que escrevem zips temporários e não têm nada a
+ver com navegador. Com 113 MB livres num disco de 475 GB, o que falha é o que
+precisa escrever, e o rastro não aponta para a causa.
+
+Agora a varredura apaga as imagens da passada anterior antes de começar, e diz
+quantas. A pasta é descartável por construção (está no `.gitignore`), e o que
+vale é sempre a passada mais recente: **imagem velha misturada com nova é pior
+que nenhuma**, porque ninguém sabe de qual execução é cada uma.
+
+A ferramenta roda fora do `pytest`, como `conferir_no_excel.py`, e a limpeza foi
+verificada por execução direta — três imagens criadas, três apagadas, e pasta
+inexistente devolvendo zero em vez de quebrar.
