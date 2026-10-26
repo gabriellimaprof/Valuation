@@ -24,7 +24,7 @@ python3 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\ac
 pip install -e ".[app,dev]"
 
 streamlit run app/main.py     # o app
-pytest                        # 1464 testes
+pytest                        # 1468 testes
 valuation dcf exemplos/empresa_exemplo.yaml --excel modelo.xlsx   # a CLI
 ```
 
@@ -1339,7 +1339,7 @@ não é verificação.
 
 ## Estado atual
 
-1.464 testes passando. Verificado de verdade: contas financeiras, identidades,
+1.468 testes passando. Verificado de verdade: contas financeiras, identidades,
 equivalência Excel/Python, as origens de importação, fluxo completo no
 navegador.
 
@@ -5104,3 +5104,41 @@ que nenhuma**, porque ninguém sabe de qual execução é cada uma.
 A ferramenta roda fora do `pytest`, como `conferir_no_excel.py`, e a limpeza foi
 verificada por execução direta — três imagens criadas, três apagadas, e pasta
 inexistente devolvendo zero em vez de quebrar.
+
+### A revalidação das 467, refeita — e o de-para que apontava para a linha errada
+
+A verificação mais forte do projeto (`test_cada_conta_bate_com_a_linha_publicada`)
+roda sobre 6 companhias no `pytest`, e a rodada documentada nas 467 era **anterior
+aos de-paras do juro pago e do arrendamento**, que mudaram a leitura de dezenas de
+companhias. Refazê-la era o pré-requisito para usar o app profissionalmente, e ela
+achou exatamente o tipo de erro que existe para pegar.
+
+**122 pares divergiam, e todos tinham a linha publicada em zero.** Nenhum era erro
+de valor: eram correções deliberadas do importador cuja **origem registrada ficou
+apontando para a linha que perdeu**.
+
+| Conta | Companhias | O que acontece |
+|---|---|---|
+| `lucro_controladores` | **105** | a companhia zera `3.09.01`/`3.11.01`, o app completa com consolidado − minoritários, e o de-para seguia dizendo "3.11.01" |
+| `depreciacao_amortizacao` | **17** | a DRE publica a linha zerada, a derivação `substitui_zero` traz a D&A da DFC, e o de-para seguia na DRE |
+
+O projeto já tinha a regra escrita, e em dois dos quatro caminhos de correção ela
+era aplicada: *"o de-para tem que apontar para a linha que virou o número, e não
+para a que perdeu: origem registrada errada é o tipo de erro que soma nenhuma
+denúncia"*. Faltava nos outros dois, e a correção agora está na **raiz** — o laço
+genérico de `_derivar` reaponta a origem sozinho: fonte única herda a origem dela,
+fórmula de duas pontas ganha a marca de substituída, que é a convenção de
+parênteses que a auditoria já usa para dizer "isto não sai de uma linha
+publicada".
+
+Refeita com a correção: **28.288 pares conferidos nas 467 companhias, zero
+divergências, zero erros de importação**, e a identidade `ativo = passivo total`
+fechando em todas.
+
+**Duas lições do verificador, que erraram antes do app.** A primeira versão
+acusou 463 das 467 por "ativo ≠ passivo + PL" — na CVM, `2 - Passivo Total` **já
+inclui** o patrimônio líquido, e eu somava o PL duas vezes. Número absurdo denuncia
+o medidor, não a base. E a primeira rodada morreu com `MemoryError` em 465
+companhias: com o disco cheio, o arquivo de paginação não cresce, e seis processos
+lendo os CSVs da DFP esgotam a memória — a causa estava fora do projeto, e o
+sintoma, dentro.

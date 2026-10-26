@@ -804,6 +804,32 @@ def _ajustar_sinal(conta: Conta, valores: dict[int, float]) -> tuple[dict[int, f
     return {ano: abs(v) for ano, v in valores.items()}, False
 
 
+def _reapontar_a_origem(mapeamento: dict[str, str] | None, derivacao) -> None:
+    """Depois de derivar, o de-para aponta para a linha que virou o numero.
+
+    **O laco generico nao fazia isso, e os casos especiais faziam.** Com
+    ``substitui_zero``, a D&A da DRE publicada como zero e trocada pela da DFC --
+    e a origem registrada continuava na linha da DRE. Medido nas 467 companhias
+    de 2024: 17 ficavam com o de-para apontando para uma linha de valor zero,
+    enquanto o numero vinha de outra.
+
+    Fonte unica herda a origem dela. Formula de duas pontas nao tem uma linha
+    para apontar, e ai a origem antiga ganha a marca de substituida -- os
+    parenteses sao a convencao que a auditoria de origem ja usa para dizer
+    "esta conta nao sai de uma linha publicada".
+    """
+    if mapeamento is None:
+        return
+    if len(derivacao.requer) == 1:
+        origem = mapeamento.get(derivacao.requer[0])
+        if origem:
+            mapeamento[derivacao.chave] = origem
+        return
+    anterior = mapeamento.get(derivacao.chave)
+    if anterior and "(" not in anterior:
+        mapeamento[derivacao.chave] = f"{anterior} (substituída: {derivacao.formula})"
+
+
 def _derivar(
     tabela: dict[str, dict[int, float]],
     anos: list[int],
@@ -844,6 +870,7 @@ def _derivar(
             if calculada:
                 tabela[derivacao.chave] = calculada
                 derivadas[derivacao.chave] = derivacao.explicacao
+                _reapontar_a_origem(mapeamento, derivacao)
                 mudou = True
         if not mudou:
             break
@@ -859,6 +886,15 @@ def _derivar(
             f"derivado do consolidado menos minoritarios em {controladores}: a "
             "companhia zerou 3.11.01 nesses anos"
         )
+        # Mesma disciplina das trocas de D&A: a linha zerada **nao** e a origem
+        # do numero. Medido nas 467 companhias de 2024, eram 105 companhias com
+        # o de-para apontando para uma linha de valor zero -- a maior fonte
+        # isolada de origem registrada errada na base.
+        if mapeamento is not None and "lucro_controladores" in mapeamento:
+            mapeamento["lucro_controladores"] = (
+                f"{mapeamento['lucro_controladores']} (completado em "
+                f"{controladores}: lucro liquido menos nao controladores)"
+            )
     trocados = _preferir_a_da_do_fluxo_de_caixa(tabela, anos)
     da_da_dva = _da_da_dva_como_ultimo_recurso(tabela, anos)
     if trocados:

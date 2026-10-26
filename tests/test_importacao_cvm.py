@@ -2817,3 +2817,93 @@ def test_imposto_pago_sozinho_continua_saindo_do_giro():
         "Encargos financeiros, imposto de renda e contribuição social pagos"
     )
 
+
+# ---------------------------------------------------------------------------
+# O de-para nao pode apontar para a linha que perdeu
+# ---------------------------------------------------------------------------
+
+
+def test_a_derivacao_que_substitui_zero_reaponta_a_origem():
+    """D&A: a DRE publica a linha zerada e o numero vem da DFC.
+
+    Achado na revalidacao das 467 companhias de 2024: **17 ficavam com o de-para
+    apontando para uma linha de valor zero**. O laco generico de derivacoes nao
+    reapontava a origem -- so os dois casos especiais faziam, e a propria
+    docstring de `_derivar` ja dizia que essa era a regra.
+    """
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "depreciacao_amortizacao": {2024: 0.0},
+        "depreciacao_dfc": {2024: 423.0},
+    }
+    mapeamento = {
+        "depreciacao_amortizacao": "3.04.05.02 - Depreciação e amortização",
+        "depreciacao_dfc": "6.01.01.02 - Depreciação e Amortização",
+    }
+    _derivar(tabela, [2024], mapeamento)
+
+    assert tabela["depreciacao_amortizacao"][2024] == pytest.approx(423.0)
+    assert mapeamento["depreciacao_amortizacao"] == "6.01.01.02 - Depreciação e Amortização"
+
+
+def test_o_lucro_dos_controladores_completado_declara_a_completacao():
+    """A companhia zera 3.11.01 e o app completa: 105 das 467 em 2024.
+
+    O numero esta certo -- consolidado menos minoritarios --, e a origem
+    registrada continuava dizendo "3.11.01", uma linha que vale zero no arquivo.
+    """
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "lucro_liquido": {2024: 398.0},
+        "lucro_controladores": {2024: 0.0},
+        "lucro_nao_controladores": {2024: 0.0},
+    }
+    mapeamento = {
+        "lucro_controladores": "3.11.01 - Atribuído a Sócios da Empresa Controladora"
+    }
+    derivadas = _derivar(tabela, [2024], mapeamento)
+
+    assert tabela["lucro_controladores"][2024] == pytest.approx(398.0)
+    assert "completado em 2024" in mapeamento["lucro_controladores"]
+    assert "3.11.01" in mapeamento["lucro_controladores"], "a linha original continua citada"
+    assert "lucro_controladores" in derivadas
+
+
+def test_zero_legitimo_nao_vira_completacao():
+    """Se os minoritarios levaram tudo, o zero e verdade e o de-para fica como esta."""
+    from valuation.importacao.importador import _derivar
+
+    tabela = {
+        "lucro_liquido": {2024: 100.0},
+        "lucro_controladores": {2024: 0.0},
+        "lucro_nao_controladores": {2024: 100.0},
+    }
+    mapeamento = {"lucro_controladores": "3.11.01 - Atribuído a Sócios"}
+    _derivar(tabela, [2024], mapeamento)
+
+    assert tabela["lucro_controladores"][2024] == pytest.approx(0.0)
+    # A completacao rodou e chegou a zero de novo: a marca aparece, e o valor nao muda.
+    assert "3.11.01" in mapeamento["lucro_controladores"]
+
+
+def test_a_origem_registrada_nunca_aponta_para_linha_zerada(weg):
+    """A invariante que a revalidacao verifica, fixada numa companhia real.
+
+    Conta preenchida cuja origem registrada aponta para uma linha publicada de
+    valor zero significa que o numero veio de outro lugar -- e e exatamente o
+    erro que "soma nenhuma denuncia".
+    """
+    publicadas = _linhas_publicadas(WEG, "con", 2024)
+    for chave in weg.valores.index:
+        origem = weg.mapeamento.get(chave)
+        valor = weg.valor(chave, 2024)
+        if not origem or "(" in origem or valor is None or not np.isfinite(valor) or valor == 0:
+            continue
+        codigos = [parte.split(" - ")[0].strip() for parte in origem.split(" + ")]
+        if not all(c in publicadas for c in codigos):
+            continue
+        soma = sum(publicadas[c] for c in codigos)
+        assert soma != 0, f"{chave} vale {valor} e a origem {origem} esta zerada"
+
